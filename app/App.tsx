@@ -1,130 +1,99 @@
 import React, {useState, useEffect, useRef, JSX} from 'react';
-import { StyleSheet, Text, View, Dimensions, LogBox, Button } from 'react-native';
+import {StyleSheet, Text, View, Button, TouchableOpacity} from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import * as tf from '@tensorflow/tfjs';
-import '@tensorflow/tfjs-react-native'; // Import for side-effects
-import * as cocossd from '@tensorflow-models/coco-ssd';
-import Svg, { Rect } from 'react-native-svg';
 
-// Silence a specific warning about tensor-to-image conversion
-LogBox.ignoreLogs(['Could not get source-map URL for ...']);
-
-// Get screen dimensions
-const { width, height } = Dimensions.get('window');
-
-// --- TypeScript Types ---
-type ModelType = cocossd.ObjectDetection;
-interface Detection {
-    bbox: [number, number, number, number]; // [x, y, width, height]
-    class: string;
-    score: number;
-}
-// ------------------------
+// Set the detection interval (in milliseconds)
+const DETECTION_INTERVAL_MS = 5000;
 
 export default function App(): JSX.Element {
     const [permission, requestPermission] = useCameraPermissions();
-    const [model, setModel] = useState<ModelType | null>(null);
-    const [detections, setDetections] = useState<Detection[]>([]);
     const cameraRef = useRef<CameraView | null>(null);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [isCameraReady, setIsCameraReady] = useState(false);
 
-    // 1. Load the model on mount
-    useEffect(() => {
-        (async () => {
-            // Initialize TensorFlow.js
-            console.log('Initializing TensorFlow.js...');
-            await tf.ready();
-            console.log('TensorFlow.js ready.');
+    const handleDetect = async () => {
+        if (!cameraRef.current || isProcessing) {
+            return;
+        }
 
-            // Load the COCO-SSD model
-            console.log('Loading COCO-SSD model...');
-            const loadedModel = await cocossd.load();
-            setModel(loadedModel);
-            console.log('Model loaded successfully!');
-        })();
-    }, []);
+        setIsProcessing(true);
 
-    // 2. Handle camera frames for detection
-    // NOTE: The following approach for processing camera frames is based on older APIs
-    // that are no longer available in the recent versions of expo-camera and @tensorflow/tfjs-react-native.
-    // The 'handleCameraStream' function is not called.
-    // For real-time object detection, you would typically set up a loop that:
-    // 1. Captures an image from the camera using `cameraRef.current.takePictureAsync()`.
-    // 2. Converts the image to a tensor using `tf.node.decodeImage()`.
-    // 3. Passes the tensor to your model for detection.
-    // This would be implemented inside a useEffect hook with a dependency on the loaded model.
-    const handleCameraStream = (images: IterableIterator<tf.Tensor3D>) => {
-        const loop = async () => {
-            if (model) {
-                // Get the next frame from the camera
-                const imageTensor = images.next().value as tf.Tensor3D;
+        // Take the Picture
+        // We get the image as a base64 string, which is what our API needs
+        // TODO: we shouldn't be taking individual images, process video feed itself,
+        //  this implementation is very rudimentary
+        const options = { quality: 0.5, base64: true, skipProcessing: true};
+        let photo;
+        try {
+            // Note: this causes the screen to flash with each picture taken, but it should be removed eventually
+            // as we transition to processing the video feed vs taking individual images on an interval
+            photo = await cameraRef.current.takePictureAsync(options);
+        } catch (error) {
+            console.error("Failed to take picture:", error);
+            setIsProcessing(false);
+            return;
+        }
 
-                if (imageTensor) {
-                    try {
-                        // Run detection
-                        const predictions = await model.detect(imageTensor);
+        // Send to backend endpoint
+        const apiGatewayUrl = "https://backend.example.com/detect";
+        console.log("Sending image to API Gateway...");
 
-                        // Update state with detections
-                        setDetections(predictions as Detection[]);
-                    } catch (error) {
-                        console.error('Error during detection:', error);
-                    }
+        try {
+            // We send the base64 string in a JSON body
+            const response = await fetch(apiGatewayUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    image: photo.base64,
 
-                    // Dispose of the tensor to prevent memory leaks
-                    tf.dispose(imageTensor);
-                }
+                }),
+            });
+
+            // Get the Result
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error("API Error:", response.status, errorText);
+                alert(`MOCK ERROR: API call failed. (This is expected if URL is a placeholder)`);
+            } else {
+                // If the call succeeds
+                const data = await response.json();
+                console.log("Detections from SageMaker:", data);
+                // Process data here?
+                alert(`MOCK SUCCESS: Detected ${data.detections.length} objects.`);
             }
-            // Request the next frame to continue the loop
-            requestAnimationFrame(loop);
+
+        } catch (error) {
+            console.error("Fetch Error:", error);
+            // This will happen if the URL is bad, or you have no internet
+            alert("MOCK SUCCESS: Captured image and sent to placeholder URL. See console for details.");
+            console.log("Mock capture success. The app would have sent a base64 string to the API.");
+        }
+
+        setIsProcessing(false);
+    };
+
+    useEffect(() => {
+        // Wait for permissions and for the camera to be ready
+        if (!permission || !isCameraReady) {
+            return;
+        }
+
+        if (isProcessing) {
+            return;
+        }
+
+        // Set a timer to run the detection
+        const timerId = setTimeout(() => {
+            handleDetect().then(r => {});
+        }, DETECTION_INTERVAL_MS);
+
+        // Cleanup function
+        return () => {
+            clearTimeout(timerId);
         };
-        loop();
-    };
-
-    // --- Rendering Functions ---
-
-    // Helper function to render bounding boxes (SVG Rects)
-    const renderBoxes = (): (React.JSX.Element | null)[] | null => {
-        if (!detections) return null;
-        return detections.map((detection: Detection, i: number): JSX.Element | null => {
-            if (!detection || !detection.bbox) return null;
-            const [x, y, w, h] = detection.bbox;
-
-            // NOTE: This scaling is a simple example.
-            // A more robust solution would measure the camera view's actual
-            // layout (onLayout prop) and the tensor's dimensions
-            // to calculate the correct scaling factor.
-
-            return (
-                <Rect
-                    key={i}
-                    x={x}
-                    y={y}
-                    width={w}
-                    height={h}
-                    strokeWidth="2"
-                    stroke="red"
-                    fill="transparent"
-                />
-            );
-        });
-    };
-
-    // Helper function to render text labels (React Native Text)
-    const renderTextBoxes = (): (React.JSX.Element | null)[] | null => {
-        if (!detections) return null;
-        return detections.map((detection: Detection, i: number): JSX.Element | null => {
-            if (!detection || !detection.bbox) return null;
-            const [x, y] = detection.bbox;
-            const { class: detectionClass, score } = detection;
-            return (
-                <Text
-                    key={`text-${i}`}
-                    style={[styles.boxText, { left: x + 5, top: y + 5 }]}
-                >
-                    {`${detectionClass} (${Math.round(score * 100)}%)`}
-                </Text>
-            );
-        });
-    };
+    }, [isProcessing, permission, isCameraReady]);
 
     // --- Main Render ---
 
@@ -142,27 +111,17 @@ export default function App(): JSX.Element {
 
     return (
         <View style={styles.container}>
-            <Text style={styles.title}>Stride Project - Local Detection</Text>
-            {/*{model ? (*/}
-                <CameraView
-                    ref={cameraRef}
-                    style={styles.camera}
-                    facing={'back'}
-                    onCameraReady={() => console.log("Camera is ready")}
-                />
-            {/*) : (*/}
-                {/*<Text style={styles.loadingText}>Loading Model...</Text>*/}
-            {/*// )}*/}
-
-            {/* SVG overlay for drawing bounding boxes */}
-            <Svg style={styles.svg} width={width} height={height}>
-                {renderBoxes()}
-            </Svg>
-
-            {/* View overlay for rendering text labels (must be separate from Svg) */}
-            <View style={styles.textBoxContainer}>
-                {renderTextBoxes()}
-            </View>
+            <Text style={styles.title}>Stride</Text>
+            <CameraView
+                ref={cameraRef}
+                style={styles.camera}
+                facing={'back'}
+                onCameraReady={() => {
+                    console.log("Camera is ready")
+                    setIsCameraReady(true);
+                    }
+                }
+            />
         </View>
     );
 }
@@ -190,29 +149,5 @@ const styles = StyleSheet.create({
     loadingText: {
         color: 'white',
         fontSize: 18,
-    },
-    svg: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100%',
-        zIndex: 5, // Renders above the camera
-    },
-    textBoxContainer: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100%',
-        zIndex: 10, // Renders above the SVG
-    },
-    boxText: {
-        position: 'absolute',
-        color: 'red',
-        fontWeight: 'bold',
-        fontSize: 14,
-        backgroundColor: 'rgba(255, 255, 255, 0.4)',
-        padding: 2,
-    },
+    }
 });
