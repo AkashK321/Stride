@@ -1,4 +1,8 @@
-# Welcome to your Expo app 👋
+# Stride is an accessibility app by 
+   # Akash Kumar
+   # Hilal B Tasdemir
+   # Karthik Digavalli
+   # Rory Tippery
 
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
