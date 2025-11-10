@@ -1,80 +1,80 @@
-import React, {useState, useEffect, useRef, JSX} from 'react';
-import {StyleSheet, Text, View, Button, TouchableOpacity} from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import React, { JSX, useEffect, useRef, useState } from 'react';
+import { Button, Modal, StyleSheet, Text, View } from 'react-native';
 
 // Set the detection interval (in milliseconds)
-const DETECTION_INTERVAL_MS = 5000;
+// Show the capture modal every 3 seconds as a placeholder
+const DETECTION_INTERVAL_MS = 3000;
 
 export default function App(): JSX.Element {
     const [permission, requestPermission] = useCameraPermissions();
     const cameraRef = useRef<CameraView | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const [isCameraReady, setIsCameraReady] = useState(false);
+    const [requestedPermissionOnce, setRequestedPermissionOnce] = useState(false);
+    const [showCaptureModal, setShowCaptureModal] = useState(false);
 
+    // Simulated detection: show the capture modal and log a mock detection.
+    // The original native capture code is commented out below so you can re-enable it later
+    // when you're ready to use real camera captures on a physical device.
     const handleDetect = async () => {
-        if (!cameraRef.current || isProcessing) {
-            return;
-        }
-
+        if (isProcessing) return;
         setIsProcessing(true);
 
-        // Take the Picture
-        // We get the image as a base64 string, which is what our API needs
-        // TODO: we shouldn't be taking individual images, process video feed itself,
-        //  this implementation is very rudimentary
-        const options = { quality: 0.5, base64: true, skipProcessing: true};
-        let photo;
-        try {
-            // Note: this causes the screen to flash with each picture taken, but it should be removed eventually
-            // as we transition to processing the video feed vs taking individual images on an interval
-            photo = await cameraRef.current.takePictureAsync(options);
-        } catch (error) {
-            console.error("Failed to take picture:", error);
+        // Show the modal briefly to simulate a capture
+        setShowCaptureModal(true);
+        setTimeout(() => setShowCaptureModal(false), 1000);
+
+        // Log a mock detection result
+        console.log('MOCK: Simulated capture — no native camera call performed.');
+
+        /*
+        // Original native capture implementation (commented out):
+        if (!cameraRef.current) {
+            console.log('cameraRef is not available, skipping native capture');
             setIsProcessing(false);
             return;
         }
 
-        // Send to backend endpoint
-        const apiGatewayUrl = "https://backend.example.com/detect";
-        console.log("Sending image to API Gateway...");
-
         try {
-            // We send the base64 string in a JSON body
-            const response = await fetch(apiGatewayUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    image: photo.base64,
+            const options = { quality: 0.5, base64: true, skipProcessing: true };
+            const photo = await cameraRef.current.takePictureAsync(options);
+            console.log('Captured photo (native):', photo.uri);
 
-                }),
-            });
-
-            // Get the Result
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error("API Error:", response.status, errorText);
-                alert(`MOCK ERROR: API call failed. (This is expected if URL is a placeholder)`);
-            } else {
-                // If the call succeeds
-                const data = await response.json();
-                console.log("Detections from SageMaker:", data);
-                // Process data here?
-                alert(`MOCK SUCCESS: Detected ${data.detections.length} objects.`);
+            // Send to backend endpoint (example)
+            const apiGatewayUrl = 'https://backend.example.com/detect';
+            try {
+                const response = await fetch(apiGatewayUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image: photo.base64 }),
+                });
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.log('API Error (non-OK response):', response.status, errorText);
+                } else {
+                    const data = await response.json();
+                    console.log('Detections from backend:', data);
+                }
+            } catch (fetchErr) {
+                console.log('Fetch error while sending photo:', fetchErr);
             }
-
-        } catch (error) {
-            console.error("Fetch Error:", error);
-            // This will happen if the URL is bad, or you have no internet
-            alert("MOCK SUCCESS: Captured image and sent to placeholder URL. See console for details.");
-            console.log("Mock capture success. The app would have sent a base64 string to the API.");
+        } catch (nativeErr) {
+            console.log('Native camera capture failed:', nativeErr);
         }
+        */
 
         setIsProcessing(false);
     };
 
     useEffect(() => {
+        // Auto-request permission once when the component mounts / when permission object becomes available
+        if (permission && !permission.granted && !requestedPermissionOnce) {
+            // trigger OS permission prompt
+            requestPermission();
+            setRequestedPermissionOnce(true);
+        }
+
         // Wait for permissions and for the camera to be ready
         if (!permission || !isCameraReady) {
             return;
@@ -84,15 +84,18 @@ export default function App(): JSX.Element {
             return;
         }
 
-        // Set a timer to run the detection
-        const timerId = setTimeout(() => {
-            handleDetect().then(r => {});
-        }, DETECTION_INTERVAL_MS);
+        // When permission is granted and camera is ready, start periodic simulated captures
+        if (permission.granted && isCameraReady) {
+            // run one immediately
+            handleDetect().then(() => {});
+            const id = setInterval(() => {
+                handleDetect().then(() => {});
+            }, DETECTION_INTERVAL_MS);
+            return () => clearInterval(id);
+        }
 
-        // Cleanup function
-        return () => {
-            clearTimeout(timerId);
-        };
+        // Otherwise, nothing to do until camera is ready and permission granted
+        return;
     }, [isProcessing, permission, isCameraReady]);
 
     // --- Main Render ---
@@ -122,6 +125,14 @@ export default function App(): JSX.Element {
                     }
                 }
             />
+            <Modal visible={showCaptureModal} transparent animationType="fade">
+              <View style={styles.modalContainer}>
+                <View style={styles.modalCard}>
+                  <Text style={{fontSize:18, fontWeight:'600'}}>Image Captured</Text>
+                  <Text style={{marginTop:8,color:'#444'}}>Captured — image was successfully taken.</Text>
+                </View>
+              </View>
+            </Modal>
         </View>
     );
 }
@@ -150,4 +161,19 @@ const styles = StyleSheet.create({
         color: 'white',
         fontSize: 18,
     }
+    ,
+    modalContainer: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    modalCard: {
+        width: '80%',
+        backgroundColor: '#fff',
+        padding: 20,
+        borderRadius: 10,
+        alignItems: 'center',
+    }
 });
+
