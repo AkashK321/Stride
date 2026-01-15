@@ -1,3 +1,4 @@
+import subprocess
 from aws_cdk import (
     Stack,
     Duration,
@@ -5,6 +6,7 @@ from aws_cdk import (
     aws_apigateway as apigw,
 )
 from constructs import Construct
+import os  # <--- Added this import
 
 class CdkStack(Stack):
 
@@ -12,22 +14,50 @@ class CdkStack(Stack):
         super().__init__(scope, construct_id, **kwargs)
 
         # ---------------------------------------------------------------------
+        # 0. AUTOMATED BUILD STEP
+        # ---------------------------------------------------------------------
+        # This allows 'cdk deploy' to build your Kotlin code automatically.
+        
+        # Define paths
+        this_dir = os.path.dirname(__file__)
+        # Go up one level from 'cdk' to 'aws_resources', then into 'backend'
+        backend_dir = os.path.join(this_dir, "..", "backend")
+        gradlew_bat = os.path.join(backend_dir, "gradlew.bat")
+
+        print(f"🔨 Building Kotlin project in {backend_dir}...")
+        
+        # Run the Gradle Wrapper
+        # check=True will verify the build succeeded (stops deploy if build fails)
+        try:
+            subprocess.run(
+                [gradlew_bat, "shadowJar"], 
+                cwd=backend_dir, 
+                shell=True, 
+                check=True
+            )
+            print("✅ Build successful!")
+        except subprocess.CalledProcessError:
+            print("❌ Gradle build failed. Deployment aborted.")
+            raise Exception("Gradle build failed. Check the logs above.")
+
+        # ---------------------------------------------------------------------
         # 1. The Kotlin Lambda Function
         # ---------------------------------------------------------------------
-        my_function = _lambda.Function(
+        
+        # Path to the compiled JAR (created by the step above)
+        jar_path = os.path.join(backend_dir, "build", "libs", "kotlin_app-1.0-all.jar")
+        
+        backend_handler = _lambda.Function(
             self, "BackendHandler",
             
             # Use Java 21 for modern Kotlin support
             runtime=_lambda.Runtime.JAVA_21,
             
-            # Handler format: package.name.ClassName::methodName
-            # (Update this to match your actual Kotlin package/class)
-            handler="com.handler.Handler",
+            # CRITICAL FIX: Must match 'package com.example.project' in Handler.kt
+            handler="com.handler.Handler", 
 
-            # Path to the compiled JAR. 
-            # This assumes your Kotlin project folder ('kotlin_app') is in the 
-            # same root directory as your CDK app.py
-            code=_lambda.Code.from_asset("backend/build/libs/kotlin_app-1.0-all.jar"),
+            # Point to the calculated JAR path
+            code=_lambda.Code.from_asset(jar_path),
 
             # JVM Optimization
             memory_size=1024, 
@@ -41,8 +71,8 @@ class CdkStack(Stack):
         # 2. The API Gateway
         # ---------------------------------------------------------------------
         api = apigw.LambdaRestApi(
-            self, "MyEndpoint",
-            handler=my_function,
+            self, "APIEndpoint",
+            handler=backend_handler,
             proxy=False 
         )
 
