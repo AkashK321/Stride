@@ -1,3 +1,4 @@
+import platform
 import subprocess
 from aws_cdk import (
     Stack,
@@ -22,7 +23,21 @@ class CdkStack(Stack):
         this_dir = os.path.dirname(__file__)
         # Go up one level from 'cdk' to 'aws_resources', then into 'backend'
         backend_dir = os.path.join(this_dir, "..", "backend")
-        gradlew_bat = os.path.join(backend_dir, "gradlew.bat")
+        if platform.system() == "Windows":
+            gradle_script = "gradlew.bat"
+        else:
+            gradle_script = "./gradlew"
+            
+        gradle_path = os.path.join(backend_dir, gradle_script)
+
+        # For Mac/Linux: Ensure the script is executable
+        if platform.system() != "Windows":
+            try:
+                # 'gradlew' is the file name without ./
+                raw_script_path = os.path.join(backend_dir, "gradlew") 
+                os.chmod(raw_script_path, 0o755)
+            except OSError:
+                print(f"⚠️ Warning: Could not make {raw_script_path} executable.")
 
         print(f"🔨 Building Kotlin project in {backend_dir}...")
         
@@ -30,7 +45,7 @@ class CdkStack(Stack):
         # check=True will verify the build succeeded (stops deploy if build fails)
         try:
             subprocess.run(
-                [gradlew_bat, "shadowJar"], 
+                [gradle_path, "shadowJar"], 
                 cwd=backend_dir, 
                 shell=True, 
                 check=True
