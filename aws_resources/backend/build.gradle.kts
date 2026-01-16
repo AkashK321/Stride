@@ -30,7 +30,7 @@ java {
     }
 }
 
-tasks.named<ShadowJar>("shadowJar") {
+tasks.shadowJar {
     archiveBaseName.set("kotlin_app")
     archiveClassifier.set("all")
     archiveVersion.set("1.0")
