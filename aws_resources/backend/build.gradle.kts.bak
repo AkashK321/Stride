@@ -1,0 +1,33 @@
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+
+plugins {
+    kotlin("jvm") version "1.9.22"
+    id("com.github.johnrengelman.shadow") version "8.1.1"
+}
+
+group = "com.example"
+version = "1.0"
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation("com.amazonaws:aws-lambda-java-core:1.2.3")
+    implementation("com.amazonaws:aws-lambda-java-events:3.11.4")
+    implementation(kotlin("stdlib"))
+}
+
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(21))
+    }
+}
+
+// Simplified task configuration to avoid type errors
+tasks.withType<ShadowJar> {
+    archiveBaseName.set("kotlin_app")
+    archiveClassifier.set("all")
+    archiveVersion.set("1.0")
+    mergeServiceFiles()
+}
