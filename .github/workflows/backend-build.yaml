@@ -1,0 +1,49 @@
+# ============================================================================
+# WORKFLOW: Backend Build
+# ============================================================================
+# 
+# PURPOSE:
+#   Builds the Kotlin Lambda backend and runs unit tests. This is a pure
+#   build/test workflow with no deployment logic. Outputs the JAR artifact
+#   for use by the infrastructure deployment workflow.
+#
+# TRIGGERS:
+#   1. Push event when backend code changes:
+#      - Paths: aws_resources/backend/**
+#      - Branches: All branches (**)
+#   2. Pull request when backend code changes:
+#      - Paths: aws_resources/backend/**
+#      - Branches: All branches (**)
+#   3. Manual trigger (workflow_dispatch):
+#      - Can be run manually from GitHub Actions UI
+#
+# WORKFLOW FLOW:
+#   Push Event (backend/** changed)
+#       ↓
+#   backend-build runs
+#       ↓
+#   [Build Kotlin JAR] → [Run Unit Tests]
+#       ↓
+#   [If tests pass] → [Upload JAR Artifact]
+#       ↓
+#   [Call infrastructure-deploy.yml] (ONLY if build and tests succeeded)
+#
+# CALLS OTHER WORKFLOWS:
+#   - infrastructure-deploy.yml (workflow_call)
+#     * Condition: ONLY if build succeeds AND unit tests pass
+#     * Purpose: Gate infrastructure deployment behind successful builds/tests
+#     * Inputs: branch_name, jar_artifact_id
+#     * Note: Infrastructure deploy will handle both stack and Lambda deployment
+#
+# OUTPUTS:
+#   - JAR artifact (stored in workflow artifacts)
+#     * Artifact name: kotlin-app-jar
+#     * File: kotlin_app-1.0-all.jar
+#   - Build status (success/failure)
+#   - Test results
+#
+# DEPENDENCIES:
+#   - None (entry point workflow)
+#   - Acts as gatekeeper for infrastructure deployment
+#
+# ============================================================================
