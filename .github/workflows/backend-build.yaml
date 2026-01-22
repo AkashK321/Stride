@@ -118,7 +118,7 @@ jobs:
           path: aws_resources/backend/build/libs/kotlin_app-1.0-all.jar
           retention-days: 1
 
-
+  # Comment to test build workflow is triggered when yaml is changed
   # unit-tests:
   #  name: Unit Tests
 
