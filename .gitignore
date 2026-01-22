@@ -60,6 +60,7 @@ cdk.out
 # Ignore Gradle build output directory
 # build
 
+
 # Ignore the library folders installed by pip
 aws_resources/schema_initializer/pg8000/
 aws_resources/schema_initializer/scramp/
