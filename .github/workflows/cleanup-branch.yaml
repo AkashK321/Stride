@@ -45,6 +45,7 @@
 
 name: Cleanup Branch
 
+# Set branches to none to prevent this workflow from being triggered while its still not implemented
 on:
   push:
     branches:
