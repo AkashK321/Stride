@@ -118,8 +118,51 @@ jobs:
           path: aws_resources/backend/build/libs/kotlin_app-1.0-all.jar
           retention-days: 1
 
-  # unit-tests:
-  #  name: Unit Tests
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Checkout the repository code
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      # Step 2: Set up Java 21 (required by build.gradle.kts)
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+      
+      # Step 3: Make Gradle wrapper executable (Linux/Mac)
+      - name: Make Gradle wrapper executable
+        working-directory: aws_resources/backend
+        run: chmod +x gradlew
+      
+      # Step 4: Run unit tests using Gradle test task
+      - name: Run unit tests
+        working-directory: aws_resources/backend
+        run: ./gradlew test --no-daemon
+      
+      # Step 5: Upload test results (if any tests exist)
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: aws_resources/backend/build/test-results/**/*.xml
+          retention-days: 7
+          if-no-files-found: ignore
+      
+      # Step 6: Upload test reports (HTML format, if generated)
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: aws_resources/backend/build/reports/tests/**/*
+          retention-days: 7
+          if-no-files-found: ignore
 
 
   # deploy:

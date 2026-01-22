@@ -22,6 +22,11 @@ dependencies {
     implementation("com.amazonaws:aws-lambda-java-core:1.2.3")
     implementation("com.amazonaws:aws-lambda-java-events:3.11.4")
     implementation(kotlin("stdlib"))
+    
+    // Test dependencies
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit5:1.9.23")
+    testImplementation("org.junit.jupiter:junit-jupiter:5.10.0")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 java {
@@ -35,4 +40,8 @@ tasks.shadowJar {
     archiveClassifier.set("all")
     archiveVersion.set("1.0")
     mergeServiceFiles()
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
