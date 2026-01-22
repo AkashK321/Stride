@@ -62,6 +62,7 @@
 name: Infrastructure Deploy
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 on:
   workflow_call:
     inputs:
@@ -321,26 +322,3 @@ jobs:
           echo $OUTPUTS | jq '.'
         continue-on-error: true
       
-=======
-# ============================================================================
->>>>>>> cc76230 (initialized workflow files and added headers for initial infrastructure)
-=======
-# Set branches to none to prevent this workflow from being triggered while its still not implemented
-on:
-  push:
-    branches:
-      - 'NONE'
-<<<<<<< HEAD
->>>>>>> c369a13 (updated non-build workflow files to prevent them from being run while they're still not implemented)
-=======
-
-jobs:
-  cleanup:
-    name: Cleanup
-    runs-on: ubuntu-latest
-    
-    steps:
-      # Step 1: Checkout the repository code
-      - name: Checkout code
-        uses: actions/checkout@v4
->>>>>>> e2875c0 (added comments and jobs to all so that they don't get run while they're still not implemented)

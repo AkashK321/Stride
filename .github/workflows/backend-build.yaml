@@ -56,7 +56,7 @@ on:
       - '**'
     paths:
       - 'aws_resources/backend/**'
-      - '.github/workflows/backend-build.yaml'
+      - '.github/workflows/**'
   pull_request:
     branches:
       - '**'
@@ -64,11 +64,17 @@ on:
       - 'aws_resources/backend/**'
   workflow_dispatch:
 
+# Prevent multiple concurrent runs on the same branch
+concurrency:
+  group: backend-build-${{ github.ref }}
+  cancel-in-progress: true
+
 
 jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     
     outputs:
       jar_path: ${{ steps.build.outputs.jar_path }}
@@ -121,6 +127,7 @@ jobs:
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     
     steps:
       # Step 1: Checkout the repository code
@@ -133,6 +140,7 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
+          cache: 'gradle'  # Cache Gradle dependencies
       
       # Step 3: Make Gradle wrapper executable (Linux/Mac)
       - name: Make Gradle wrapper executable
@@ -144,30 +152,26 @@ jobs:
         working-directory: aws_resources/backend
         run: ./gradlew test --no-daemon
       
-      # Step 5: Upload test results (if any tests exist)
-      - name: Upload test results
+      # Step 5: Publish test results to GitHub
+      - name: Publish test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: dorny/test-reporter@v1
         with:
-          name: test-results
+          name: Unit Test Results
           path: aws_resources/backend/build/test-results/**/*.xml
-          retention-days: 7
-          if-no-files-found: ignore
-      
-      # Step 6: Upload test reports (HTML format, if generated)
-      - name: Upload test reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-reports
-          path: aws_resources/backend/build/reports/tests/**/*
-          retention-days: 7
-          if-no-files-found: ignore
+          reporter: java-junit
+          fail-on-error: false
+          list-suites: all
+          list-tests: all
 
 
-  # deploy:
-  #   name: Deploy
-  #   needs: [build, unit-tests]
-  #   if: success()
-  #   uses: ./.github/workflows/infrastructure-deploy.yaml
+  deploy:
+    name: Call Infrastructure Deploy
+    needs: [build, unit-tests]
+    if: success()
+    uses: ./.github/workflows/infrastructure-deploy.yaml
+    with:
+      branch_name: ${{ github.ref_name }}
+      jar_artifact_name: ${{ needs.build.outputs.artifact_name }}
+    secrets: inherit
   
