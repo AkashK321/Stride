@@ -1,6 +1,8 @@
 package com.handler
 
 import com.amazonaws.services.lambda.runtime.Context
+import com.amazonaws.services.lambda.runtime.CognitoIdentity
+import com.amazonaws.services.lambda.runtime.ClientContext
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent
 import org.junit.jupiter.api.Assertions.*
@@ -26,6 +28,8 @@ class HandlerTest {
             override fun getInvokedFunctionArn(): String = "arn:aws:lambda:us-east-1:123456789012:function:test"
             override fun getRemainingTimeInMillis(): Int = 30000
             override fun getMemoryLimitInMB(): Int = 512
+            override fun getIdentity(): CognitoIdentity? = null
+            override fun getClientContext(): ClientContext? = null
             override fun getLogger(): com.amazonaws.services.lambda.runtime.LambdaLogger {
                 return object : com.amazonaws.services.lambda.runtime.LambdaLogger {
                     override fun log(message: String) = println(message)
