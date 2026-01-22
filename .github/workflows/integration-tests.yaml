@@ -47,7 +47,18 @@
 
 name: Integration Tests
 
+# Set branches to none to prevent this workflow from being triggered while its still not implemented
 on:
   push:
     branches:
       - 'NONE'
+
+jobs:
+  cleanup:
+    name: Cleanup
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Checkout the repository code
+      - name: Checkout code
+        uses: actions/checkout@v4
