@@ -42,3 +42,10 @@
 #   - Note: Should be idempotent (safe to run multiple times)
 #
 # ============================================================================
+
+name: Cleanup Branch
+
+on:
+  push:
+    branches:
+      - 'NONE'

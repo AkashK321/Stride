@@ -54,3 +54,11 @@
 #   - Note: If triggered by CDK-only changes, will use latest JAR artifact
 #
 # ============================================================================
+
+name: Infrastructure Deploy
+
+# Set branches to none to prevent this workflow from being triggered while its still not implemented
+on:
+  push:
+    branches:
+      - 'NONE'
