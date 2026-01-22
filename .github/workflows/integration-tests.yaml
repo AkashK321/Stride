@@ -44,3 +44,10 @@
 #   - Requires: Deployed CloudFormation stack with API endpoint
 #
 # ============================================================================
+
+name: Integration Tests
+
+on:
+  push:
+    branches:
+      - 'NONE'

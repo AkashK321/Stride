@@ -58,10 +58,14 @@
 #   - Note: If triggered by CDK-only changes, will use latest JAR artifact
 #
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> c369a13 (updated non-build workflow files to prevent them from being run while they're still not implemented)
 # ============================================================================
 
 name: Infrastructure Deploy
 
+<<<<<<< HEAD
 on:
   workflow_call:
     inputs:
@@ -324,3 +328,10 @@ jobs:
 =======
 # ============================================================================
 >>>>>>> cc76230 (initialized workflow files and added headers for initial infrastructure)
+=======
+# Set branches to none to prevent this workflow from being triggered while its still not implemented
+on:
+  push:
+    branches:
+      - 'NONE'
+>>>>>>> c369a13 (updated non-build workflow files to prevent them from being run while they're still not implemented)
