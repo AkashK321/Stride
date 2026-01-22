@@ -11,7 +11,11 @@
 # TRIGGERS:
 #   1. Called by backend-build (workflow_call):
 #      - Primary trigger: Only after successful build and unit tests
+<<<<<<< HEAD
 #      - Inputs: branch_name, jar_artifact_name
+=======
+#      - Inputs: branch_name, jar_artifact_id
+>>>>>>> cc76230 (initialized workflow files and added headers for initial infrastructure)
 #      - Downloads JAR artifact and deploys everything
 #   2. Push event when CDK code changes (if backend already built):
 #      - Paths: aws_resources/cdk/**
@@ -53,6 +57,7 @@
 #   - Requires: JAR artifact from backend-build workflow
 #   - Note: If triggered by CDK-only changes, will use latest JAR artifact
 #
+<<<<<<< HEAD
 # ============================================================================
 
 name: Infrastructure Deploy
@@ -316,3 +321,6 @@ jobs:
           echo $OUTPUTS | jq '.'
         continue-on-error: true
       
+=======
+# ============================================================================
+>>>>>>> cc76230 (initialized workflow files and added headers for initial infrastructure)
