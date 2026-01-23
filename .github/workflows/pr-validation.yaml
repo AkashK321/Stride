@@ -1,0 +1,139 @@
+# ============================================================================
+# WORKFLOW: PR Validation
+# ============================================================================
+#
+# PURPOSE:
+#   Fast CI validation for pull requests. Runs build and unit tests without any
+#   deployment. This provides quick feedback on PRs without the overhead of
+#   deploying to AWS.
+#
+# TRIGGERS:
+#   1. Pull request events:
+#      - Types: opened, synchronize, reopened
+#      - Paths: aws_resources/**, .github/workflows/**
+#      - Runs: Build + Unit Tests
+#      - NO deployment (prevents duplicate branch stack deployments)
+#
+# WORKFLOW FLOW:
+#   Pull Request Event (opened/updated)
+#       ↓
+#   pr-validation runs
+#       ↓
+#   [Build Kotlin JAR] → [Run Unit Tests]
+#       ↓
+#   [Fast CI complete - NO deployment]
+#
+# OUTPUTS:
+#   - Build status (success/failure)
+#   - Test results
+#
+# DEPENDENCIES:
+#   - None (standalone PR validation workflow)
+#
+# ============================================================================
+
+name: PR Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'aws_resources/**'
+      - '.github/workflows/**'
+
+# Permissions required for test-reporter
+permissions:
+  contents: read
+  checks: write      # Required for test-reporter to create check runs
+  pull-requests: write  # Required for PR comments (if test-reporter adds them)
+
+# Prevent multiple concurrent runs on the same PR
+concurrency:
+  group: pr-validation-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      # Step 1: Checkout the repository code
+      - name: Checkout code
+        uses: actions/checkout@v4
+        # Checkout the PR branch (head ref), not the merge commit
+        # This ensures we build the PR code, not merged code
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+      
+      # Step 2: Set up Java 21 (required by build.gradle.kts)
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+      
+      # Step 3: Make Gradle wrapper executable (Linux/Mac)
+      - name: Make Gradle wrapper executable
+        working-directory: aws_resources/backend
+        run: chmod +x gradlew
+      
+      # Step 4: Build the JAR using Gradle shadowJar task
+      - name: Build JAR with Gradle
+        working-directory: aws_resources/backend
+        run: ./gradlew shadowJar --no-daemon
+      
+      # Step 5: Verify JAR was created
+      - name: Verify JAR exists
+        working-directory: aws_resources/backend
+        run: |
+          if [ ! -f "build/libs/kotlin_app-1.0-all.jar" ]; then
+            echo "Error: JAR file not found!"
+            exit 1
+          fi
+          echo "✅ JAR built successfully:"
+          ls -lh build/libs/kotlin_app-1.0-all.jar
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      # Step 1: Checkout the repository code
+      - name: Checkout code
+        uses: actions/checkout@v4
+        # Checkout the PR branch (head ref), not the merge commit
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+      
+      # Step 2: Set up Java 21 (required by build.gradle.kts)
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'gradle'  # Cache Gradle dependencies
+      
+      # Step 3: Make Gradle wrapper executable (Linux/Mac)
+      - name: Make Gradle wrapper executable
+        working-directory: aws_resources/backend
+        run: chmod +x gradlew
+      
+      # Step 4: Run unit tests using Gradle test task
+      - name: Run unit tests
+        working-directory: aws_resources/backend
+        run: ./gradlew test --no-daemon
+      
+      # Step 5: Publish test results to GitHub
+      - name: Publish test results
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Unit Test Results
+          path: aws_resources/backend/build/test-results/**/*.xml
+          reporter: java-junit
+          fail-on-error: false
+          list-suites: all
+          list-tests: all

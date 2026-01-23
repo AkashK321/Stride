@@ -4,11 +4,11 @@
  * This is a general purpose Gradle build.
  * Learn more about Gradle by exploring our Samples at https://docs.gradle.org/9.2.1/samples
  */
-import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 
 plugins {
     kotlin("jvm") version "1.9.23"
     id("com.github.johnrengelman.shadow") version "8.1.1"
+    id("org.jlleitschuh.gradle.ktlint") version "12.1.0"
 }
 
 group = "com.example"
@@ -22,7 +22,7 @@ dependencies {
     implementation("com.amazonaws:aws-lambda-java-core:1.2.3")
     implementation("com.amazonaws:aws-lambda-java-events:3.11.4")
     implementation(kotlin("stdlib"))
-    
+
     // Test dependencies
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5:1.9.23")
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.0")
@@ -44,4 +44,29 @@ tasks.shadowJar {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+// Configure ktlint
+ktlint {
+    version.set("1.1.1")
+    enableExperimentalRules.set(true)
+    ignoreFailures.set(false)
+    filter {
+        exclude("**/generated/**")
+        exclude("**/build/**")
+    }
+}
+
+// Task to run lint check (for CI)
+tasks.register("lint") {
+    dependsOn("ktlintCheck")
+    description = "Run ktlint check"
+    group = "verification"
+}
+
+// Task to auto-fix linting issues (for local development)
+tasks.register("lintFix") {
+    dependsOn("ktlintFormat")
+    description = "Auto-fix ktlint issues"
+    group = "verification"
 }

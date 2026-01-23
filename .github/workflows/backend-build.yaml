@@ -12,10 +12,15 @@
 #      - Paths: aws_resources/**, .github/workflows/**
 #      - Branches: All branches (**)
 #      - Runs full pipeline: build + test + deploy + integration tests
-#      - Feature branches: Deploy to branch-specific stack
-#      - Main branch: Deploy to production stack
+#      - Feature branches: Deploy to branch-specific stack + integration tests
+#      - Main branch: Deploy to production stack (StrideStack) + integration tests
+#        * This implements post-merge integration testing on main
+#        * Catches any issues that slip through PR validation
 #   2. Manual trigger (workflow_dispatch):
 #      - Can be run manually from GitHub Actions UI
+#
+# NOTE: Pull requests are handled by pr-validation.yaml workflow
+#       This workflow does NOT trigger on pull_request events
 #
 # WORKFLOW FLOW:
 #   Push Event (backend/** changed)
@@ -32,12 +37,21 @@
 #       ↓
 #   [Full pipeline: Build → Test → Deploy → Integration Tests]
 #
+#   Push to Main Branch (post-merge):
+#       ↓
+#   Same flow as above, but deploys to production stack (StrideStack)
+#       ↓
+#   Integration tests run against production environment
+#       ↓
+#   This catches any issues that slip through PR validation
+#
 # CALLS OTHER WORKFLOWS:
 #   - infrastructure-deploy.yml (workflow_call)
 #     * Condition: ONLY if build succeeds AND unit tests pass
 #     * Purpose: Gate infrastructure deployment behind successful builds/tests
-#     * Inputs: branch_name (PR source branch for PRs, actual branch for pushes), jar_artifact_name
+#     * Inputs: branch_name (actual branch for pushes), jar_artifact_name
 #     * Note: Infrastructure deploy handles stack deployment and calls integration-tests
+#     * Note: PRs are validated separately via pr-validation.yaml (no deployment)
 #
 # OUTPUTS:
 #   - JAR artifact (stored in workflow artifacts)
