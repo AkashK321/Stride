@@ -1,0 +1,63 @@
+# ============================================================================
+# WORKFLOW: Cleanup Branch
+# ============================================================================
+#
+# PURPOSE:
+#   Destroys branch-specific CloudFormation stacks and cleans up
+#   associated AWS resources (S3 artifacts, Lambda versions, etc.)
+#   when a branch is deleted or merged into main.
+#
+# TRIGGERS:
+#   1. Branch deletion event (delete):
+#      - Automatically triggered when a branch is deleted
+#      - Extracts branch name from event context
+#   2. Pull request closed (pull_request: closed):
+#      - Triggered when PR is merged or closed
+#      - Only on main branch (to cleanup merged feature branches)
+#   3. Manual trigger (workflow_dispatch):
+#      - Can be run manually to cleanup any branch
+#      - Inputs: branch_name, force (boolean)
+#
+# WORKFLOW FLOW:
+#   Branch Deleted OR PR Closed OR Manual Trigger
+#       ↓
+#   cleanup-branch runs
+#       ↓
+#   [Extract/Validate branch name] → [Check if stack exists]
+#       ↓
+#   [Destroy CDK Stack] → [Cleanup S3 artifacts]
+#       ↓
+#   [Verify cleanup] → [Post cleanup status]
+#
+# CALLS OTHER WORKFLOWS:
+#   - None (cleanup workflow, no downstream dependencies)
+#
+# OUTPUTS:
+#   - Cleanup status (success/failure)
+#   - Resources destroyed
+#   - Cleanup timestamp
+#
+# DEPENDENCIES:
+#   - None (independent cleanup workflow)
+#   - Note: Should be idempotent (safe to run multiple times)
+#
+# ============================================================================
+
+name: Cleanup Branch
+
+# Set branches to none to prevent this workflow from being triggered while its still not implemented
+on:
+  push:
+    branches:
+      - 'NONE'
+
+jobs:
+  cleanup:
+    name: Cleanup
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Checkout the repository code
+      - name: Checkout code
+        uses: actions/checkout@v4
+      

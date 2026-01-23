@@ -1,0 +1,96 @@
+# ============================================================================
+# WORKFLOW: Infrastructure Deploy
+# ============================================================================
+#
+# PURPOSE:
+#   Deploys all AWS infrastructure including the CloudFormation stack,
+#   Lambda function (using the JAR from backend-build), API Gateway, and
+#   any other AWS resources. This is the single deployment workflow that
+#   handles everything in AWS.
+#
+# TRIGGERS:
+#   1. Called by backend-build (workflow_call):
+#      - Primary trigger: Only after successful build and unit tests
+#      - Inputs: branch_name, jar_artifact_id
+#      - Downloads JAR artifact and deploys everything
+#   2. Push event when CDK code changes (if backend already built):
+#      - Paths: aws_resources/cdk/**
+#      - Branches: All branches (**)
+#      - Note: Will need to download latest JAR artifact or use existing
+#   3. Manual trigger (workflow_dispatch):
+#      - Can be run manually with branch_name input
+#      - Use with caution: bypasses build/test gates
+#
+# WORKFLOW FLOW:
+#   workflow_call (from backend-build) OR push (cdk/**) OR workflow_dispatch
+#       ↓
+#   infrastructure-deploy runs
+#       ↓
+#   [Download JAR artifact] → [Place JAR in backend/build/libs/]
+#       ↓
+#   [Check CDK bootstrap] → [Bootstrap if needed]
+#       ↓
+#   [Deploy CDK Stack] → [Stack includes Lambda with JAR]
+#       ↓
+#   [Get Stack Outputs] → [Post stack info to PR]
+#       ↓
+#   [Call integration-tests.yml]
+#
+# CALLS OTHER WORKFLOWS:
+#   - integration-tests.yml (workflow_call)
+#     * Condition: Always after successful stack deployment
+#     * Purpose: Run integration tests against the newly deployed stack
+#     * Inputs: api_endpoint, stack_name, branch_name
+#
+# OUTPUTS:
+#   - Stack name (format: StrideStack-{sanitized-branch-name})
+#   - API Gateway endpoint URL
+#   - Stack status
+#   - Deployment timestamp
+#
+# DEPENDENCIES:
+#   - Must be called by: backend-build.yml (after successful build)
+#   - Requires: JAR artifact from backend-build workflow
+#   - Note: If triggered by CDK-only changes, will use latest JAR artifact
+#
+# ============================================================================
+
+name: Infrastructure Deploy
+
+on:
+  workflow_call:
+    inputs:
+      branch_name:
+        required: true
+        type: string
+        description: 'Branch name for stack deployment'
+      jar_artifact_name:
+        required: true
+        type: string
+        description: 'Name of the JAR artifact to download'
+  
+  # Push trigger for CDK-only changes (commented out until implemented)
+  # push:
+  #   branches:
+  #     - '**'
+  #   paths:
+  #     - 'aws_resources/cdk/**'
+  
+  workflow_dispatch:
+    inputs:
+      branch_name:
+        required: true
+        type: string
+        description: 'Branch name for stack deployment'
+
+
+jobs:
+  deploy:
+    name: Deploy Infrastructure
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    
+    steps:
+      # Step 1: Checkout the repository code
+      - name: Checkout code
+        uses: actions/checkout@v4

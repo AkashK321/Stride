@@ -62,7 +62,7 @@ class CdkStack(Stack):
             except subprocess.CalledProcessError:
                 print("⚠️ Local build failed. Switching to Docker bundling...")
         else:
-             print("⚠️ Gradle wrapper not found. Switching to Docker bundling...")
+            print("⚠️ Gradle wrapper not found. Switching to Docker bundling...")
 
         # Define the code asset based on build result
         if build_succeeded and os.path.exists(local_jar_path):

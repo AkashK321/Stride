@@ -1,0 +1,183 @@
+# ============================================================================
+# WORKFLOW: Backend Build
+# ============================================================================
+# 
+# PURPOSE:
+#   Builds the Kotlin Lambda backend and runs unit tests. This is a pure
+#   build/test workflow with no deployment logic. Outputs the JAR artifact
+#   for use by the infrastructure deployment workflow.
+#
+# TRIGGERS:
+#   1. Push event when backend code or workflow changes:
+#      - Paths: aws_resources/**, .github/workflows/**
+#      - Branches: All branches (**)
+#   2. Pull request when backend code changes:
+#      - Paths: aws_resources/backend/**
+#      - Branches: All branches (**)
+#   3. Manual trigger (workflow_dispatch):
+#      - Can be run manually from GitHub Actions UI
+#
+# WORKFLOW FLOW:
+#   Push Event (backend/** changed)
+#       ↓
+#   backend-build runs
+#       ↓
+#   [Build Kotlin JAR] → [Run Unit Tests]
+#       ↓
+#   [If tests pass] → [Upload JAR Artifact]
+#       ↓
+#   [Call infrastructure-deploy.yml] (ONLY if build and tests succeeded)
+#
+# CALLS OTHER WORKFLOWS:
+#   - infrastructure-deploy.yml (workflow_call)
+#     * Condition: ONLY if build succeeds AND unit tests pass
+#     * Purpose: Gate infrastructure deployment behind successful builds/tests
+#     * Inputs: branch_name, jar_artifact_name
+#     * Note: Infrastructure deploy will handle both stack and Lambda deployment
+#
+# OUTPUTS:
+#   - JAR artifact (stored in workflow artifacts)
+#     * Artifact name: kotlin-app-jar
+#     * File: kotlin_app-1.0-all.jar
+#   - Build status (success/failure)
+#   - Test results
+#
+# DEPENDENCIES:
+#   - None (entry point workflow)
+#   - Acts as gatekeeper for infrastructure deployment
+#
+# ============================================================================
+
+name: Backend Build
+
+on:
+  push:
+    branches:
+      - '**'
+    paths:
+      - 'aws_resources/**'
+      - '.github/workflows/**'
+  pull_request:
+    branches:
+      - '**'
+    paths:
+      - 'aws_resources/backend/**'
+  workflow_dispatch:
+
+# Permissions required for test-reporter to create check runs
+permissions:
+  contents: read
+  checks: write      # Required for test-reporter to create check runs
+  pull-requests: write  # Required for PR comments (if test-reporter adds them)
+
+# Prevent multiple concurrent runs on the same branch
+concurrency:
+  group: backend-build-${{ github.ref }}
+  cancel-in-progress: true
+
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    outputs:
+      jar_path: ${{ steps.build.outputs.jar_path }}
+      artifact_name: kotlin-app-jar
+    
+    steps:
+      # Step 1: Checkout the repository code
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      # Step 2: Set up Java 21 (required by build.gradle.kts)
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+      
+      # Step 3: Make Gradle wrapper executable (Linux/Mac)
+      - name: Make Gradle wrapper executable
+        working-directory: aws_resources/backend
+        run: chmod +x gradlew
+      
+      # Step 4: Build the JAR using Gradle shadowJar task
+      - name: Build JAR with Gradle
+        id: build
+        working-directory: aws_resources/backend
+        run: |
+          ./gradlew shadowJar --no-daemon
+          echo "jar_path=aws_resources/backend/build/libs/kotlin_app-1.0-all.jar" >> $GITHUB_OUTPUT
+      
+      # Step 5: Verify JAR was created
+      - name: Verify JAR exists
+        working-directory: aws_resources/backend
+        run: |
+          if [ ! -f "build/libs/kotlin_app-1.0-all.jar" ]; then
+            echo "Error: JAR file not found!"
+            exit 1
+          fi
+          echo "✅ JAR built successfully:"
+          ls -lh build/libs/kotlin_app-1.0-all.jar
+      
+      # Step 6: Upload JAR as artifact for use by other workflows
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kotlin-app-jar
+          path: aws_resources/backend/build/libs/kotlin_app-1.0-all.jar
+          retention-days: 1
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      # Step 1: Checkout the repository code
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      # Step 2: Set up Java 21 (required by build.gradle.kts)
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'gradle'  # Cache Gradle dependencies
+      
+      # Step 3: Make Gradle wrapper executable (Linux/Mac)
+      - name: Make Gradle wrapper executable
+        working-directory: aws_resources/backend
+        run: chmod +x gradlew
+      
+      # Step 4: Run unit tests using Gradle test task
+      - name: Run unit tests
+        working-directory: aws_resources/backend
+        run: ./gradlew test --no-daemon
+      
+      # Step 5: Publish test results to GitHub
+      - name: Publish test results
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Unit Test Results
+          path: aws_resources/backend/build/test-results/**/*.xml
+          reporter: java-junit
+          fail-on-error: false
+          list-suites: all
+          list-tests: all
+
+
+  deploy:
+    name: Call Infrastructure Deploy
+    needs: [build, unit-tests]
+    if: success()
+    uses: ./.github/workflows/infrastructure-deploy.yaml
+    with:
+      branch_name: ${{ github.ref_name }}
+      jar_artifact_name: ${{ needs.build.outputs.artifact_name }}
+    secrets: inherit
+  

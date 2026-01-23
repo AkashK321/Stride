@@ -1,0 +1,64 @@
+# ============================================================================
+# WORKFLOW: Integration Tests
+# ============================================================================
+#
+# PURPOSE:
+#   Runs integration tests against a deployed CloudFormation stack.
+#   Tests the full backend infrastructure including Lambda functions,
+#   API Gateway endpoints, and any other AWS resources.
+#
+# TRIGGERS:
+#   1. Called by infrastructure-deploy (workflow_call):
+#      - Automatically triggered after successful stack deployment
+#      - Receives: api_endpoint, stack_name, branch_name
+#   2. Manual trigger (workflow_dispatch):
+#      - Can be run manually with required inputs:
+#        * api_endpoint: API Gateway endpoint URL
+#        * stack_name: CloudFormation stack name
+#        * branch_name: Branch name for context
+#   3. Pull request label (optional):
+#      - Can be triggered by adding a label like "run-tests" to PR
+#
+# WORKFLOW FLOW:
+#   workflow_call OR workflow_dispatch
+#       ↓
+#   integration-tests runs
+#       ↓
+#   [Retrieve stack outputs] → [Run integration test suite]
+#       ↓
+#   [Generate test report] → [Post results to PR]
+#       ↓
+#   [Set status check] → [Exit with test results]
+#
+# CALLS OTHER WORKFLOWS:
+#   - None (terminal workflow in pipeline)
+#
+# OUTPUTS:
+#   - Test results (pass/fail)
+#   - Test coverage report
+#   - Test execution logs
+#   - Status check for branch protection
+#
+# DEPENDENCIES:
+#   - Must be called by: infrastructure-deploy.yml (or manually)
+#   - Requires: Deployed CloudFormation stack with API endpoint
+#
+# ============================================================================
+
+name: Integration Tests
+
+# Set branches to none to prevent this workflow from being triggered while its still not implemented
+on:
+  push:
+    branches:
+      - 'NONE'
+
+jobs:
+  cleanup:
+    name: Cleanup
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Checkout the repository code
+      - name: Checkout code
+        uses: actions/checkout@v4
