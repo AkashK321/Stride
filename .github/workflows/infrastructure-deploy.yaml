@@ -53,10 +53,6 @@
 #   - Requires: JAR artifact from backend-build workflow
 #   - Note: If triggered by CDK-only changes, will use latest JAR artifact
 #
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> c369a13 (updated non-build workflow files to prevent them from being run while they're still not implemented)
 # ============================================================================
 
 name: Infrastructure Deploy
@@ -324,6 +320,3 @@ jobs:
           echo "📋 Stack Outputs:"
           echo $OUTPUTS | jq '.'
         continue-on-error: true
-=======
->>>>>>> 41475b5 (finds JAR and sets up python)
-      
