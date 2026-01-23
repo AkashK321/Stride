@@ -11,14 +11,17 @@
 #   1. Push event when backend code or workflow changes:
 #      - Paths: aws_resources/**, .github/workflows/**
 #      - Branches: All branches (**)
-#   2. Pull request when backend code changes:
-#      - Paths: aws_resources/backend/**
-#      - Branches: All branches (**)
+#      - Deploys infrastructure (branch stacks for features, production for main)
+#   2. Pull request to main when backend code changes:
+#      - Paths: aws_resources/**, .github/workflows/**
+#      - Branches: main only (protected integration branch)
+#      - Runs full pipeline: build + test + deploy branch stack + integration tests
+#      - Deploys to the PR's source branch stack (not main)
 #   3. Manual trigger (workflow_dispatch):
 #      - Can be run manually from GitHub Actions UI
 #
 # WORKFLOW FLOW:
-#   Push Event (backend/** changed)
+#   Push Event OR Pull Request (backend/** changed)
 #       ↓
 #   backend-build runs
 #       ↓
@@ -27,13 +30,17 @@
 #   [If tests pass] → [Upload JAR Artifact]
 #       ↓
 #   [Call infrastructure-deploy.yml] (ONLY if build and tests succeeded)
+#       ↓
+#   infrastructure-deploy deploys stack and calls integration-tests
+#       ↓
+#   [Full pipeline: Build → Test → Deploy → Integration Tests]
 #
 # CALLS OTHER WORKFLOWS:
 #   - infrastructure-deploy.yml (workflow_call)
 #     * Condition: ONLY if build succeeds AND unit tests pass
 #     * Purpose: Gate infrastructure deployment behind successful builds/tests
-#     * Inputs: branch_name, jar_artifact_name
-#     * Note: Infrastructure deploy will handle both stack and Lambda deployment
+#     * Inputs: branch_name (PR source branch for PRs, actual branch for pushes), jar_artifact_name
+#     * Note: Infrastructure deploy handles stack deployment and calls integration-tests
 #
 # OUTPUTS:
 #   - JAR artifact (stored in workflow artifacts)
@@ -59,9 +66,10 @@ on:
       - '.github/workflows/**'
   pull_request:
     branches:
-      - '**'
+      - main
     paths:
-      - 'aws_resources/backend/**'
+      - 'aws_resources/**'
+      - '.github/workflows/**'
   workflow_dispatch:
 
 # Permissions required for test-reporter and called workflows
@@ -175,10 +183,14 @@ jobs:
   deploy:
     name: Call Infrastructure Deploy
     needs: [build, unit-tests]
+    # Deploy on both push and pull_request events
+    # - Push: deploys to the branch that was pushed
+    # - PR: deploys to the PR's source branch (head ref) for testing
     if: success()
     uses: ./.github/workflows/infrastructure-deploy.yaml
     with:
-      branch_name: ${{ github.ref_name }}
+      # For PRs, use the source branch (head ref); for push, use the branch name
+      branch_name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref_name }}
       jar_artifact_name: ${{ needs.build.outputs.artifact_name }}
     secrets: inherit
   

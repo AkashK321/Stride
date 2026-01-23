@@ -13,6 +13,9 @@
 #      - PRIMARY TRIGGER: Only after successful build and unit tests
 #      - Automatically triggered when backend-build completes successfully
 #      - Inputs: branch_name, jar_artifact_name
+#      - Branch name handling:
+#        * Push events: Uses the branch that was pushed
+#        * PR events: Uses the PR's source branch (head ref) for branch-specific stack
 #      - Downloads JAR artifact from backend-build and deploys everything
 
 #   2. Manual trigger (workflow_dispatch):
@@ -42,7 +45,9 @@
 #     * Inputs: api_endpoint, stack_name, branch_name
 #
 # OUTPUTS:
-#   - Stack name (format: StrideStack-{sanitized-branch-name})
+#   - Stack name:
+#     * Main branch: "StrideStack" (production stack)
+#     * Feature branches: "StrideStack-{issue_number}-{description}" (branch-specific)
 #   - API Gateway endpoint URL
 #   - Stack status
 #   - Deployment timestamp
@@ -90,6 +95,11 @@ jobs:
     name: Deploy Infrastructure
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    
+    outputs:
+      api_endpoint: ${{ steps.stack-outputs.outputs.api_endpoint }}
+      stack_name: ${{ steps.sanitize-branch.outputs.stack_name }}
+      sanitized_branch: ${{ steps.sanitize-branch.outputs.sanitized_branch }}
     
     steps:
       # Step 1: Checkout the repository code
@@ -194,6 +204,18 @@ jobs:
           
           # Convert to lowercase and extract parts
           BRANCH_LOWER=$(echo "$BRANCH_NAME" | tr '[:upper:]' '[:lower:]')
+          
+          # Special handling for main branch: use production stack name
+          if [ "$BRANCH_LOWER" = "main" ] || [ "$BRANCH_LOWER" = "master" ]; then
+            SANITIZED="production"
+            STACK_NAME="StrideStack"
+            echo "Branch name: $BRANCH_NAME (main branch)"
+            echo "Sanitized branch: $SANITIZED"
+            echo "Stack name: $STACK_NAME (production stack)"
+            echo "sanitized_branch=$SANITIZED" >> $GITHUB_OUTPUT
+            echo "stack_name=$STACK_NAME" >> $GITHUB_OUTPUT
+            exit 0
+          fi
           
           # Extract issue number (digits at start before first hyphen)
           if [[ "$BRANCH_LOWER" =~ ^([0-9]+)- ]]; then
@@ -327,3 +349,14 @@ jobs:
           echo "📋 Stack Outputs:"
           echo $OUTPUTS | jq '.'
         continue-on-error: true
+
+  integration-tests:
+    name: Run Integration Tests
+    needs: deploy
+    if: success() && needs.deploy.outputs.api_endpoint != ''
+    uses: ./.github/workflows/integration-tests.yaml
+    with:
+      api_endpoint: ${{ needs.deploy.outputs.api_endpoint }}
+      stack_name: ${{ needs.deploy.outputs.stack_name }}
+      branch_name: ${{ needs.deploy.outputs.sanitized_branch }}
+    secrets: inherit

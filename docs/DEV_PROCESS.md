@@ -2,7 +2,7 @@
 
 ## Table of Contents
 1. [Repository Architecture](#repository-architecture)
-2. [Branching / Workflow Model](#branching--workflow-model)
+2. [Branching Strategy](#branching-strategy)
 3. [Code Development & Review Policy](#code-development--review-policy)
 
 ---
@@ -100,17 +100,29 @@ issue-[issue-number]-[short-description]
 3. **Development**
    - Make commits with clear, descriptive messages
    - Push branch to remote repository
+   - **CI/CD Pipeline**: On push, the pipeline automatically:
+     * Builds Kotlin backend and runs unit tests
+     * Deploys branch-specific CloudFormation stack (e.g., `StrideStack-123-feature-name`)
+     * Runs integration tests against the deployed stack
    - Keep branch up-to-date with `main` by rebasing or merging
 
 4. **Pull Request**
    - Create Pull Request targeting `main`
    - Reference the GitHub issue in PR title/description
    - Assign a reviewer (required)
+   - **CI/CD Pipeline**: When PR is opened/updated, the pipeline automatically:
+     * Builds Kotlin backend and runs unit tests
+     * Deploys to the PR's source branch stack (same as push, for validation)
+     * Runs integration tests against the deployed branch stack
    - Wait for CI/CD checks to pass
    - Address review feedback
 
 5. **Merge**
    - After approval and passing CI/CD, merge via "Squash and Merge" or "Rebase and Merge"
+   - **CI/CD Pipeline**: On merge to `main`, the pipeline automatically:
+     * Builds Kotlin backend and runs unit tests
+     * Deploys to production stack (`StrideStack`)
+     * Runs integration tests against the production stack
    - Delete feature branch after merge
 
 
