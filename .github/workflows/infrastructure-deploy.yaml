@@ -147,43 +147,6 @@ jobs:
         run: npm install -g aws-cdk
       
       # Step 7: Configure AWS credentials
-      # REQUIRED AWS PERMISSIONS for the IAM user/role:
-      # 
-      # CDK Bootstrap Operations:
-      #   - s3:CreateBucket, s3:PutObject, s3:GetObject, s3:DeleteObject (for CDK assets bucket)
-      #   - iam:CreateRole, iam:AttachRolePolicy, iam:PutRolePolicy (for CDK execution roles)
-      #   - iam:PassRole (to pass roles to CloudFormation)
-      #   - cloudformation:CreateStack, cloudformation:UpdateStack, cloudformation:DescribeStacks (for CDKToolkit stack)
-      #   - sts:GetCallerIdentity (for account verification)
-      #
-      # CloudFormation Operations:
-      #   - cloudformation:CreateStack, cloudformation:UpdateStack, cloudformation:DeleteStack
-      #   - cloudformation:DescribeStacks, cloudformation:DescribeStackEvents, cloudformation:DescribeStackResources
-      #   - cloudformation:GetTemplate, cloudformation:ValidateTemplate
-      #   - cloudformation:ListStackResources
-      #
-      # Lambda Operations:
-      #   - lambda:CreateFunction, lambda:UpdateFunctionCode, lambda:UpdateFunctionConfiguration
-      #   - lambda:GetFunction, lambda:ListFunctions, lambda:DeleteFunction
-      #   - lambda:AddPermission, lambda:RemovePermission (for API Gateway integration)
-      #   - lambda:PutFunctionEventInvokeConfig (for SnapStart configuration)
-      #
-      # API Gateway Operations:
-      #   - apigateway:POST, apigateway:GET, apigateway:PUT, apigateway:DELETE, apigateway:PATCH (for REST API resources)
-      #   - apigateway:CreateRestApi, apigateway:GetRestApi, apigateway:UpdateRestApi, apigateway:DeleteRestApi
-      #   - apigateway:CreateResource, apigateway:GetResource, apigateway:DeleteResource
-      #   - apigateway:PutMethod, apigateway:GetMethod, apigateway:DeleteMethod
-      #   - apigateway:PutIntegration, apigateway:GetIntegration, apigateway:DeleteIntegration
-      #   - apigateway:CreateDeployment, apigateway:GetDeployment
-      #
-      # IAM Operations (for Lambda execution roles):
-      #   - iam:CreateRole, iam:GetRole, iam:DeleteRole
-      #   - iam:AttachRolePolicy, iam:DetachRolePolicy, iam:PutRolePolicy, iam:DeleteRolePolicy
-      #   - iam:PassRole (to attach roles to Lambda functions)
-      #
-      # CloudWatch Logs (for Lambda logging):
-      #   - logs:CreateLogGroup, logs:DeleteLogGroup, logs:DescribeLogGroups
-      #
       # Note: Using OIDC role assumption (no long-lived access keys required)
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
