@@ -10,23 +10,22 @@
 #
 # TRIGGERS:
 #   1. Called by backend-build (workflow_call):
-#      - Primary trigger: Only after successful build and unit tests
+#      - PRIMARY TRIGGER: Only after successful build and unit tests
+#      - Automatically triggered when backend-build completes successfully
 #      - Inputs: branch_name, jar_artifact_name
-#      - Downloads JAR artifact and deploys everything
-#   2. Push event when CDK code changes (if backend already built):
-#      - Paths: aws_resources/cdk/**
-#      - Branches: All branches (**)
-#      - Note: Will need to download latest JAR artifact or use existing
-#   3. Manual trigger (workflow_dispatch):
+#      - Downloads JAR artifact from backend-build and deploys everything
+
+#   2. Manual trigger (workflow_dispatch):
 #      - Can be run manually with branch_name input
 #      - Use with caution: bypasses build/test gates
+#      - Requires JAR file to be manually placed in aws_resources/backend/build/libs/
 #
 # WORKFLOW FLOW:
-#   workflow_call (from backend-build) OR push (cdk/**) OR workflow_dispatch
+#   workflow_call (from backend-build) OR workflow_dispatch
 #       ↓
 #   infrastructure-deploy runs
 #       ↓
-#   [Download JAR artifact] → [Place JAR in backend/build/libs/]
+#   [Download JAR artifact from backend-build] → [Place JAR in backend/build/libs/]
 #       ↓
 #   [Check CDK bootstrap] → [Bootstrap if needed]
 #       ↓
@@ -49,9 +48,10 @@
 #   - Deployment timestamp
 #
 # DEPENDENCIES:
-#   - Must be called by: backend-build.yml (after successful build)
+#   - MUST be called by: backend-build.yml (after successful build and tests)
 #   - Requires: JAR artifact from backend-build workflow
-#   - Note: If triggered by CDK-only changes, will use latest JAR artifact
+#   - This workflow ONLY runs automatically after backend-build succeeds
+#   - Manual trigger (workflow_dispatch) available for testing/debugging only
 #
 # ============================================================================
 
@@ -68,17 +68,6 @@ on:
         required: true
         type: string
         description: 'Name of the JAR artifact to download'
-
-  # Temprorary trigger for testing
-  push:
-    branches:
-      - '**'
-  # Push trigger for CDK-only changes (commented out until implemented)
-  # push:
-  #   branches:
-  #     - '**'
-  #   paths:
-  #     - 'aws_resources/cdk/**'
   
   workflow_dispatch:
     inputs:
@@ -109,14 +98,12 @@ jobs:
       
 
       # Step 2: Download JAR artifact from backend-build workflow
-      # COMMENTED OUT: For testing with manually placed JAR file
-      # When integrated with backend-build, uncomment this step
-      # - name: Download JAR artifact
-      #   uses: actions/download-artifact@v4
-      #   with:
-      #     name: ${{ inputs.jar_artifact_name || 'kotlin-app-jar' }}
-      #     path: aws_resources/backend/build/libs/
-      #   continue-on-error: true
+      - name: Download JAR artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.jar_artifact_name || 'kotlin-app-jar' }}
+          path: aws_resources/backend/build/libs/
+        continue-on-error: true
       
       # Step 3: Verify JAR exists in backend/build/libs/
       - name: Verify JAR exists
@@ -181,11 +168,13 @@ jobs:
       - name: Sanitize branch name
         id: sanitize-branch
         run: |
-          # Get branch name from input (workflow_call/workflow_dispatch) or GitHub context (push event)
-          # For push events, extract branch name from GITHUB_REF (e.g., refs/heads/feature-branch -> feature-branch)
+          # Get branch name from input (workflow_call from backend-build or workflow_dispatch)
+          # When called by backend-build, branch_name is provided as input
+          # For manual workflow_dispatch, branch_name is also provided as input
           if [ -n "${{ inputs.branch_name }}" ]; then
             BRANCH_NAME="${{ inputs.branch_name }}"
           else
+            # Fallback: extract from GITHUB_REF (should not happen in normal flow)
             BRANCH_NAME="${GITHUB_REF#refs/heads/}"
           fi
           
