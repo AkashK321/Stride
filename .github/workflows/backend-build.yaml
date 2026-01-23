@@ -64,11 +64,12 @@ on:
       - 'aws_resources/backend/**'
   workflow_dispatch:
 
-# Permissions required for test-reporter to create check runs
+# Permissions required for test-reporter and called workflows
 permissions:
   contents: read
   checks: write      # Required for test-reporter to create check runs
   pull-requests: write  # Required for PR comments (if test-reporter adds them)
+  id-token: write    # Required for called workflow (infrastructure-deploy) to use OIDC
 
 # Prevent multiple concurrent runs on the same branch
 concurrency:
