@@ -80,8 +80,9 @@ permissions:
   id-token: write    # Required for called workflow (infrastructure-deploy) to use OIDC
 
 # Prevent multiple concurrent runs on the same branch
+# Use branch name for both push and PR events to prevent duplicates
 concurrency:
-  group: backend-build-${{ github.ref }}
+  group: backend-build-${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 
