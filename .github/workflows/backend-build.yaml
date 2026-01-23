@@ -8,8 +8,8 @@
 #   for use by the infrastructure deployment workflow.
 #
 # TRIGGERS:
-#   1. Push event when backend code changes:
-#      - Paths: aws_resources/backend/**
+#   1. Push event when backend code or workflow changes:
+#      - Paths: aws_resources/backend/**, .github/workflows/**
 #      - Branches: All branches (**)
 #   2. Pull request when backend code changes:
 #      - Paths: aws_resources/backend/**
@@ -32,7 +32,7 @@
 #   - infrastructure-deploy.yml (workflow_call)
 #     * Condition: ONLY if build succeeds AND unit tests pass
 #     * Purpose: Gate infrastructure deployment behind successful builds/tests
-#     * Inputs: branch_name, jar_artifact_id
+#     * Inputs: branch_name, jar_artifact_name
 #     * Note: Infrastructure deploy will handle both stack and Lambda deployment
 #
 # OUTPUTS:

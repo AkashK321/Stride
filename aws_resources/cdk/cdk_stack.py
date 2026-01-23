@@ -58,7 +58,7 @@ class CdkStack(Stack):
             except subprocess.CalledProcessError:
                 print("⚠️ Local build failed. Switching to Docker bundling...")
         else:
-             print("⚠️ Gradle wrapper not found. Switching to Docker bundling...")
+            print("⚠️ Gradle wrapper not found. Switching to Docker bundling...")
 
         # ---------------------------------------------------------------------
         # 2. DEFINE THE LAMBDA CODE ASSET
