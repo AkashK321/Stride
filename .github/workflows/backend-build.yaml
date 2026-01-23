@@ -9,7 +9,7 @@
 #
 # TRIGGERS:
 #   1. Push event when backend code or workflow changes:
-#      - Paths: aws_resources/backend/**, .github/workflows/**
+#      - Paths: aws_resources/**, .github/workflows/**
 #      - Branches: All branches (**)
 #   2. Pull request when backend code changes:
 #      - Paths: aws_resources/backend/**
@@ -55,7 +55,7 @@ on:
     branches:
       - '**'
     paths:
-      - 'aws_resources/backend/**'
+      - 'aws_resources/**'
       - '.github/workflows/**'
   pull_request:
     branches:
