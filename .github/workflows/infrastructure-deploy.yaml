@@ -251,7 +251,7 @@ jobs:
           # Deploy with branch-specific stack name using CDK context
           cdk deploy --require-approval never --all --context branchName=$BRANCH_NAME --context stackName=$STACK_NAME
       
-      # Step 12: Get stack outputs
+      # Step 12: Get stack outputs and display in Actions UI
       - name: Get stack outputs
         id: stack-outputs
         working-directory: aws_resources
@@ -274,6 +274,8 @@ jobs:
           if [ -n "$API_ENDPOINT" ]; then
             echo "api_endpoint=$API_ENDPOINT" >> $GITHUB_OUTPUT
             echo "✅ API Endpoint: $API_ENDPOINT"
+            # Create GitHub Actions annotation (shows up in UI)
+            echo "::notice title=API Endpoint::${API_ENDPOINT}"
           fi
           
           if [ -n "$STACK_ID" ]; then
@@ -281,7 +283,35 @@ jobs:
             echo "✅ Stack ID: $STACK_ID"
           fi
           
-          # Display all outputs
+          # Create job summary with formatted markdown (shows up in Actions UI summary tab)
+          {
+            echo "## 🚀 Deployment Successful"
+            echo ""
+            echo "### Stack Information"
+            echo "- **Stack Name**: \`${STACK_NAME}\`"
+            echo "- **Region**: \`us-east-1\`"
+            if [ -n "$STACK_ID" ]; then
+              echo "- **Stack ID**: \`${STACK_ID}\`"
+            fi
+            echo ""
+            echo "### Stack Outputs"
+            if [ -n "$API_ENDPOINT" ]; then
+              echo ""
+              echo "#### 🌐 API Gateway Endpoint"
+              echo "- **URL**: [${API_ENDPOINT}](${API_ENDPOINT})"
+              echo "- **Test**: \`curl ${API_ENDPOINT}/items\`"
+            fi
+            echo ""
+            echo "<details>"
+            echo "<summary>📋 All Stack Outputs</summary>"
+            echo ""
+            echo "\`\`\`json"
+            echo "$OUTPUTS" | jq '.'
+            echo "\`\`\`"
+            echo "</details>"
+          } >> $GITHUB_STEP_SUMMARY
+          
+          # Display all outputs in logs as well
           echo "📋 Stack Outputs:"
           echo $OUTPUTS | jq '.'
         continue-on-error: true
