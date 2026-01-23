@@ -1,3 +1,7 @@
+'''
+Script to verify database initialization.
+'''
+
 import pg8000
 import os
 from dotenv import load_dotenv

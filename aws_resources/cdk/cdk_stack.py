@@ -1,3 +1,8 @@
+'''
+CloudFormation stack definition
+'''
+
+
 from aws_cdk import (
     Stack,
     Duration,

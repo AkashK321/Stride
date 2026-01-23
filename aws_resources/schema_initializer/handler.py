@@ -1,3 +1,8 @@
+'''
+Initializes the database schema for indoor navigation.
+Triggers on any update or creation of the lambda during deployment.
+'''
+
 import os
 import json
 import pg8000
