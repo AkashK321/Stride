@@ -2,7 +2,7 @@
 
 ## Table of Contents
 1. [Repository Architecture](#repository-architecture)
-2. [Branching / Workflow Model](#branching--workflow-model)
+2. [Branching / Workflow Model](#workflow-and-branching-strategy)
 3. [Code Development & Review Policy](#code-development--review-policy)
 
 
@@ -67,50 +67,28 @@ The backend infrastructure is created using AWS CDK in Python with the core back
 We follow the best practices for AWS CDK projects as outlined in their [documentation](https://docs.aws.amazon.com/cdk/v2/guide/best-practices.html)
 
 
-## Branching Strategy
+## Workflow and Branching Strategy
 
-This project uses a **Feature Branch Workflow** with a single main integration branch. All feature development occurs in dedicated branches that are linked to GitHub project issues.
+This project uses a **Feature Branch Workflow** with a single main integration branch. All development occurs in dedicated branches that are linked to GitHub project issues.
 
-### Main Branches
-
-#### `main`
-- **Purpose**: Production-ready code and stable releases
-- **Protection**: Protected branch requiring PR approval and CI/CD checks
-- **Merge Policy**: Only via Pull Requests that pass all checks
-- **Deployment**: Automatically deployed to production/staging environments
-
-### Branch Naming Convention
-
-All feature branches must follow this naming pattern:
-
-```
-issue-[issue-number]-[short-description]
-```
-
-**Examples:**
-- `issue-123-add-image-upload`
-- `issue-456-implement-api-authentication`
-- `issue-89-fix-camera-permissions`
-
-
-### Workflow Process
+### Workflow
 
 1. **Issue Creation**
-   - Create a GitHub issue describing the feature or bug fix
-   - Assign issue to appropriate team member
-   - Label appropriately (feature, bug, enhancement, etc.)
+   - See [Creating an Issue](#creating-an-issue) for detailed instructions
 
 2. **Branch Creation**
-   - Create a feature branch from `main`: `git checkout -b feature/[issue-number]-[description]`
-   - Link branch to GitHub issue in PR description using: `Closes #123` or `Fixes #123`
+   - See [Creating a New Feature Branch](#creating-a-new-feature-branch) for detailed instructions
 
 3. **Development**
    - Make commits with clear, descriptive messages
    - Push branch to remote repository
+   ```
+   git push origin <branch-name>
+   ```
    - Keep branch up-to-date with `main` by rebasing or merging
 
 4. **Pull Request**
-   - Create Pull Request targeting `main`
+   - Create Pull Request targeting `main` on GitHub
    - Reference the GitHub issue in PR title/description
    - Assign a reviewer (required)
    - Wait for CI/CD checks to pass
@@ -120,7 +98,133 @@ issue-[issue-number]-[short-description]
    - After approval and passing CI/CD, merge via "Squash and Merge" or "Rebase and Merge"
    - Delete feature branch after merge
 
+### Branches
 
+#### `main`
+- **Purpose**: Production-ready code and stable releases
+- **Protection**: Protected branch requiring PR approval and CI/CD checks
+- **Merge Policy**: Only via Pull Requests that pass all checks
+- **Deployment**: Automatically deployed to main stack
+
+#### Feature Branches
+
+- **Purpose**: Implementing changes for an issue, doing work
+- **Protection**: None
+- **Merge Policy**: At discretion of branch owner
+- **Deployment**: Automatically deployed to branch specific dev stack `StrideStack-<issue-number>-<description>`
+
+All feature branches must follow this naming pattern:
+
+```
+<tag>/<issue-number>-<short-description>
+```
+
+**Branch Tags and Their Purposes:**
+
+- **`feature/`** - New features, enhancements, and functionality additions
+  - Use for: Adding new user-facing features, implementing new capabilities, major enhancements
+
+- **`bug/`** - Bug fixes for existing functionality
+  - Use for: Fixing defects in existing features, correcting incorrect behavior
+
+- **`fix/`** - Quick fixes, hotfixes, and urgent corrections
+  - Use for: Critical production issues, quick fixes
+
+- **`app/`** - Frontend application changes
+  - Use for: React Native/Expo frontend modifications, UI/UX changes, mobile app features
+
+- **`infra/`** - Infrastructure and DevOps changes
+  - Use for: AWS infrastructure updates, CDK changes
+
+- **`ci/`** - Continuous Integration/Continuous Deployment changes
+  - Use for: GitHub Actions workflows, CI/CD pipeline improvements, automation updates
+
+**Examples:**
+- `feature/123-add-image-upload`
+- `bug/456-fix-camera-permissions`
+- `fix/789-security-patch`
+
+### Creating an Issue
+
+When creating a new GitHub issue, follow these guidelines:
+
+**Issue Naming Convention:**
+- Format: `<tag>: <description>`
+- Use the appropriate tag prefix (see [Tags](#tags) section)
+- Keep the description concise and descriptive
+
+**Steps:**
+1. Go to the repository's Issues tab
+2. Click **New Issue**
+3. Enter the issue title using the naming convention: `<tag>: <description>`
+4. Add a clear and detailed description of the issue or feature request
+5. Assign the issue to the appropriate team member
+6. Add appropriate labels and tags (see [Tags](#tags) section)
+
+**Note:** The tag you use in the issue title should match the tag you use when creating the corresponding branch (e.g., if the issue is titled `feature: add image upload`, create a branch with `feature/` prefix).
+
+### Creating a New Feature Branch
+
+Follow these steps to create a new feature branch:
+
+1. **Ensure you're on `main` and up-to-date**
+   ```bash
+   git checkout main
+   git pull origin main
+   ```
+
+2. **Create a new branch with the appropriate tag**
+   ```bash
+   git checkout -b <tag>/<issue-number>-<short-description>
+   ```
+   
+   **Example:**
+   ```bash
+   git checkout -b feature/123-add-image-upload
+   ```
+
+3. **Push the branch to remote**
+   ```bash
+   git push -u origin <tag>/<issue-number>-<short-description>
+   ```
+   
+   **Example:**
+   ```bash
+   git push -u origin feature/123-add-image-upload
+   ```
+
+4. **Verify branch naming**
+   - Branch name should follow the pattern: `<tag>/<issue-number>-<short-description>`
+   - Use lowercase and hyphens (no spaces or underscores)
+   - Keep description concise (20 characters or less)
+   - Issue number should match the GitHub issue you're working on
+
+**Notes:**
+- Always create branches from `main` to ensure you have the latest code
+- Use the `-u` flag when pushing to set up tracking between local and remote branches
+- The branch will automatically trigger CI/CD workflows and deploy to a branch-specific stack
+
+### Tags
+
+Tags are used to categorize issues and branches. Select the appropriate tag based on the type of work:
+
+- **`feature`** - For new features, enhancements, and functionality additions
+  - Use for: Adding new user-facing features, implementing new capabilities, major enhancements
+
+- **`bug`** - For bug fixes and defect corrections
+  - Use for: Fixing defects in existing features, correcting incorrect behavior
+
+- **`fix`** - For quick fixes, hotfixes, and urgent corrections
+  - Use for: Critical production issues, quick fixes
+
+- **`app`** - For frontend application changes
+  - Use for: React Native/Expo frontend modifications, UI/UX changes, mobile app features
+
+- **`infra`** - For infrastructure and DevOps changes
+  - Use for: AWS infrastructure updates, CDK changes
+
+- **`ci`** - For CI/CD pipeline and automation changes
+  - Use for: GitHub Actions workflows, CI/CD pipeline improvements, automation updates
 
 
 ## Code Development & Review Policy
