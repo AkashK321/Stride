@@ -104,57 +104,57 @@ class CdkStack(Stack):
         items.add_method("GET")
 
         # Define RDS Resource
-        db_instance = rds.DatabaseInstance(
-            self, "StrideDB",
-            engine=rds.DatabaseInstanceEngine.postgres(
-                version=rds.PostgresEngineVersion.VER_16_3
-            ),
-            vpc=default_vpc,  # Mandatory, but now using the free default one
-            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
-            instance_type=ec2.InstanceType.of(
-                ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.MICRO
-            ),
-            allocated_storage=20,
-            max_allocated_storage=50, # Autoscaling storage
-            database_name="StrideCore",
-            publicly_accessible=True, # Allows Lambda to connect via standard internet
-            removal_policy=RemovalPolicy.DESTROY, # For dev/testing only
-        )
+        # db_instance = rds.DatabaseInstance(
+        #     self, "StrideDB",
+        #     engine=rds.DatabaseInstanceEngine.postgres(
+        #         version=rds.PostgresEngineVersion.VER_16_3
+        #     ),
+        #     vpc=default_vpc,  # Mandatory, but now using the free default one
+        #     vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
+        #     instance_type=ec2.InstanceType.of(
+        #         ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.MICRO
+        #     ),
+        #     allocated_storage=20,
+        #     max_allocated_storage=50, # Autoscaling storage
+        #     database_name="StrideCore",
+        #     publicly_accessible=True, # Allows Lambda to connect via standard internet
+        #     removal_policy=RemovalPolicy.DESTROY, # For dev/testing only
+        # )
 
-        db_instance.connections.allow_from_any_ipv4(ec2.Port.tcp(5432), "Allow public access for Lambda")
+        # db_instance.connections.allow_from_any_ipv4(ec2.Port.tcp(5432), "Allow public access for Lambda")
 
-        # Define the lambda to initialize the DB schema
-        schema_lambda = _lambda.Function(
-            self, "SchemaInitializer",
-            runtime=_lambda.Runtime.PYTHON_3_9,
-            handler="handler.handler",
-            code=_lambda.Code.from_asset("schema_initializer"),
-            timeout=Duration.seconds(30),
-            environment={
-                # Retrieve connection details from the secret
-                "DB_SECRET_ARN": db_instance.secret.secret_arn
-            }
-        )  
-        db_instance.secret.grant_read(schema_lambda)
+        # # Define the lambda to initialize the DB schema
+        # schema_lambda = _lambda.Function(
+        #     self, "SchemaInitializer",
+        #     runtime=_lambda.Runtime.PYTHON_3_9,
+        #     handler="handler.handler",
+        #     code=_lambda.Code.from_asset("schema_initializer"),
+        #     timeout=Duration.seconds(30),
+        #     environment={
+        #         # Retrieve connection details from the secret
+        #         "DB_SECRET_ARN": db_instance.secret.secret_arn
+        #     }
+        # )  
+        # db_instance.secret.grant_read(schema_lambda)
 
-        # Trigger the schema initialization during deployment
-        invoke_schema_lambda = cr.AwsSdkCall(
-            service="Lambda",
-            action="invoke",
-            parameters={
-                "FunctionName": schema_lambda.function_name
-            },
-            physical_resource_id=cr.PhysicalResourceId.of("SchemaInit_Update")
-        )
-        cr.AwsCustomResource(
-            self, "InitDBSchema",
-            on_create=invoke_schema_lambda,
-            on_update=invoke_schema_lambda,
-            policy=cr.AwsCustomResourcePolicy.from_statements([
-                iam.PolicyStatement(
-                    actions=["lambda:InvokeFunction"],
-                    resources=[schema_lambda.function_arn]
-                )
-            ])
-        )
+        # # Trigger the schema initialization during deployment
+        # invoke_schema_lambda = cr.AwsSdkCall(
+        #     service="Lambda",
+        #     action="invoke",
+        #     parameters={
+        #         "FunctionName": schema_lambda.function_name
+        #     },
+        #     physical_resource_id=cr.PhysicalResourceId.of("SchemaInit_Update")
+        # )
+        # cr.AwsCustomResource(
+        #     self, "InitDBSchema",
+        #     on_create=invoke_schema_lambda,
+        #     on_update=invoke_schema_lambda,
+        #     policy=cr.AwsCustomResourcePolicy.from_statements([
+        #         iam.PolicyStatement(
+        #             actions=["lambda:InvokeFunction"],
+        #             resources=[schema_lambda.function_arn]
+        #         )
+        #     ])
+        # )
 
