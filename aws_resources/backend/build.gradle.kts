@@ -4,7 +4,6 @@
  * This is a general purpose Gradle build.
  * Learn more about Gradle by exploring our Samples at https://docs.gradle.org/9.2.1/samples
  */
-import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 
 plugins {
     kotlin("jvm") version "1.9.23"
@@ -22,7 +21,7 @@ dependencies {
     implementation("com.amazonaws:aws-lambda-java-core:1.2.3")
     implementation("com.amazonaws:aws-lambda-java-events:3.11.4")
     implementation(kotlin("stdlib"))
-    
+
     // Test dependencies
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5:1.9.23")
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.0")

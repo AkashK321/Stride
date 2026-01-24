@@ -11,11 +11,16 @@
 #   1. Push event when backend code or workflow changes:
 #      - Paths: aws_resources/**, .github/workflows/**
 #      - Branches: All branches (**)
-#   2. Pull request when backend code changes:
-#      - Paths: aws_resources/backend/**
-#      - Branches: All branches (**)
-#   3. Manual trigger (workflow_dispatch):
+#      - Runs full pipeline: build + test + deploy + integration tests
+#      - Feature branches: Deploy to branch-specific stack + integration tests
+#      - Main branch: Deploy to production stack (StrideStack) + integration tests
+#        * This implements post-merge integration testing on main
+#        * Catches any issues that slip through PR validation
+#   2. Manual trigger (workflow_dispatch):
 #      - Can be run manually from GitHub Actions UI
+#
+# NOTE: Pull requests are handled by pr-validation.yaml workflow
+#       This workflow does NOT trigger on pull_request events
 #
 # WORKFLOW FLOW:
 #   Push Event (backend/** changed)
@@ -27,13 +32,26 @@
 #   [If tests pass] → [Upload JAR Artifact]
 #       ↓
 #   [Call infrastructure-deploy.yml] (ONLY if build and tests succeeded)
+#       ↓
+#   infrastructure-deploy deploys stack and calls integration-tests
+#       ↓
+#   [Full pipeline: Build → Test → Deploy → Integration Tests]
+#
+#   Push to Main Branch (post-merge):
+#       ↓
+#   Same flow as above, but deploys to production stack (StrideStack)
+#       ↓
+#   Integration tests run against production environment
+#       ↓
+#   This catches any issues that slip through PR validation
 #
 # CALLS OTHER WORKFLOWS:
 #   - infrastructure-deploy.yml (workflow_call)
 #     * Condition: ONLY if build succeeds AND unit tests pass
 #     * Purpose: Gate infrastructure deployment behind successful builds/tests
-#     * Inputs: branch_name, jar_artifact_name
-#     * Note: Infrastructure deploy will handle both stack and Lambda deployment
+#     * Inputs: branch_name (actual branch for pushes), jar_artifact_name
+#     * Note: Infrastructure deploy handles stack deployment and calls integration-tests
+#     * Note: PRs are validated separately via pr-validation.yaml (no deployment)
 #
 # OUTPUTS:
 #   - JAR artifact (stored in workflow artifacts)
@@ -57,22 +75,18 @@ on:
     paths:
       - 'aws_resources/**'
       - '.github/workflows/**'
-  pull_request:
-    branches:
-      - '**'
-    paths:
-      - 'aws_resources/backend/**'
   workflow_dispatch:
 
-# Permissions required for test-reporter to create check runs
+# Permissions required for test-reporter and called workflows
 permissions:
   contents: read
   checks: write      # Required for test-reporter to create check runs
   pull-requests: write  # Required for PR comments (if test-reporter adds them)
+  id-token: write    # Required for called workflow (infrastructure-deploy) to use OIDC
 
 # Prevent multiple concurrent runs on the same branch
 concurrency:
-  group: backend-build-${{ github.ref }}
+  group: backend-build-${{ github.ref_name }}
   cancel-in-progress: true
 
 
@@ -174,6 +188,9 @@ jobs:
   deploy:
     name: Call Infrastructure Deploy
     needs: [build, unit-tests]
+    # Deploy on push events
+    # - Feature branches: Deploy to branch-specific stack
+    # - Main branch: Deploy to production stack
     if: success()
     uses: ./.github/workflows/infrastructure-deploy.yaml
     with:
