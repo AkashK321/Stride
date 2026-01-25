@@ -6,6 +6,7 @@ CloudFormation stack definition
 from aws_cdk import (
     Stack,
     Duration,
+    CfnOutput,
     aws_lambda as _lambda,
     aws_apigateway as apigw,
     aws_ec2 as ec2,
@@ -22,9 +23,9 @@ import platform
 
 class CdkStack(Stack):
 
-    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+    def __init__(self, scope: Construct, construct_id: str, branch_name: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
-        default_vpc = ec2.Vpc.from_lookup(self, "DefaultVPC", is_default=True)
+        # default_vpc = ec2.Vpc.from_lookup(self, "DefaultVPC", is_default=True)
 
         # Path to the Kotlin backend project
         this_dir = os.path.dirname(__file__)
@@ -102,6 +103,17 @@ class CdkStack(Stack):
 
         items = api.root.add_resource("items")
         items.add_method("GET")
+
+        # Add stack outputs for reporting to CICD
+        CfnOutput(self, "APIEndpointOutput",
+            value=api.url,
+            description="API Gateway endpoint URL"
+        )
+
+        CfnOutput(self, "BranchName",
+            value=branch_name,
+            description="Branch name used for this deployment"
+        )
 
         # Define RDS Resource
         # db_instance = rds.DatabaseInstance(
