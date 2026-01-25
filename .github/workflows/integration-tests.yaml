@@ -51,6 +51,14 @@ on:
         required: true
         type: string
         description: 'API Gateway endpoint URL'
+      stack_name:
+        required: true
+        type: string
+        description: 'CloudFormation stack name'
+      branch_name:
+        required: true
+        type: string
+        description: 'Branch name for context'
   
   workflow_dispatch:
     inputs:
@@ -58,6 +66,14 @@ on:
         required: true
         type: string
         description: 'API Gateway endpoint URL'
+      stack_name:
+        required: true
+        type: string
+        description: 'CloudFormation stack name'
+      branch_name:
+        required: true
+        type: string
+        description: 'Branch name for context'
 
 jobs:
   test:
@@ -99,7 +115,7 @@ jobs:
         uses: dorny/test-reporter@v1
         with:
           name: Integration Test Results
-          path: aws_resources/backend/test-results/integration-tests.xml
+          path: aws_resources/backend/tests/test-results/integration-tests.xml
           reporter: java-junit
           fail-on-error: false
           list-suites: all
