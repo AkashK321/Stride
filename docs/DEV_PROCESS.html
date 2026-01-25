@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.24">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>dev_process</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="DEV_PROCESS_files/libs/clipboard/clipboard.min.js"></script>
+<script src="DEV_PROCESS_files/libs/quarto-html/quarto.js" type="module"></script>
+<script src="DEV_PROCESS_files/libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="DEV_PROCESS_files/libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="DEV_PROCESS_files/libs/quarto-html/popper.min.js"></script>
+<script src="DEV_PROCESS_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="DEV_PROCESS_files/libs/quarto-html/anchor.min.js"></script>
+<link href="DEV_PROCESS_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="DEV_PROCESS_files/libs/quarto-html/quarto-syntax-highlighting-dc55a5b9e770e841cd82e46aadbfb9b0.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="DEV_PROCESS_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="DEV_PROCESS_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="DEV_PROCESS_files/libs/bootstrap/bootstrap-d6a003b94517c951b2d65075d42fb01b.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+
+
+</head>
+
+<body class="fullcontent quarto-light">
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+
+<main class="content" id="quarto-document-content">
+
+
+
+
+<section id="development-process-documentation" class="level1">
+<h1>Development Process Documentation</h1>
+<section id="table-of-contents" class="level2">
+<h2 class="anchored" data-anchor-id="table-of-contents">Table of Contents</h2>
+<ol type="1">
+<li><a href="#repository-architecture">Repository Architecture</a>
+<ul>
+<li><a href="#overview">Overview</a></li>
+<li><a href="#repository-structure">Repository Structure</a></li>
+<li><a href="#standards--documentation-references">Standards &amp; Documentation References</a>
+<ul>
+<li><a href="#frontend">Frontend</a></li>
+<li><a href="#backend">Backend</a></li>
+</ul></li>
+</ul></li>
+<li><a href="#workflow-and-branching-strategy">Workflow and Branching Strategy</a>
+<ul>
+<li><a href="#workflow">Workflow</a></li>
+<li><a href="#branches">Branches</a>
+<ul>
+<li><a href="#main">Main</a></li>
+<li><a href="#feature-branches">Feature Branches</a></li>
+</ul></li>
+<li><a href="#creating-an-issue">Creating an Issue</a></li>
+<li><a href="#creating-a-new-feature-branch">Creating a New Feature Branch</a></li>
+<li><a href="#tags">Tags</a></li>
+</ul></li>
+<li><a href="#code-development--review-policy">Code Development &amp; Review Policy</a>
+<ul>
+<li><a href="#pull-request-requirements">Pull Request Requirements</a>
+<ul>
+<li><a href="#pr-creation-checklist">PR Creation Checklist</a></li>
+</ul></li>
+<li><a href="#code-review-process">Code Review Process</a>
+<ul>
+<li><a href="#reviewer-assignment">Reviewer Assignment</a></li>
+<li><a href="#review-criteria">Review Criteria</a></li>
+<li><a href="#review-feedback">Review Feedback</a></li>
+<li><a href="#code-review-frequency">Code Review Frequency</a></li>
+<li><a href="#branch-maintenance">Branch Maintenance</a></li>
+</ul></li>
+</ul></li>
+</ol>
+</section>
+<section id="repository-architecture" class="level2">
+<h2 class="anchored" data-anchor-id="repository-architecture">Repository Architecture</h2>
+<section id="overview" class="level3">
+<h3 class="anchored" data-anchor-id="overview">Overview</h3>
+<p>This repository follows a full-stack architecture pattern with a React Native/Expo frontend and an AWS serverless backend. The backend infrastructure is defined using Infrastructure as Code (IaC) templates, and the project is organized to support both frontend and backend development workflows.</p>
+</section>
+<section id="repository-structure" class="level3">
+<h3 class="anchored" data-anchor-id="repository-structure">Repository Structure</h3>
+<pre><code>Stride/
+├── .gitignore
+├── README.md                        # Entry point documentation
+├── aws_resources/                   # Backend Infrastructure &amp; Logic
+│   ├── app.py                       # AWS CDK App Entry Point (Python)
+│   ├── cdk.json                     # CDK Context &amp; Config
+│   ├── requirements.txt             # Python Dependencies (CDK)
+│   ├── source.bat                   # Environment setup script
+│   ├── backend/                     # Business Logic (Lambda Functions)
+│   │   ├── build.gradle.kts         # Kotlin Build Configuration
+│   │   ├── settings.gradle.kts
+│   │   └── src/main/kotlin/
+│   │       └── com/handler/
+│   │           └── Handler.kt       # Lambda Handler Entry Point
+│   ├── cdk/                         # Infrastructure Definitions
+│   │   └── cdk_stack.py             # Main CloudFormation Stack Definition
+│   ├── schema_initializer/          # Database Migration/Setup
+│   │   ├── handler.py
+│   │   └── verify_db_init.py
+│   └── tests/                       # Infrastructure Tests
+│       └── unit/
+│           └── test_cdk_stack.py
+├── docs/                            # Project Documentation
+│   ├── BackendSetup.md
+│   ├── FrontendSetup.md
+│   ├── Design_Document.pdf
+│   └── DEV_PROCESS.md
+└── frontend/                        # Mobile Application (React Native/Expo)
+    ├── app.json                     # Expo Configuration
+    ├── package.json                 # JS Dependencies
+    ├── tsconfig.json                # TypeScript Configuration
+    ├── app/                         # Application Screens &amp; Routing
+    │   ├── _layout.tsx              # Root Layout &amp; Navigation Wrapper
+    │   ├── index.tsx                # Home/Landing Screen
+    │   ├── login.tsx                # Authentication Screen
+    │   └── firebase.ts              # Firebase Configuration
+    ├── assets/                      # Static Assets (Images/Fonts)
+    │   └── images/
+    └── .vscode/                     # Editor Settings
+</code></pre>
+</section>
+<section id="standards-documentation-references" class="level3">
+<h3 class="anchored" data-anchor-id="standards-documentation-references">Standards &amp; Documentation References</h3>
+<section id="frontend" class="level4">
+<h4 class="anchored" data-anchor-id="frontend">Frontend</h4>
+<p>Our frontend is built using React Native with Expo. We follow the file structure detailed by Expo Router for organizing screens and navigation. For more information, refer to the <a href="https://docs.expo.dev/router/introduction/">Expo Router Documentation</a>.</p>
+</section>
+<section id="backend" class="level4">
+<h4 class="anchored" data-anchor-id="backend">Backend</h4>
+<p>The backend infrastructure is created using AWS CDK in Python with the core backend lambda handler created in Kotlin to achieve better runtime performance. We follow the best practices for AWS CDK projects as outlined in their <a href="https://docs.aws.amazon.com/cdk/v2/guide/best-practices.html">documentation</a></p>
+</section>
+</section>
+</section>
+<section id="workflow-and-branching-strategy" class="level2">
+<h2 class="anchored" data-anchor-id="workflow-and-branching-strategy">Workflow and Branching Strategy</h2>
+<p>This project uses a <strong>Feature Branch Workflow</strong> with a single main integration branch. All development occurs in dedicated branches that are linked to GitHub project issues.</p>
+<section id="workflow" class="level3">
+<h3 class="anchored" data-anchor-id="workflow">Workflow</h3>
+<ol type="1">
+<li><strong>Issue Creation</strong>
+<ul>
+<li>See <a href="#creating-an-issue">Creating an Issue</a> for detailed instructions</li>
+</ul></li>
+<li><strong>Branch Creation</strong>
+<ul>
+<li>See <a href="#creating-a-new-feature-branch">Creating a New Feature Branch</a> for detailed instructions</li>
+</ul></li>
+<li><strong>Development</strong>
+<ul>
+<li>Make commits with clear, descriptive messages</li>
+<li>Push branch to remote repository</li>
+</ul>
+<pre><code>git push origin &lt;branch-name&gt;</code></pre>
+<ul>
+<li>Keep branch up-to-date with <code>main</code> by rebasing or merging</li>
+</ul></li>
+<li><strong>Pull Request</strong>
+<ul>
+<li>Create Pull Request targeting <code>main</code> on GitHub</li>
+<li>Reference the GitHub issue in PR title/description</li>
+<li>Assign a reviewer (required)</li>
+<li>Wait for CI/CD checks to pass</li>
+<li>Address review feedback</li>
+</ul></li>
+<li><strong>Merge</strong>
+<ul>
+<li>After approval and passing CI/CD, merge via “Squash and Merge” or “Rebase and Merge”</li>
+<li>Delete feature branch after merge</li>
+</ul></li>
+</ol>
+<hr>
+</section>
+<section id="branches" class="level3">
+<h3 class="anchored" data-anchor-id="branches">Branches</h3>
+<section id="main" class="level4">
+<h4 class="anchored" data-anchor-id="main">Main</h4>
+<ul>
+<li><strong>Purpose</strong>: Production-ready code and stable releases</li>
+<li><strong>Protection</strong>: Protected branch requiring PR approval and CI/CD checks</li>
+<li><strong>Merge Policy</strong>: Only via Pull Requests that pass all checks</li>
+<li><strong>Deployment</strong>: Automatically deployed to main stack</li>
+</ul>
+</section>
+<section id="feature-branches" class="level4">
+<h4 class="anchored" data-anchor-id="feature-branches">Feature Branches</h4>
+<ul>
+<li><strong>Purpose</strong>: Implementing changes for an issue, doing work</li>
+<li><strong>Protection</strong>: None</li>
+<li><strong>Merge Policy</strong>: At discretion of branch owner</li>
+<li><strong>Deployment</strong>: Automatically deployed to branch specific dev stack <code>StrideStack-&lt;issue-number&gt;-&lt;description&gt;</code></li>
+</ul>
+<p>All feature branches must follow this naming pattern:</p>
+<pre><code>&lt;tag&gt;/&lt;issue-number&gt;-&lt;short-description&gt;</code></pre>
+<p><strong>Branch Tags and Their Purposes:</strong></p>
+<ul>
+<li><strong><code>feature/</code></strong> - New features, enhancements, and functionality additions
+<ul>
+<li>Use for: Adding new user-facing features, implementing new capabilities, major enhancements</li>
+</ul></li>
+<li><strong><code>bug/</code></strong> - Bug fixes for existing functionality
+<ul>
+<li>Use for: Fixing defects in existing features, correcting incorrect behavior</li>
+</ul></li>
+<li><strong><code>fix/</code></strong> - Quick fixes, hotfixes, and urgent corrections
+<ul>
+<li>Use for: Critical production issues, quick fixes</li>
+</ul></li>
+<li><strong><code>app/</code></strong> - Frontend application changes
+<ul>
+<li>Use for: React Native/Expo frontend modifications, UI/UX changes, mobile app features</li>
+</ul></li>
+<li><strong><code>infra/</code></strong> - Infrastructure and DevOps changes
+<ul>
+<li>Use for: AWS infrastructure updates, CDK changes</li>
+</ul></li>
+<li><strong><code>ci/</code></strong> - Continuous Integration/Continuous Deployment changes
+<ul>
+<li>Use for: GitHub Actions workflows, CI/CD pipeline improvements, automation updates</li>
+</ul></li>
+</ul>
+<p><strong>Examples:</strong></p>
+<ul>
+<li><code>feature/123-add-image-upload</code></li>
+<li><code>bug/456-fix-camera-permissions</code></li>
+<li><code>fix/789-security-patch</code></li>
+</ul>
+<hr>
+</section>
+</section>
+<section id="creating-an-issue" class="level3">
+<h3 class="anchored" data-anchor-id="creating-an-issue">Creating an Issue</h3>
+<p>When creating a new GitHub issue, follow these guidelines:</p>
+<p><strong>Issue Naming Convention:</strong></p>
+<ul>
+<li>Format: <code>&lt;tag&gt;: &lt;description&gt;</code></li>
+<li>Use the appropriate tag prefix (see <a href="#tags">Tags</a> section)</li>
+<li>Keep the description concise and descriptive</li>
+</ul>
+<p><strong>Steps:</strong></p>
+<ol type="1">
+<li>Go to the repository’s Issues tab</li>
+<li>Click <strong>New Issue</strong></li>
+<li>Enter the issue title using the naming convention: <code>&lt;tag&gt;: &lt;description&gt;</code></li>
+<li>Add a clear and detailed description of the issue or feature request</li>
+<li>Assign the issue to the appropriate team member</li>
+<li>Add appropriate labels and tags (see <a href="#tags">Tags</a> section)</li>
+</ol>
+<p><strong>Note:</strong> The tag you use in the issue title should match the tag you use when creating the corresponding branch (e.g., if the issue is titled <code>feature: add image upload</code>, create a branch with <code>feature/</code> prefix).</p>
+<hr>
+</section>
+<section id="creating-a-new-feature-branch" class="level3">
+<h3 class="anchored" data-anchor-id="creating-a-new-feature-branch">Creating a New Feature Branch</h3>
+<p>Follow these steps to create a new feature branch:</p>
+<ol type="1">
+<li><p><strong>Ensure you’re on <code>main</code> and up-to-date</strong></p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> checkout main</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> pull origin main</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+<li><p><strong>Create a new branch with the appropriate tag</strong></p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> checkout <span class="at">-b</span> <span class="op">&lt;</span>tag<span class="op">&gt;</span>/<span class="op">&lt;</span>issue-number<span class="op">&gt;</span>-<span class="op">&lt;</span>short-description<span class="op">&gt;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>Example:</strong></p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> checkout <span class="at">-b</span> feature/123-add-image-upload</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+<li><p><strong>Push the branch to remote</strong></p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> push <span class="at">-u</span> origin <span class="op">&lt;</span>tag<span class="op">&gt;</span>/<span class="op">&lt;</span>issue-number<span class="op">&gt;</span>-<span class="op">&lt;</span>short-description<span class="op">&gt;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>Example:</strong></p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> push <span class="at">-u</span> origin feature/123-add-image-upload</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+<li><p><strong>Verify branch naming</strong></p>
+<ul>
+<li>Branch name should follow the pattern: <code>&lt;tag&gt;/&lt;issue-number&gt;-&lt;short-description&gt;</code></li>
+<li>Use lowercase and hyphens (no spaces or underscores)</li>
+<li>Keep description concise (20 characters or less)</li>
+<li>Issue number should match the GitHub issue you’re working on</li>
+</ul></li>
+</ol>
+<p><strong>Notes:</strong></p>
+<ul>
+<li>Always create branches from <code>main</code> to ensure you have the latest code</li>
+<li>Use the <code>-u</code> flag when pushing to set up tracking between local and remote branches</li>
+<li>The branch will automatically trigger CI/CD workflows and deploy to a branch-specific stack</li>
+</ul>
+<hr>
+</section>
+<section id="tags" class="level3">
+<h3 class="anchored" data-anchor-id="tags">Tags</h3>
+<p>Tags are used to categorize issues and branches. Select the appropriate tag based on the type of work:</p>
+<ul>
+<li><strong><code>feature</code></strong> - For new features, enhancements, and functionality additions
+<ul>
+<li>Use for: Adding new user-facing features, implementing new capabilities, major enhancements</li>
+</ul></li>
+<li><strong><code>bug</code></strong> - For bug fixes and defect corrections
+<ul>
+<li>Use for: Fixing defects in existing features, correcting incorrect behavior</li>
+</ul></li>
+<li><strong><code>fix</code></strong> - For quick fixes, hotfixes, and urgent corrections
+<ul>
+<li>Use for: Critical production issues, quick fixes</li>
+</ul></li>
+<li><strong><code>app</code></strong> - For frontend application changes
+<ul>
+<li>Use for: React Native/Expo frontend modifications, UI/UX changes, mobile app features</li>
+</ul></li>
+<li><strong><code>infra</code></strong> - For infrastructure and DevOps changes
+<ul>
+<li>Use for: AWS infrastructure updates, CDK changes</li>
+</ul></li>
+<li><strong><code>ci</code></strong> - For CI/CD pipeline and automation changes
+<ul>
+<li>Use for: GitHub Actions workflows, CI/CD pipeline improvements, automation updates</li>
+</ul></li>
+</ul>
+</section>
+</section>
+<section id="code-development-review-policy" class="level2">
+<h2 class="anchored" data-anchor-id="code-development-review-policy">Code Development &amp; Review Policy</h2>
+<section id="policy-summary" class="level3">
+<h3 class="anchored" data-anchor-id="policy-summary">Policy Summary</h3>
+<p><strong>Pull Requests:</strong></p>
+<ul>
+<li>Required for all changes to <code>main</code> branch</li>
+<li>Must be linked to a GitHub issue</li>
+<li>Must receive minimum of 1 approving review</li>
+<li>Must pass all automated CI checks</li>
+</ul>
+<p><strong>Code Reviews:</strong></p>
+<ul>
+<li>Frequency: Reviewers check daily for pending PRs</li>
+<li>Approval: Minimum 1 approving review required</li>
+<li>Timeline: 24-48 hour response time expected</li>
+</ul>
+<p><strong>CI Checks:</strong></p>
+<ul>
+<li>Build validation</li>
+<li>Must pass all unit tests before merge is allowed</li>
+<li>These checks are automated on every PR open/update</li>
+</ul>
+<p><strong>Merging:</strong></p>
+<ul>
+<li>Target: All merges go to <code>main</code> (single integration branch)</li>
+<li>Use: Squash &amp; Merge or Rebase &amp; Merge</li>
+<li>Protection: Direct pushes to <code>main</code> are prohibited</li>
+<li>Post-merge: Automatic deployment to production or branch-specific stack</li>
+</ul>
+</section>
+<section id="pipeline-overview" class="level3">
+<h3 class="anchored" data-anchor-id="pipeline-overview">Pipeline overview:</h3>
+<ol type="1">
+<li>Pull Request opened</li>
+<li>PR Validation runs (Build &amp; Unit Tests)</li>
+<li>Code Review process</li>
+<li>PR Approved &amp; Merged</li>
+<li>Backend Build workflow runs</li>
+<li>Infrastructure Deploy workflow runs (Deploy stack &amp; Integration Tests)</li>
+<li>Full Deployment completed</li>
+</ol>
+<hr>
+</section>
+<section id="pull-requests" class="level3">
+<h3 class="anchored" data-anchor-id="pull-requests">Pull Requests</h3>
+<p>This policy establishes the code review process for our project, aligned with our automated CI/CD pipeline. All code changes must go through a Pull Request (PR) process before merging into <code>main</code>.</p>
+<p><strong>Note:</strong> PR validation runs build and tests only. It does not trigger deployment. This provides fast feedback without AWS usage.</p>
+<section id="pr-creation-checklist" class="level4">
+<h4 class="anchored" data-anchor-id="pr-creation-checklist">PR Creation Checklist</h4>
+<ul class="task-list">
+<li><label><input type="checkbox">Branch is named according to convention: (see <a href="#workflow-and-branching-strategy">Workflow and Branching Strategy</a>)</label></li>
+<li><label><input type="checkbox">Branch is linked to a GitHub issue</label></li>
+<li><label><input type="checkbox">Code follows project style guidelines</label></li>
+<li><label><input type="checkbox">Unit tests are added/updated for new functionality</label></li>
+<li><label><input type="checkbox">All existing tests pass locally</label></li>
+<li><label><input type="checkbox">Documentation is updated if needed</label></li>
+<li><label><input type="checkbox">PR description includes:</label>
+<ul>
+<li>Summary of changes</li>
+<li>Reference to related issue (<code>Closes #123</code>)</li>
+<li>Testing instructions (if applicable)</li>
+<li>Screenshots (for UI changes)</li>
+<li>Breaking changes (if any)</li>
+</ul></li>
+</ul>
+</section>
+</section>
+</section>
+<section id="automated-validation" class="level2">
+<h2 class="anchored" data-anchor-id="automated-validation">Automated Validation</h2>
+<section id="ci-checks-overview" class="level3">
+<h3 class="anchored" data-anchor-id="ci-checks-overview">CI Checks Overview</h3>
+<p>All PRs must pass automated CI checks before merging. These checks are <strong>mandatory</strong> and therefore can’t be bypassed.</p>
+<p><strong>Required Checks:</strong></p>
+<ol type="1">
+<li>Build job must succeed</li>
+<li>Unit tests job must succeed</li>
+<li>No compilation errors</li>
+</ol>
+<p><strong>Check Enforcement:</strong></p>
+<ul>
+<li>Branch protection rules prevent merging with failed checks</li>
+<li>Checks must pass on the latest commit</li>
+<li>Merge button is disabled until all checks pass</li>
+</ul>
+</section>
+<section id="what-gets-checked-automatically" class="level3">
+<h3 class="anchored" data-anchor-id="what-gets-checked-automatically">What Gets Checked Automatically</h3>
+<ol type="1">
+<li><strong>Build Validation</strong>
+<ul>
+<li>Kotlin JAR builds successfully</li>
+<li>Dependencies resolve correctly</li>
+</ul></li>
+<li><strong>Unit Tests</strong>
+<ul>
+<li>All unit tests pass</li>
+</ul></li>
+<li><strong>Workflow Status</strong>
+<ul>
+<li>Both build and test jobs must succeed</li>
+<li>Results visible in PR checks</li>
+</ul></li>
+</ol>
+<hr>
+</section>
+<section id="code-review-process" class="level3">
+<h3 class="anchored" data-anchor-id="code-review-process">Code Review Process</h3>
+<p>The purpose of code review is to ensure that the code base progresses over time without compromising on the code health. All of the tools and processes of code review are designed to this end. (see <a href="https://google.github.io/eng-practices/review/reviewer/standard.html">The Standard of Code Review</a>)</p>
+<section id="reviewer-assignment" class="level4">
+<h4 class="anchored" data-anchor-id="reviewer-assignment">Reviewer Assignment</h4>
+<ul>
+<li><strong>Required</strong>: Every PR must have at least one assigned reviewer</li>
+<li><strong>Assignment</strong>:
+<ul>
+<li>Automatically assigned based on code ownership (CODEOWNERS file)</li>
+<li>Manually assigned by PR creator</li>
+<li>Rotated among team members for fairness</li>
+</ul></li>
+<li><strong>Timeline</strong>: Reviewers should respond within 24-48 hours</li>
+</ul>
+</section>
+<section id="review-criteria" class="level4">
+<h4 class="anchored" data-anchor-id="review-criteria">Review Criteria</h4>
+<p>Reviewers should check for:</p>
+<ol type="1">
+<li><strong>Functionality</strong>
+<ul>
+<li>Code solves the stated problem</li>
+<li>Edge cases are handled</li>
+<li>No obvious bugs or logic errors</li>
+</ul></li>
+<li><strong>Code Quality</strong>
+<ul>
+<li>Follows project coding standards</li>
+<li>Proper error handling</li>
+<li>No code duplication</li>
+<li>Appropriate comments and documentation</li>
+</ul></li>
+<li><strong>Testing</strong>
+<ul>
+<li>Adequate test coverage</li>
+<li>Tests are meaningful and pass</li>
+<li>Integration tests updated if needed</li>
+</ul></li>
+<li><strong>Architecture</strong>
+<ul>
+<li>Follows project architecture patterns</li>
+<li>No unnecessary dependencies</li>
+<li>Proper separation of concerns</li>
+</ul></li>
+<li><strong>Security</strong>
+<ul>
+<li>No sensitive data exposed</li>
+<li>Input validation where appropriate</li>
+<li>Follows security best practices</li>
+</ul></li>
+</ol>
+</section>
+<section id="review-feedback" class="level4">
+<h4 class="anchored" data-anchor-id="review-feedback">Review Feedback</h4>
+<ul>
+<li><strong>Approval</strong>: Reviewer approves PR when satisfied</li>
+<li><strong>Request Changes</strong>: Reviewer requests changes with specific comments</li>
+<li><strong>Comments</strong>: Use GitHub’s review feature for line-by-line feedback</li>
+<li><strong>Discussion</strong>: Use PR comments for questions and clarifications</li>
+</ul>
+</section>
+<section id="code-review-frequency" class="level4">
+<h4 class="anchored" data-anchor-id="code-review-frequency">Code Review Frequency</h4>
+<ul>
+<li><strong>Daily Reviews</strong>: Team members should review PRs daily</li>
+<li><strong>Response Time</strong>: Aim for 24-48 hour review turnaround</li>
+<li><strong>Batch Reviews</strong>: Review multiple related PRs together when possible</li>
+</ul>
+</section>
+<section id="branch-maintenance" class="level4">
+<h4 class="anchored" data-anchor-id="branch-maintenance">Branch Maintenance</h4>
+<ul>
+<li><strong>Keep Updated</strong>: Regularly rebase/merge <code>main</code> into feature branches</li>
+<li><strong>Clean Up</strong>: Delete merged branches promptly</li>
+<li><strong>Naming</strong>: Use descriptive branch names that indicate purpose</li>
+</ul>
+</section>
+</section>
+</section>
+<section id="additional-resources" class="level2">
+<h2 class="anchored" data-anchor-id="additional-resources">Additional Resources</h2>
+<ul>
+<li><a href="https://guides.github.com/introduction/flow/">GitHub Flow Guide</a></li>
+<li><a href="https://www.conventionalcommits.org/">Conventional Commits</a></li>
+<li><a href="https://docs.aws.amazon.com/serverless-application-model/">AWS SAM Documentation</a></li>
+<li><a href="https://docs.expo.dev/">Expo Documentation</a></li>
+</ul>
+<hr>
+<p><strong>Document Version</strong>: 1.0<br>
+<strong>Last Updated</strong>: 2026<br>
+<strong>Maintained By</strong>: Stride Development Team</p>
+</section>
+</section>
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
