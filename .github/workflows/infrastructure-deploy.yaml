@@ -87,10 +87,12 @@ on:
         type: string
         description: 'Name of the JAR artifact to download (optional)'
 
-# Permissions required for OIDC (OpenID Connect) authentication
+# Permissions required for OIDC (OpenID Connect) authentication and called workflows
 permissions:
   id-token: write  # Required for OIDC to request JWT token
   contents: read   # Required to checkout code
+  checks: write    # Required for called workflow (integration-tests) to create check runs
+  pull-requests: write  # Required for called workflow (integration-tests) to post PR comments
 
 jobs:
   deploy:
