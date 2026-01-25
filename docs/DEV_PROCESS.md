@@ -146,26 +146,7 @@ All feature branches must follow this naming pattern:
 ```
 <tag>/<issue-number>-<short-description>
 ```
-
-**Branch Tags and Their Purposes:**
-
-- **`feature/`** - New features, enhancements, and functionality additions
-  - Use for: Adding new user-facing features, implementing new capabilities, major enhancements
-
-- **`bug/`** - Bug fixes for existing functionality
-  - Use for: Fixing defects in existing features, correcting incorrect behavior
-
-- **`fix/`** - Quick fixes, hotfixes, and urgent corrections
-  - Use for: Critical production issues, quick fixes
-
-- **`app/`** - Frontend application changes
-  - Use for: React Native/Expo frontend modifications, UI/UX changes, mobile app features
-
-- **`infra/`** - Infrastructure and DevOps changes
-  - Use for: AWS infrastructure updates, CDK changes
-
-- **`ci/`** - Continuous Integration/Continuous Deployment changes
-  - Use for: GitHub Actions workflows, CI/CD pipeline improvements, automation updates
+See [Tags](#tags) for details
 
 **Examples:**
 
