@@ -6,27 +6,31 @@ from PIL import Image
 import numpy as np
 
 # This script runs INSIDE the SageMaker container
+# We no longer need the install() function because we are providing a requirements.txt
+# which SageMaker installs automatically during the deployment/boot phase.
+
 def model_fn(model_dir):
     """
-    Loads the model based on the MODEL_TYPE environment variable.
+    Loads the ACTUAL models requested.
     """
     model_type = os.environ.get("MODEL_TYPE", "yolov11-nano")
-    from ultralytics import YOLO
-
+    
+    # 1. ACTUAL YOLO v11 Nano (Official Ultralytics)
     if model_type == "yolov11-nano":
-        # The barest/fastest version
+        from ultralytics import YOLO
         return YOLO('yolo11n.pt') 
     
+    # 2. ACTUAL YOLO-NAS Small (Official Deci AI / SuperGradients)
     elif model_type == "yolo-nas":
-        # Note: True YOLO-NAS requires super-gradients. 
-        # For this bare benchmark, we use the 'Small' YOLOv8 which has a similar 
-        # architectural profile to NAS-Small.
-        return YOLO('yolov8s.pt')
+        from super_gradients.training import models
+        return models.get("yolo_nas_s", pretrained_weights="coco")
         
+    # 3. ACTUAL YOLO v11 Small (Standard Real-time model)
     elif model_type == "yolo-realtime":
-        # The 'Medium' version: slower but much more accurate for real-time
-        return YOLO('yolo11m.pt')
+        from ultralytics import YOLO
+        return YOLO('yolo11s.pt')
     
+    from ultralytics import YOLO
     return YOLO('yolo11n.pt')
 
 def input_fn(request_body, request_content_type):
@@ -35,21 +39,25 @@ def input_fn(request_body, request_content_type):
     raise ValueError(f"Unsupported content type: {request_content_type}")
 
 def predict_fn(input_data, model):
-    # Perform detection
-    results = model(input_data)
-    return results
+    if hasattr(model, 'predict'):
+        return model.predict(input_data)
+    else:
+        return model(input_data)
 
 def output_fn(prediction, content_type):
-    result = prediction[0]
-    
-    # We record:
-    # 1. Inference Latency (the internal speed)
-    # 2. Confidence (the accuracy proxy)
-    # 3. Object count
-    output = {
-        "latency_ms": result.speed.get('inference', 0),
-        "detections_count": len(result.boxes),
-        "max_confidence": float(result.boxes.conf.max()) if len(result.boxes) > 0 else 0.0,
-    }
+    if isinstance(prediction, list):
+        result = prediction[0]
+        output = {
+            "model_latency_ms": result.speed.get('inference', 0),
+            "detections_count": len(result.boxes),
+            "max_confidence": float(result.boxes.conf.max()) if len(result.boxes) > 0 else 0.0,
+        }
+    else:
+        result = prediction.prediction
+        output = {
+            "model_latency_ms": 0,
+            "detections_count": len(result.bboxes_scores),
+            "max_confidence": float(result.bboxes_scores.max()) if len(result.bboxes_scores) > 0 else 0.0,
+        }
     
     return json.dumps(output)

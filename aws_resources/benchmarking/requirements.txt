@@ -1,0 +1,5 @@
+ultralytics
+super-gradients
+pillow
+torch
+torchvision

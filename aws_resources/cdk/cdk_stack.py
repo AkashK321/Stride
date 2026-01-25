@@ -153,10 +153,10 @@ class CdkStack(Stack):
             {"name": "yolo-realtime", "instance": "ml.m5.large"},
         ]
 
-        # Standard PyTorch Inference Image (for us-east-2)
+        # Standard PyTorch Inference Image (for us-east-1)
         # Note: In a real production app, we'd use the sagemaker.ContainerImage.from_asset or similar
         # For this benchmark, we'll assume a standard PyTorch environment.
-        image_uri = f"763104351884.dkr.ecr.us-east-2.amazonaws.com/pytorch-inference:2.1.0-cpu-py310-ubuntu20.04-sagemaker"
+        image_uri = f"763104351884.dkr.ecr.us-east-1.amazonaws.com/pytorch-inference:2.1.0-cpu-py310-ubuntu20.04-sagemaker"
 
         for model_info in models_to_benchmark:
             m_name = model_info["name"]
