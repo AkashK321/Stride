@@ -75,6 +75,13 @@ on:
         type: string
         description: 'Branch name for context'
 
+# Permissions required for test-reporter
+permissions:
+  contents: read
+  checks: write      # Required for test-reporter to create check runs
+  pull-requests: write  # Required for PR comments (if test-reporter adds them)
+
+
 jobs:
   test:
     name: Integration Tests
