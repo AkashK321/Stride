@@ -10,13 +10,11 @@
 # TRIGGERS:
 #   1. Called by infrastructure-deploy (workflow_call):
 #      - PRIMARY TRIGGER: Automatically triggered after successful stack deployment
-#      - Receives: api_endpoint, stack_name, branch_name
+#      - Receives: api_endpoint
 #      - Runs integration tests against the deployed stack
 #   2. Manual trigger (workflow_dispatch):
 #      - Can be run manually with required inputs:
 #        * api_endpoint: API Gateway endpoint URL
-#        * stack_name: CloudFormation stack name
-#        * branch_name: Branch name for context
 #
 # WORKFLOW FLOW:
 #   workflow_call OR workflow_dispatch
@@ -77,12 +75,55 @@ on:
         type: string
         description: 'Branch name for context'
 
+# Permissions required for test-reporter
+permissions:
+  contents: read
+  checks: write      # Required for test-reporter to create check runs
+  pull-requests: write  # Required for PR comments (if test-reporter adds them)
+
+
 jobs:
-  cleanup:
-    name: Cleanup
+  test:
+    name: Integration Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     
     steps:
       # Step 1: Checkout the repository code
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # Step 2: Set up Python for integration tests
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: aws_resources/requirements.txt
+
+      # Step 3: Install Python dependencies
+      - name: Install Python dependencies
+        working-directory: aws_resources
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Step 4: Run Integration Tests
+      - name: Run Integration Tests
+        working-directory: aws_resources
+        env:
+          API_BASE_URL: ${{ inputs.api_endpoint }}
+        run: |
+          python -m pytest -v backend/tests/integration/test_api.py --junitxml=test-results/integration-tests.xml
+
+      # Step 5: Publish test results to GitHub
+      - name: Publish test results
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Integration Test Results
+          path: aws_resources/test-results/integration-tests.xml
+          reporter: java-junit
+          fail-on-error: false
+          list-suites: all
+          list-tests: all
