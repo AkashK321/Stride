@@ -232,8 +232,6 @@ jobs:
           if [ -n "$API_ENDPOINT" ]; then
             echo "api_endpoint=$API_ENDPOINT" >> $GITHUB_OUTPUT
             echo "✅ API Endpoint: $API_ENDPOINT"
-            # Create GitHub Actions annotation (shows up in UI)
-            echo "::notice title=API Endpoint::${API_ENDPOINT}"
           fi
           
           # Create job summary with formatted markdown (shows up in Actions UI summary tab)
