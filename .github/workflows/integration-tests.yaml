@@ -53,14 +53,6 @@ on:
         required: true
         type: string
         description: 'API Gateway endpoint URL'
-      stack_name:
-        required: true
-        type: string
-        description: 'CloudFormation stack name'
-      branch_name:
-        required: true
-        type: string
-        description: 'Branch name for context'
   
   workflow_dispatch:
     inputs:
@@ -68,14 +60,6 @@ on:
         required: true
         type: string
         description: 'API Gateway endpoint URL'
-      stack_name:
-        required: true
-        type: string
-        description: 'CloudFormation stack name'
-      branch_name:
-        required: true
-        type: string
-        description: 'Branch name for context'
 
 jobs:
   cleanup:

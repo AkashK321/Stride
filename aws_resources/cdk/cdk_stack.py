@@ -23,7 +23,7 @@ import platform
 
 class CdkStack(Stack):
 
-    def __init__(self, scope: Construct, construct_id: str, branch_name: str, **kwargs) -> None:
+    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
         # default_vpc = ec2.Vpc.from_lookup(self, "DefaultVPC", is_default=True)
 
@@ -105,14 +105,14 @@ class CdkStack(Stack):
         items.add_method("GET")
 
         # Add stack outputs for reporting to CICD
-        CfnOutput(self, "APIEndpointOutput",
+        CfnOutput(self, "APIEndpointURL",
             value=api.url,
             description="API Gateway endpoint URL"
         )
 
-        CfnOutput(self, "BranchName",
-            value=branch_name,
-            description="Branch name used for this deployment"
+        CfnOutput(self, "StackName",
+            value=self.stack_name,
+            description="Stack name used for this deployment"
         )
 
         # Define RDS Resource

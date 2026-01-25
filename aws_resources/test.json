@@ -1,0 +1,7 @@
+{
+  "StrideStack-ci-60-centralize-stack-deploy-name": {
+    "APIEndpoint87847821": "https://dba9zgrwc6.execute-api.us-east-1.amazonaws.com/prod/",
+    "APIEndpointOutput": "https://dba9zgrwc6.execute-api.us-east-1.amazonaws.com/prod/",
+    "StackName": "StrideStack-ci-60-centralize-stack-deploy-name"
+  }
+}

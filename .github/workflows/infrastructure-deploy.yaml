@@ -67,10 +67,6 @@ name: Infrastructure Deploy
 on:
   workflow_call:
     inputs:
-      branch_name:
-        required: true
-        type: string
-        description: 'Branch name for stack deployment'
       jar_artifact_name:
         required: true
         type: string
@@ -78,10 +74,6 @@ on:
   
   workflow_dispatch:
     inputs:
-      branch_name:
-        required: true
-        type: string
-        description: 'Branch name for stack deployment'
       jar_artifact_name:
         required: false
         type: string
@@ -100,8 +92,6 @@ jobs:
     
     outputs:
       api_endpoint: ${{ steps.stack-outputs.outputs.api_endpoint }}
-      stack_name: ${{ steps.sanitize-branch.outputs.stack_name }}
-      sanitized_branch: ${{ steps.sanitize-branch.outputs.sanitized_branch }}
     
     steps:
       # Step 1: Checkout the repository code
@@ -186,97 +176,15 @@ jobs:
         run: |
           cdk bootstrap aws://${{ secrets.AWS_ACCOUNT_ID }}/us-east-1
       
-      # Step 11: Sanitize branch name for CloudFormation stack name
-      - name: Sanitize branch name
-        id: sanitize-branch
-        run: |
-          # Get branch name from input (workflow_call from backend-build or workflow_dispatch)
-          # When called by backend-build, branch_name is provided as input
-          # For manual workflow_dispatch, branch_name is also provided as input
-          if [ -n "${{ inputs.branch_name }}" ]; then
-            BRANCH_NAME="${{ inputs.branch_name }}"
-          else
-            # Fallback: extract from GITHUB_REF (should not happen in normal flow)
-            BRANCH_NAME="${GITHUB_REF#refs/heads/}"
-          fi
-          
-          # Sanitize branch name for CloudFormation stack naming
-          # Assumes branch format: <issue_number>-<description>
-          # Strategy: Extract issue number, truncate description to 20 chars max
-          
-          # Convert to lowercase and extract parts
-          BRANCH_LOWER=$(echo "$BRANCH_NAME" | tr '[:upper:]' '[:lower:]')
-          
-          # Special handling for main branch: use production stack name
-          if [ "$BRANCH_LOWER" = "main" ] || [ "$BRANCH_LOWER" = "master" ]; then
-            SANITIZED="production"
-            STACK_NAME="StrideStack"
-            echo "Branch name: $BRANCH_NAME (main branch)"
-            echo "Sanitized branch: $SANITIZED"
-            echo "Stack name: $STACK_NAME (production stack)"
-            echo "sanitized_branch=$SANITIZED" >> $GITHUB_OUTPUT
-            echo "stack_name=$STACK_NAME" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          
-          # Extract issue number (digits at start before first hyphen)
-          if [[ "$BRANCH_LOWER" =~ ^([0-9]+)- ]]; then
-            ISSUE_NUM="${BASH_REMATCH[1]}"
-            # Extract description (everything after issue number and hyphen)
-            DESCRIPTION="${BRANCH_LOWER#${ISSUE_NUM}-}"
-            # Sanitize description: alphanumeric and hyphens only, truncate to 20 chars
-            DESCRIPTION=$(echo "$DESCRIPTION" | sed 's/[^a-z0-9-]/-/g' | sed 's/^-\+//' | sed 's/-\+$//' | cut -c1-20)
-            
-            # Build sanitized name: issue-description (if description exists)
-            if [ -n "$DESCRIPTION" ] && [ "$DESCRIPTION" != "-" ]; then
-              SANITIZED="${ISSUE_NUM}-${DESCRIPTION}"
-            else
-              SANITIZED="${ISSUE_NUM}"
-            fi
-          else
-            # Branch doesn't match expected format, use full sanitization
-            # Convert to lowercase, replace invalid chars with hyphens, remove leading/trailing hyphens
-            SANITIZED=$(echo "$BRANCH_LOWER" | sed 's/[^a-z0-9-]/-/g' | sed 's/^-\+//' | sed 's/-\+$//' | cut -c1-100)
-            
-            # Ensure it starts with a letter (prepend 'branch-' if it starts with a number)
-            if [[ "$SANITIZED" =~ ^[0-9] ]]; then
-              SANITIZED="branch-${SANITIZED:0:93}"  # Leave room for 'branch-' prefix
-            fi
-          fi
-          
-          # If empty or just hyphens, use 'default'
-          if [ -z "$SANITIZED" ] || [ "$SANITIZED" = "-" ]; then
-            SANITIZED="default"
-          fi
-          
-          # Final stack name: StrideStack-{sanitized}
-          # Max length: 12 (prefix) + 116 (sanitized) = 128 chars (CloudFormation limit)
-          # But we keep it shorter for readability: max 100 chars for sanitized part
-          if [ ${#SANITIZED} -gt 100 ]; then
-            SANITIZED="${SANITIZED:0:100}"
-          fi
-          
-          STACK_NAME="StrideStack-${SANITIZED}"
-          
-          echo "Branch name: $BRANCH_NAME"
-          echo "Sanitized branch: $SANITIZED"
-          echo "Stack name: $STACK_NAME"
-          echo "sanitized_branch=$SANITIZED" >> $GITHUB_OUTPUT
-          echo "stack_name=$STACK_NAME" >> $GITHUB_OUTPUT
-      
-      # Step 12: Deploy CDK stack with branch-specific name
+      # Step 11: Deploy CDK
       - name: Deploy CDK stack
         id: deploy
         working-directory: aws_resources
         env:
           CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
           CDK_DEFAULT_REGION: us-east-1
-          BRANCH_NAME: ${{ steps.sanitize-branch.outputs.sanitized_branch }}
-          STACK_NAME: ${{ steps.sanitize-branch.outputs.stack_name }}
         run: |
-          # Deploy with branch-specific stack name using CDK context
-          echo "🚀 Deploying stack: ${STACK_NAME}"
-          if cdk deploy --require-approval never --all --context branchName=$BRANCH_NAME --context stackName=$STACK_NAME; then
+          if cdk deploy --require-approval never --all --outputs-file cdk-outputs.json; then
             echo "✅ Deployment successful!"
             echo "deployment_status=success" >> $GITHUB_OUTPUT
           else
@@ -285,24 +193,40 @@ jobs:
             exit 1
           fi
       
-      # Step 13: Get stack outputs and display in Actions UI
+      # Step 12: Get stack outputs and display in Actions UI
       - name: Get stack outputs
         id: stack-outputs
         working-directory: aws_resources
         run: |
-          # Use the branch-specific stack name
-          STACK_NAME="${{ steps.sanitize-branch.outputs.stack_name }}"
-          
-          # Get stack outputs using AWS CLI
-          OUTPUTS=$(aws cloudformation describe-stacks \
-            --stack-name $STACK_NAME \
-            --region us-east-1 \
-            --query 'Stacks[0].Outputs' \
-            --output json)
-          
-          # Extract specific outputs if they exist
-          API_ENDPOINT=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="APIEndpoint") | .OutputValue // empty')
-          STACK_ID=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="StackId") | .OutputValue // empty')
+          # Get the stack name from the outputs file generated by cdk deploy
+          if [ ! -f "cdk-outputs.json" ]; then
+            echo "Error: cdk-outputs.json not found"
+            exit 1
+          fi
+
+          # Get the first (and only) stack identifier from the JSON structure
+          STACK_KEY=$(jq -r 'keys[0]' cdk-outputs.json 2>/dev/null || echo "")
+          if [ -z "$STACK_KEY" ] || [ "$STACK_KEY" == "null" ]; then
+            echo "Error: Could not extract stack key from cdk-outputs.json"
+            exit 1
+          fi
+
+          # Extract StackName from the outputs
+          STACK_NAME=$(jq -r ".\"$STACK_KEY\".StackName // empty" cdk-outputs.json 2>/dev/null || echo "")
+          if [ -z "$STACK_NAME" ] || [ "$STACK_NAME" == "null" ]; then
+            echo "Error: Could not extract StackName from cdk-outputs.json"
+            exit 1
+          fi
+
+          # Extract APIEndpointURL from the outputs
+          API_ENDPOINT=$(jq -r ".\"$STACK_KEY\".APIEndpointURL // empty" cdk-outputs.json 2>/dev/null || echo "")
+          if [ -z "$API_ENDPOINT" ] || [ "$API_ENDPOINT" == "null" ]; then
+            echo "Warning: Could not extract APIEndpointURL from cdk-outputs.json"
+          fi
+
+          echo "stack_name=$STACK_NAME" >> $GITHUB_OUTPUT
+          echo "Deployed stack: $STACK_NAME"
+          echo "Reading outputs from cdk-outputs.json for stack $STACK_NAME"
           
           # Set outputs for use in subsequent steps or workflow outputs
           if [ -n "$API_ENDPOINT" ]; then
@@ -310,11 +234,6 @@ jobs:
             echo "✅ API Endpoint: $API_ENDPOINT"
             # Create GitHub Actions annotation (shows up in UI)
             echo "::notice title=API Endpoint::${API_ENDPOINT}"
-          fi
-          
-          if [ -n "$STACK_ID" ]; then
-            echo "stack_id=$STACK_ID" >> $GITHUB_OUTPUT
-            echo "✅ Stack ID: $STACK_ID"
           fi
           
           # Create job summary with formatted markdown (shows up in Actions UI summary tab)
@@ -326,9 +245,6 @@ jobs:
             echo "- **Stack Name**: \`${STACK_NAME}\`"
             echo "- **Region**: \`us-east-1\`"
             echo "- **Deployed At**: \`${DEPLOY_TIME}\`"
-            if [ -n "$STACK_ID" ]; then
-              echo "- **Stack ID**: \`${STACK_ID}\`"
-            fi
             echo ""
             echo "### Stack Outputs"
             if [ -n "$API_ENDPOINT" ]; then
@@ -342,14 +258,14 @@ jobs:
             echo "<summary>📋 All Stack Outputs</summary>"
             echo ""
             echo "\`\`\`json"
-            echo "$OUTPUTS" | jq '.'
+            jq ".\"$STACK_KEY\"" cdk-outputs.json
             echo "\`\`\`"
             echo "</details>"
           } >> $GITHUB_STEP_SUMMARY
           
           # Display all outputs in logs as well
           echo "📋 Stack Outputs:"
-          echo $OUTPUTS | jq '.'
+          jq ".\"$STACK_KEY\"" cdk-outputs.json
         continue-on-error: true
 
   integration-tests:
@@ -359,6 +275,4 @@ jobs:
     uses: ./.github/workflows/integration-tests.yaml
     with:
       api_endpoint: ${{ needs.deploy.outputs.api_endpoint }}
-      stack_name: ${{ needs.deploy.outputs.stack_name }}
-      branch_name: ${{ needs.deploy.outputs.sanitized_branch }}
     secrets: inherit

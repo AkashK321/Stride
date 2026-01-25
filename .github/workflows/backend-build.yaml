@@ -194,7 +194,6 @@ jobs:
     if: success()
     uses: ./.github/workflows/infrastructure-deploy.yaml
     with:
-      branch_name: ${{ github.ref_name }}
       jar_artifact_name: ${{ needs.build.outputs.artifact_name }}
     secrets: inherit
   

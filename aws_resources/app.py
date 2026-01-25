@@ -99,7 +99,7 @@ stack_name = sanitize_branch_name(branch_name)
 print(f"Branch Name: {branch_name}")
 print(f"Stack Name: {stack_name}")
 
-CdkStack(app, stack_name, branch_name=branch_name,
+CdkStack(app, stack_name,
     # If you don't specify 'env', this stack will be environment-agnostic.
     # Account/Region-dependent features and context lookups will not work,
     # but a single synthesized template can be deployed anywhere.
