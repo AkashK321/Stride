@@ -301,7 +301,9 @@ jobs:
             --output json)
           
           # Extract specific outputs if they exist
-          API_ENDPOINT=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="APIEndpoint") | .OutputValue // empty')
+          # LambdaRestApi auto-generates output with hash suffix, search for pattern
+          # Fixed in ci/60
+          API_ENDPOINT=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey | startswith("APIEndpoint")) | .OutputValue // empty' | head -n 1)
           STACK_ID=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="StackId") | .OutputValue // empty')
           
           # Set outputs for use in subsequent steps or workflow outputs
