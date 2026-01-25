@@ -117,7 +117,7 @@ def sanitize_branch_name(branch_name):
         sys.exit(1)
     
     # Build sanitized name: issue-description
-    sanitized = f"{issue_num}-{description}"
+    sanitized = f"{tag}-{issue_num}-{description}"
     
     # Final stack name: StrideStack-{sanitized}
     # Max length: 12 (prefix) + 100 (sanitized) = 112 chars (well under CloudFormation 128 limit)
