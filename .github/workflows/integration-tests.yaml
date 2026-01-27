@@ -98,7 +98,7 @@ jobs:
         env:
           API_BASE_URL: ${{ inputs.api_endpoint }}
         run: |
-          python -m pytest -v backend/tests/integration/test_api.py --junitxml=test-results/integration-tests.xml
+          python -m pytest -v backend/tests/ --junitxml=test-results/integration-tests.xml
 
       # Step 5: Publish test results to GitHub
       - name: Publish test results
