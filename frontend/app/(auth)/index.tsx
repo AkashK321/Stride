@@ -1,6 +1,7 @@
 import * as React from "react";
-import { View, Text, Pressable } from "react-native";
+import { View, Text } from "react-native";
 import { useRouter } from "expo-router";
+import Button from "../../components/Button";
 
 export default function Landing() {
   const router = useRouter();
@@ -16,28 +17,10 @@ export default function Landing() {
       },
     },
     React.createElement(Text, null, "Welcome to Stride."),
-    React.createElement(
-      Pressable,
-      {
-        onPress: () => router.replace("/home"),
-        style: {
-          paddingHorizontal: 24,
-          paddingVertical: 12,
-          borderRadius: 999,
-          backgroundColor: "#2563EB",
-        },
-      },
-      React.createElement(
-        Text,
-        {
-          style: {
-            color: "white",
-            fontWeight: "600",
-          },
-        },
-        "Sign in",
-      ),
-    ),
+    React.createElement(Button, {
+      onPress: () => router.replace("/home"),
+      title: "Sign in",
+    }),
   );
 }
 
