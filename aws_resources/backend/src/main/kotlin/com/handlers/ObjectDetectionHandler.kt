@@ -12,7 +12,6 @@ import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
 import java.net.URI
 import java.util.Base64
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-// Note: WebSockets use a different event class than REST!
 
 class ObjectDetectionHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGatewayV2WebSocketResponse> {
 
@@ -50,7 +49,6 @@ class ObjectDetectionHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGat
         }
 
         try {
-            // NEW (Explicit & Safer)
             val jsonMap = mapper.readValue(rawData, Map::class.java)
             val imageBase64 = jsonMap["body"] as? String ?: ""
 

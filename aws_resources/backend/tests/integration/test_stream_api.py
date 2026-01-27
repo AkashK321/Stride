@@ -82,7 +82,6 @@ def on_open(ws):
     ws.send(json.dumps(payload_real))
 
 if __name__ == "__main__":
-    # Suppress verbose websocket logs unless error
     # websocket.enableTrace(True) 
     
     ws = websocket.WebSocketApp(WS_URL,
