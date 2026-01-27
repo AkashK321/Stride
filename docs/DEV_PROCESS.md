@@ -62,20 +62,36 @@ Stride/
 ├── docs/                            # Project Documentation
 │   ├── BackendSetup.md
 │   ├── FrontendSetup.md
+│   ├── FRONTEND.md                  # Detailed frontend architecture & file structure
 │   ├── Design_Document.pdf
 │   └── DEV_PROCESS.md
 └── frontend/                        # Mobile Application (React Native/Expo)
     ├── app.json                     # Expo Configuration
     ├── package.json                 # JS Dependencies
     ├── tsconfig.json                # TypeScript Configuration
-    ├── app/                         # Application Screens & Routing
-    │   ├── _layout.tsx              # Root Layout & Navigation Wrapper
-    │   ├── index.tsx                # Home/Landing Screen
-    │   ├── login.tsx                # Authentication Screen
-    │   └── firebase.ts              # Firebase Configuration
-    ├── assets/                      # Static Assets (Images/Fonts)
-    │   └── images/
-    └── .vscode/                     # Editor Settings
+    ├── app/                         # Application Screens & File-based Routing
+    │   ├── _layout.tsx              # Root layout wrapping all routes in a Stack
+    │   ├── (auth)/                  # Unauthenticated flows (landing, future auth)
+    │   │   ├── _layout.tsx          # Auth-specific Stack layout
+    │   │   └── index.tsx            # Landing screen with \"Sign in\" button
+    │   └── (tabs)/                  # Main authenticated tabbed experience
+    │       ├── _layout.tsx          # Tabs layout (home/profile/settings)
+    │       ├── home.tsx             # Home tab screen
+    │       ├── profile.tsx          # Profile tab screen
+    │       └── settings.tsx         # Settings tab screen
+    ├── assets/                      # Static assets (images, fonts, icons)
+    │   ├── fonts/                   # Custom fonts (currently empty)
+    │   ├── icons/                   # Icon assets (currently empty)
+    │   └── images/                  # App and brand imagery (icons, splash, etc.)
+    ├── components/                  # Reusable UI components
+    │   ├── Button/                  # Primary button component
+    │   ├── Label/                   # Label/text component
+    │   └── TextField/               # Text input component
+    ├── hooks/                       # Custom React hooks
+    ├── services/                    # API clients and integrations
+    ├── theme/                       # Design tokens (colors, spacing, typography)
+    ├── types/                       # Shared TypeScript types/interfaces
+    └── utils/                       # Generic utility/helper functions
 
 ```
 
