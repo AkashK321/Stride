@@ -1,7 +1,15 @@
-import { Redirect } from 'expo-router';
-import React from 'react';
+import { Text, View } from "react-native";
 
-// Use the Redirect component so navigation occurs safely when the router mounts.
 export default function Index() {
-  return <Redirect href="/login" />;
+  return (
+    <View
+      style={{
+        flex: 1,
+        justifyContent: "center",
+        alignItems: "center",
+      }}
+    >
+      <Text>Welcome to Stride.</Text>
+    </View>
+  );
 }
