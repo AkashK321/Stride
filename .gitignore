@@ -73,3 +73,7 @@ aws_resources/schema_initializer/*.env
 # Ignore metadata and cache files in that folder
 aws_resources/schema_initializer/*.dist-info/
 aws_resources/schema_initializer/__pycache__/
+
+# Model weights cache (downloaded during CDK deploy)
+aws_resources/benchmarking/.weights_cache/
+*.pt

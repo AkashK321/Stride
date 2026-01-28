@@ -1,5 +1,8 @@
-ultralytics
-super-gradients
-pillow
-torch
-torchvision
+# Pinned versions for reproducible builds
+# These versions are compatible with PyTorch 2.1.0 (the SageMaker base image)
+
+ultralytics>=8.3.0
+super-gradients>=3.7.0
+pillow>=10.0.0
+torch>=2.1.0
+torchvision>=0.16.0

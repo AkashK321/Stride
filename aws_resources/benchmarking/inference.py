@@ -2,36 +2,83 @@ import os
 import json
 import torch
 import io
+import logging
 from PIL import Image
-import numpy as np
+
+# Configure logging for debugging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # This script runs INSIDE the SageMaker container
-# We no longer need the install() function because we are providing a requirements.txt
-# which SageMaker installs automatically during the deployment/boot phase.
+# Model weights are PRE-BUNDLED in model.tar.gz and extracted to /opt/ml/model/
+# This is the standard approach for production ML deployments - no runtime downloads.
 
 def model_fn(model_dir):
     """
-    Loads the ACTUAL models requested.
+    Loads models from pre-bundled weights in model_dir.
+    
+    SageMaker extracts model.tar.gz to /opt/ml/model/, so:
+    - model_dir = /opt/ml/model
+    - Weights are at /opt/ml/model/yolo11n.pt, etc.
     """
     model_type = os.environ.get("MODEL_TYPE", "yolov11-nano")
+    logger.info(f"Loading model type: {model_type}")
+    logger.info(f"Model directory: {model_dir}")
+    logger.info(f"Contents of model_dir: {os.listdir(model_dir)}")
     
-    # 1. ACTUAL YOLO v11 Nano (Official Ultralytics)
-    if model_type == "yolov11-nano":
-        from ultralytics import YOLO
-        return YOLO('yolo11n.pt') 
-    
-    # 2. ACTUAL YOLO-NAS Small (Official Deci AI / SuperGradients)
-    elif model_type == "yolo-nas":
-        from super_gradients.training import models
-        return models.get("yolo_nas_s", pretrained_weights="coco")
+    try:
+        # 1. YOLO v11 Nano - load from pre-bundled weights
+        if model_type == "yolov11-nano":
+            from ultralytics import YOLO
+            model_path = os.path.join(model_dir, "yolo11n.pt")
+            logger.info(f"Loading YOLO v11 Nano from: {model_path}")
+            if not os.path.exists(model_path):
+                raise FileNotFoundError(f"Weights not found at {model_path}")
+            return YOLO(model_path)
         
-    # 3. ACTUAL YOLO v11 Small (Standard Real-time model)
-    elif model_type == "yolo-realtime":
-        from ultralytics import YOLO
-        return YOLO('yolo11s.pt')
-    
-    from ultralytics import YOLO
-    return YOLO('yolo11n.pt')
+        # 2. YOLO-NAS Small - load from pre-bundled weights or download to /tmp
+        elif model_type == "yolo-nas":
+            # Set all SuperGradients cache directories to writable /tmp
+            os.environ["SG_CHECKPOINTS_DIR"] = "/tmp/sg_checkpoints"
+            os.environ["TORCH_HOME"] = "/tmp/torch_home"
+            os.makedirs("/tmp/sg_checkpoints", exist_ok=True)
+            os.makedirs("/tmp/torch_home", exist_ok=True)
+            
+            from super_gradients.training import models
+            
+            local_weights = os.path.join(model_dir, "yolo_nas_s_coco.pth")
+            
+            if os.path.exists(local_weights):
+                # Use pre-bundled weights (preferred)
+                logger.info(f"Loading YOLO-NAS from pre-bundled weights: {local_weights}")
+                model = models.get("yolo_nas_s", num_classes=80, checkpoint_path=local_weights)
+            else:
+                # Fallback: download to /tmp (if pre-bundling failed during CDK deploy)
+                logger.warning(f"Pre-bundled weights not found, downloading to /tmp...")
+                model = models.get("yolo_nas_s", pretrained_weights="coco")
+            
+            logger.info("YOLO-NAS loaded successfully")
+            return model
+            
+        # 3. YOLO v11 Small - load from pre-bundled weights
+        elif model_type == "yolo-realtime":
+            from ultralytics import YOLO
+            model_path = os.path.join(model_dir, "yolo11s.pt")
+            logger.info(f"Loading YOLO v11 Small from: {model_path}")
+            if not os.path.exists(model_path):
+                raise FileNotFoundError(f"Weights not found at {model_path}")
+            return YOLO(model_path)
+        
+        # Default fallback
+        else:
+            from ultralytics import YOLO
+            model_path = os.path.join(model_dir, "yolo11n.pt")
+            logger.warning(f"Unknown model type '{model_type}', falling back to yolo11n.pt")
+            return YOLO(model_path)
+            
+    except Exception as e:
+        logger.error(f"Failed to load model: {str(e)}")
+        raise
 
 def input_fn(request_body, request_content_type):
     if request_content_type == 'application/x-image':

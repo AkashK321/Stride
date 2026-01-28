@@ -152,10 +152,11 @@ class CdkStack(Stack):
 
         # 3. Model Definitions (The Recipe + Hardware)
         # Using ml.m5.large real-time endpoints for benchmarking
+        # Each model includes the weights file to bundle (standard CV deployment pattern)
         models_to_benchmark = [
-            {"name": "yolov11-nano", "instance": "ml.m5.large"},
-            {"name": "yolo-nas", "instance": "ml.m5.large"},
-            {"name": "yolo-realtime", "instance": "ml.m5.large"},
+            {"name": "yolov11-nano", "instance": "ml.m5.large", "weights_url": "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n.pt", "weights_file": "yolo11n.pt"},
+            {"name": "yolo-nas", "instance": "ml.m5.large", "weights_url": "https://sghub.deci.ai/models/yolo_nas_s_coco.pth", "weights_file": "yolo_nas_s_coco.pth"},
+            {"name": "yolo-realtime", "instance": "ml.m5.large", "weights_url": "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11s.pt", "weights_file": "yolo11s.pt"},
         ]
 
         # Standard PyTorch Inference Image (for us-east-1)
@@ -164,9 +165,15 @@ class CdkStack(Stack):
         # Create model.tar.gz files for each model and upload to S3
         benchmarking_dir = os.path.join(this_dir, "..", "benchmarking")
         
+        # Cache directory for downloaded weights (reuse across deploys)
+        weights_cache_dir = os.path.join(benchmarking_dir, ".weights_cache")
+        os.makedirs(weights_cache_dir, exist_ok=True)
+        
         for model_info in models_to_benchmark:
             m_name = model_info["name"]
             m_instance = model_info["instance"]
+            weights_url = model_info["weights_url"]
+            weights_file = model_info["weights_file"]
 
             # Create a temporary directory to build the model artifact
             temp_dir = tempfile.mkdtemp()
@@ -185,10 +192,43 @@ class CdkStack(Stack):
                 os.path.join(code_dir, "requirements.txt")
             )
             
-            # Create the model.tar.gz file
+            # Download and bundle model weights (the standard approach for CV models)
+            weights_bundled = False
+            if weights_url and weights_file:
+                cached_weights = os.path.join(weights_cache_dir, weights_file)
+                
+                # Download if not already cached
+                if not os.path.exists(cached_weights):
+                    print(f"📥 Downloading {weights_file} for {m_name}...")
+                    try:
+                        import urllib.request
+                        urllib.request.urlretrieve(weights_url, cached_weights)
+                        print(f"✅ Downloaded {weights_file} ({os.path.getsize(cached_weights) / 1024 / 1024:.1f} MB)")
+                        weights_bundled = True
+                    except Exception as e:
+                        print(f"⚠️  Failed to download {weights_file}: {e}")
+                        print(f"   Container will attempt to download at runtime")
+                        # Remove partial download if any
+                        if os.path.exists(cached_weights):
+                            os.remove(cached_weights)
+                else:
+                    print(f"📦 Using cached {weights_file} for {m_name}")
+                    weights_bundled = True
+                
+                # Copy weights to temp_dir root (will be at /opt/ml/model/ after extraction)
+                if weights_bundled:
+                    shutil.copy(cached_weights, os.path.join(temp_dir, weights_file))
+            
+            # Create the model.tar.gz file with both code/ and weights at root
             tar_path = os.path.join(temp_dir, "model.tar.gz")
             with tarfile.open(tar_path, "w:gz") as tar:
                 tar.add(code_dir, arcname="code")
+                # Add weights file at root level if it was successfully downloaded
+                if weights_bundled and weights_file:
+                    weights_path = os.path.join(temp_dir, weights_file)
+                    if os.path.exists(weights_path):
+                        tar.add(weights_path, arcname=weights_file)
+                        print(f"   📦 Bundled {weights_file} into model.tar.gz")
             
             # Upload the model artifact using S3 Asset
             model_asset = s3_assets.Asset(
