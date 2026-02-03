@@ -32,7 +32,7 @@ export const typography = {
         fontFamily: fontFamily.regular,
     },
     label: { 
-        fontSize: 14, 
+        fontSize: 12, 
         fontWeight: "400" as const,
         fontFamily: fontFamily.regular,
     },

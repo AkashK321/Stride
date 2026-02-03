@@ -4,9 +4,8 @@
  * This file defines all styles for the Label component including
  * variants for screen titles, section headers, form labels, error messages, etc.
  */
-import { StyleSheet, TextStyle } from "react-native";
+import { StyleSheet } from "react-native";
 import { colors } from "../../theme/colors";
-import { spacing } from "../../theme/spacing";
 import { typography } from "../../theme/typography";
 
 export type LabelVariant = "screenTitle" | "sectionHeader" | "formHeader" | "formLabel" | "error" | "caption" | "body";
@@ -22,7 +21,6 @@ export const labelStyles = StyleSheet.create({
     // Section header - medium heading
     sectionHeader: {
         ...typography.h1,
-        fontSize: 20,
         color: colors.text,
     },
     
@@ -42,14 +40,12 @@ export const labelStyles = StyleSheet.create({
     error: {
         ...typography.label,
         color: colors.danger,
-        fontSize: 12,
     },
     
     // Caption/helper text - smaller secondary text
     caption: {
         ...typography.label,
         color: colors.textSecondary,
-        fontSize: 12,
     },
     
     // Body text - standard body text

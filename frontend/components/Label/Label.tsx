@@ -16,7 +16,6 @@
 import * as React from "react";
 import { Text, TextStyle, ViewStyle } from "react-native";
 import { labelStyles, LabelVariant } from "./styles";
-import { colors } from "../../theme/colors";
 
 export interface LabelProps {
   children?: React.ReactNode;
