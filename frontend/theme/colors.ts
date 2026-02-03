@@ -18,10 +18,19 @@ export const colors = {
 
     // Danger/urgent (red) button colors
     danger: "#EF4444", // Red
-    dangerDark: "##710a0a", // Darker red for pressed state
+    dangerDark: "#710a0a", // Darker red for pressed state
 
     buttonPrimaryText: "#ffffff",
     buttonPrimaryTextDisabled: "#ffffff80",
+    
+    // Text colors
+    text: "#000000",
+    textSecondary: "#6B7280",
+    placeholder: "#9CA3AF",
+    
+    // Background colors
+    background: "#FFFFFF",
+    backgroundSecondary: "#F3F4F6",
 } as const;
 
 export type ColorKey = keyof typeof colors;

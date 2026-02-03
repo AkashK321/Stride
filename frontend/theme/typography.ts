@@ -36,6 +36,11 @@ export const typography = {
         fontWeight: "400" as const,
         fontFamily: fontFamily.regular,
     },
+    input: {
+        fontSize: 16,
+        fontWeight: "300" as const,
+        fontFamily: fontFamily.light,
+    },
   } as const;
 
 

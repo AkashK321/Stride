@@ -13,10 +13,13 @@ import { View, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import Button from "../../components/Button";
+import TextField from "../../components/TextField";
 import { spacing } from "../../theme/spacing";
 
 export default function Landing() {
   const router = useRouter();
+  const [email, setEmail] = React.useState("");
+  const [emailError, setEmailError] = React.useState("");
 
   return React.createElement(
     SafeAreaView,
@@ -38,6 +41,14 @@ export default function Landing() {
       accessibilityRole: "button",
       accessibilityHint: "Sign in to your account to continue",
     }),
+    React.createElement(TextField, {
+      value: email,
+      onChangeText: setEmail,
+      placeholder: "Email",
+      label: "Email",
+      keyboardType: "email-address",
+      error: emailError,
+    })
   );
 }
 
