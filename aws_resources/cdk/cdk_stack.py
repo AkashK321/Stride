@@ -15,6 +15,7 @@ from aws_cdk import (
     aws_rds as rds,
     aws_dynamodb as ddb,
     RemovalPolicy,
+    aws_cognito as cognito,
     custom_resources as cr,
     BundlingOptions,
     aws_iam as iam,
@@ -110,6 +111,49 @@ class CdkStack(Stack):
             timeout=Duration.seconds(29),  # Match API Gateway WebSocket timeout (29s max)
             snap_start=_lambda.SnapStartConf.ON_PUBLISHED_VERSIONS,
         )
+
+        # Define Cognito User Pool
+        user_pool = cognito.UserPool(
+            self, "StrideUserPool",
+            user_pool_name="stride-users",
+            sign_in_aliases=cognito.SignInAliases(
+                username=True,
+                email=True,
+            ),
+            auto_verify=cognito.AutoVerifiedAttrs(email=True),
+            password_policy=cognito.PasswordPolicy(
+                min_length=8,
+                require_lowercase=True,
+                require_uppercase=True,
+                require_digits=True,
+                require_symbols=True
+            ),
+            removal_policy=RemovalPolicy.DESTROY,  # For dev/testing only
+        )
+
+        # Define Cognito User Pool Client (for app authentication)
+        user_pool_client = user_pool.add_client(
+            "StrideUserPoolClient",
+            user_pool_client_name="stride-app-client",
+            generate_secret=False,  # Set to True if you need a client secret
+            auth_flows=cognito.AuthFlow(
+                user_password=True,
+                user_srp=True
+            )
+        )
+
+        # Grant Lambda permissions to interact with Cognito
+        user_pool.grant(
+            auth_handler,
+            "cognito-idp:AdminInitiateAuth",
+            "cognito-idp:AdminGetUser",
+            "cognito-idp:AdminCreateUser",
+            "cognito-idp:AdminSetUserPassword"
+        )
+
+        # Add Cognito configuration to Lambda environment
+        auth_handler.add_environment("USER_POOL_ID", user_pool.user_pool_id)
+        auth_handler.add_environment("USER_POOL_CLIENT_ID", user_pool_client.user_pool_client_id)
 
         # ========================================
         # SageMaker Resources for YOLOv11
@@ -219,6 +263,9 @@ class CdkStack(Stack):
         login = api.root.add_resource("login")
         login.add_method("POST", integration=apigw.LambdaIntegration(auth_handler))
 
+        register = api.root.add_resource("register")
+        register.add_method("POST", integration=apigw.LambdaIntegration(auth_handler))
+
         # Define the API Gateway WebSocket API
         ws_api = apigw_v2.WebSocketApi(self, "StreamAPI")
         # Create a Stage (required for WebSockets)
@@ -311,6 +358,16 @@ class CdkStack(Stack):
             properties={
                 "RunOnDeploy": str(time())
             }
+        )
+
+        CfnOutput(self, "UserPoolId",
+            value=user_pool.user_pool_id,
+            description="Cognito User Pool ID"
+        )
+
+        CfnOutput(self, "UserPoolClientId",
+            value=user_pool_client.user_pool_client_id,
+            description="Cognito User Pool Client ID"
         )
 
         # TODO: RDS setup disabled for now - to be re-enabled when ready
