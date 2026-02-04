@@ -28,8 +28,14 @@ class ObjectDetectionHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGat
 
         var validImage = false
         val connectionId = input.requestContext.connectionId
+        val routeKey = input.requestContext.routeKey ?: "unknown"
         val rawData = input.body ?: "{}"
         var imageBytes: ByteArray = ByteArray(0)
+        
+        logger.log("=== WebSocket Request ===")
+        logger.log("Route: $routeKey")
+        logger.log("Connection: $connectionId")
+        logger.log("Body size: ${rawData.length} bytes")
 
         if (apiClient == null) {
             val domainName = input.requestContext.domainName
@@ -44,6 +50,31 @@ class ObjectDetectionHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGat
                 .build()
         }
 
+        // Handle $default route (debugging - should not normally be used)
+        if (routeKey == "\$default") {
+            logger.log("WARNING: Message received on \$default route - route selection may have failed")
+            logger.log("Raw body (first 200 chars): ${rawData.take(200)}")
+            
+            // Try to send error response
+            val errorResponse = mapper.writeValueAsString(mapOf(
+                "status" to "error",
+                "error" to "Message received on \$default route. Route selection failed. Check that your message has 'action' field."
+            ))
+            
+            try {
+                val postRequest = PostToConnectionRequest.builder()
+                    .connectionId(connectionId)
+                    .data(SdkBytes.fromByteArray(errorResponse.toByteArray()))
+                    .build()
+                apiClient!!.postToConnection(postRequest)
+                logger.log("Sent error response for \$default route")
+            } catch (e: Exception) {
+                logger.log("Failed to send error response: ${e.message}")
+            }
+            
+            return APIGatewayV2WebSocketResponse().apply { statusCode = 200 }
+        }
+        
         logger.log("Processing frame from connection: $connectionId")
         if (rawData == "{}") {
             logger.log("Warning: Received empty frame.")
@@ -51,11 +82,15 @@ class ObjectDetectionHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGat
         }
 
         try {
+            logger.log("Parsing JSON body...")
             val jsonMap = mapper.readValue(rawData, Map::class.java)
             val imageBase64 = jsonMap["body"] as? String ?: ""
+            logger.log("Base64 string length: ${imageBase64.length}")
 
             if (imageBase64.isNotEmpty()) {
+                logger.log("Decoding base64...")
                 imageBytes = Base64.getDecoder().decode(imageBase64)
+                logger.log("Decoded image size: ${imageBytes.size} bytes")
 
                 // Check Magic Bytes for JPEG (First 2 bytes are FF D8)
                 val isJpeg = imageBytes.size > 2 && 

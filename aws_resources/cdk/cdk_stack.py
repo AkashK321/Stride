@@ -105,7 +105,7 @@ class CdkStack(Stack):
             handler="com.handlers.ObjectDetectionHandler",
             code=code_asset,  # Uses either the local JAR or the Docker builder
             memory_size=3008,
-            timeout=Duration.seconds(30),
+            timeout=Duration.seconds(29),  # Match API Gateway WebSocket timeout (29s max)
             snap_start=_lambda.SnapStartConf.ON_PUBLISHED_VERSIONS,
         )
 
@@ -233,6 +233,11 @@ class CdkStack(Stack):
         ws_api.add_route(
             route_key="frame", 
             integration=integrations.WebSocketLambdaIntegration("FrameIntegration", object_detection_handler)
+        )
+        # Add $default route to catch unmatched messages (for debugging)
+        ws_api.add_route(
+            route_key="$default",
+            integration=integrations.WebSocketLambdaIntegration("DefaultIntegration", object_detection_handler)
         )
         ws_api.grant_manage_connections(object_detection_handler)
 

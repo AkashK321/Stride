@@ -50,8 +50,15 @@ def test_single_image(ws_url, image_path):
         latency = (time.time() - start_time) * 1000
         
         print(f"✅ Received response in {latency:.0f}ms")
+        print(f"Raw response type: {type(response)}")
+        print(f"Raw response length: {len(response)} bytes")
+        print(f"Raw response (first 500 chars): {response[:500]}")
         
         # Parse response
+        if not response or len(response) == 0:
+            print("❌ Empty response received!")
+            return
+        
         result = json.loads(response)
         print("\n" + "="*60)
         print("RESPONSE:")

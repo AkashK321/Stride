@@ -184,6 +184,7 @@ def print_summary(summary):
 def main():
     parser = argparse.ArgumentParser(description='Test YOLOv11 SageMaker inference via WebSocket')
     parser.add_argument('--ws-url', type=str, help='WebSocket URL (overrides WS_API_URL env var)')
+    parser.add_argument('--images-dir', type=str, help='Custom directory containing test images (overrides default)')
     args = parser.parse_args()
     
     # Get WebSocket URL
@@ -196,6 +197,16 @@ def main():
     # Ensure URL ends with /prod
     if not ws_url.endswith("/prod"):
         ws_url = ws_url.rstrip("/") + "/prod"
+    
+    # Use custom images directory if provided
+    global TEST_IMAGES_DIR, TEST_IMAGES
+    if args.images_dir:
+        TEST_IMAGES_DIR = Path(args.images_dir)
+        # Auto-detect images in custom directory
+        TEST_IMAGES = sorted([f.name for f in TEST_IMAGES_DIR.glob('*.jpg')] + 
+                            [f.name for f in TEST_IMAGES_DIR.glob('*.png')] +
+                            [f.name for f in TEST_IMAGES_DIR.glob('*.JPG')] +
+                            [f.name for f in TEST_IMAGES_DIR.glob('*.PNG')])
     
     print("="*60)
     print("🧪 YOLOv11 SageMaker Inference Test")
