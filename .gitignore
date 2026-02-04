@@ -73,3 +73,7 @@ aws_resources/schema_initializer/*.env
 # Ignore metadata and cache files in that folder
 aws_resources/schema_initializer/*.dist-info/
 aws_resources/schema_initializer/__pycache__/
+
+# Test results (keep directory and README, ignore JSON outputs)
+aws_resources/test_results/*.json
+!aws_resources/test_results/README.md

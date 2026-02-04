@@ -23,8 +23,8 @@ def api_base_url():
 def test_dataflow(api_base_url):
     """
     Integration test that validates:
-    1. Invalid payloads are rejected.
-    2. Valid JPEG payloads are accepted.
+    1. Invalid payloads are rejected with error status.
+    2. Valid JPEG payloads return inference results.
     """
     
     # 1. CONNECT (Synchronous)
@@ -44,9 +44,16 @@ def test_dataflow(api_base_url):
         response_1 = ws.recv()
         print(f"📩 Received: {response_1}")
         
-        # Assertions
-        assert "false" in response_1.lower() or "error" in response_1.lower(), \
-            f"Expected error response for bad data, got: {response_1}"
+        # Parse JSON response
+        try:
+            result_1 = json.loads(response_1)
+            assert result_1.get("status") == "error", \
+                f"Expected error status for bad data, got: {result_1.get('status')}"
+            print("✅ Invalid data correctly rejected")
+        except json.JSONDecodeError:
+            # Fallback for old response format
+            assert "error" in response_1.lower(), \
+                f"Expected error response for bad data, got: {response_1}"
 
 
         # --- TEST CASE 2: SEND REAL JPEG ---
@@ -67,9 +74,28 @@ def test_dataflow(api_base_url):
         response_2 = ws.recv()
         print(f"📩 Received: {response_2}")
 
-        # Assertions
-        assert "true" in response_2.lower() or "valid" in response_2.lower(), \
-            f"Expected success for valid JPEG, got: {response_2}"
+        # Parse JSON response (new format with SageMaker inference)
+        try:
+            result_2 = json.loads(response_2)
+            assert result_2.get("status") == "success", \
+                f"Expected success status for valid JPEG, got: {result_2.get('status')}"
+            
+            # Validate structure
+            assert "detections" in result_2, "Response missing 'detections' field"
+            assert "metadata" in result_2, "Response missing 'metadata' field"
+            
+            detection_count = len(result_2.get("detections", []))
+            print(f"✅ Valid JPEG processed successfully")
+            print(f"   Detections found: {detection_count}")
+            
+            if result_2.get("metadata"):
+                inference_time = result_2["metadata"].get("inferenceTimeMs", 0)
+                print(f"   Inference time: {inference_time}ms")
+        except json.JSONDecodeError:
+            # Fallback for testing without SageMaker endpoint deployed
+            assert "valid" in response_2.lower() or "success" in response_2.lower(), \
+                f"Expected success for valid JPEG, got: {response_2}"
+            print("⚠️  Note: Received old response format (SageMaker endpoint may not be deployed)")
 
     finally:
         # Always close connection, even if test fails
