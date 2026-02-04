@@ -1,5 +1,6 @@
 # YOLOv11 and dependencies
-ultralytics==8.1.0
+# YOLOv11 requires ultralytics >= 8.3.0 (C3k2 module support)
+ultralytics>=8.3.0
 
 # PyTorch (CUDA 11.8 compatible)
 torch==2.1.0
