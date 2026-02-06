@@ -7,9 +7,14 @@
  *
  * Route group (auth) doesn't appear in URLs - routes here map to paths like "/", "/login", etc.
  */
+import * as React from "react";
 import { Stack } from "expo-router";
 
 export default function AuthLayout() {
-  return <Stack />;
+  return React.createElement(Stack, {
+    screenOptions: {
+      headerShown: false,
+    },
+  });
 }
 

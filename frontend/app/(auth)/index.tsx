@@ -10,26 +10,52 @@
  */
 import * as React from "react";
 import { View, Text } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import Button from "../../components/Button";
+import TextField from "../../components/TextField";
+import { spacing } from "../../theme/spacing";
+import { typography } from "../../theme/typography";
+import { colors } from "../../theme/colors";
 
 export default function Landing() {
   const router = useRouter();
+  const [email, setEmail] = React.useState("");
+  const [emailError, setEmailError] = React.useState("");
 
   return React.createElement(
-    View,
+    SafeAreaView,
     {
       style: {
         flex: 1,
-        justifyContent: "center",
+        justifyContent: "flex-start",
         alignItems: "center",
         gap: 16,
+        paddingTop: 40,
+        padding: spacing.lg,
+      },
+      edges: ["top", "bottom"],
+    },
+    React.createElement(Text, {
+      style: {
+        ...typography.h1,
+        fontSize: 40,
+        marginBottom: spacing.sm,
       },
     },
-    React.createElement(Text, null, "Welcome to Stride."),
+      "Welcome back to ",
+      React.createElement(Text, {
+        style: {
+          color: colors.primary,
+        },
+      }, "Stride."),
+    ),
     React.createElement(Button, {
       onPress: () => router.replace("/home"),
       title: "Sign in",
+      accessibilityLabel: "Sign in to your account",
+      accessibilityRole: "button",
+      accessibilityHint: "Sign in to your account to continue",
     }),
   );
 }

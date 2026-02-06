@@ -5,20 +5,24 @@
  * account details, and personal information. Users can view and edit their profile data here.
  *
  * Currently a placeholder screen that will be expanded with profile management features.
+ * Uses React.createElement (non-JSX) to match the project's TypeScript configuration.
  */
-import { View, Text } from "react-native";
+import * as React from "react";
+import { Text } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function Profile() {
-  return (
-    <View
-      style={{
+  return React.createElement(
+    SafeAreaView,
+    {
+      style: {
         flex: 1,
         justifyContent: "center",
         alignItems: "center",
-      }}
-    >
-      <Text>Profile</Text>
-    </View>
+      },
+      edges: ["top", "bottom"],
+    },
+    React.createElement(Text, null, "Profile"),
   );
 }
 

@@ -5,20 +5,24 @@
  * It will display the main content feed, dashboard, or primary app functionality.
  *
  * Currently a placeholder screen that will be expanded with actual content and features.
+ * Uses React.createElement (non-JSX) to match the project's TypeScript configuration.
  */
-import { View, Text } from "react-native";
+import * as React from "react";
+import { Text } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function Home() {
-  return (
-    <View
-      style={{
+  return React.createElement(
+    SafeAreaView,
+    {
+      style: {
         flex: 1,
         justifyContent: "center",
         alignItems: "center",
-      }}
-    >
-      <Text>Home</Text>
-    </View>
+      },
+      edges: ["top", "bottom"],
+    },
+    React.createElement(Text, null, "Home"),
   );
 }
 
