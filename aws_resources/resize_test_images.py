@@ -1,12 +1,25 @@
 #!/usr/bin/env python3
 """
 Resize large test images to fit within API Gateway WebSocket limits
-Target: < 100 KB after base64 encoding (so ~75 KB image size)
+
+IMPORTANT: API Gateway WebSocket has a 32 KB per-frame limit!
+The websocket-client library sends messages as a single frame, so the
+ENTIRE JSON payload ({"action":"frame","body":"<base64>"}) must be < 32 KB.
+
+Budget:
+  32,768 bytes  (32 KB frame limit)
+  -    31 bytes  (JSON wrapper: {"action":"frame","body":"..."})
+  = 32,737 bytes for base64 string
+  / 1.3333       (base64 overhead: 4 bytes per 3 raw bytes)
+  = ~24,500 bytes max raw image size
+
+We target 23 KB raw to leave comfortable margin.
 """
 
 from PIL import Image
 from pathlib import Path
 import base64
+import json
 import os
 
 # Configuration
@@ -14,8 +27,8 @@ SCRIPT_DIR = Path(__file__).parent.absolute()
 TEST_IMAGES_DIR = SCRIPT_DIR / "backend" / "tests" / "integration"
 RESIZED_DIR = TEST_IMAGES_DIR / "resized"
 
-# Target size: ~75 KB raw image = ~100 KB base64 = safe for 128 KB limit
-TARGET_SIZE_KB = 75
+# Target: 23 KB raw image -> ~30.7 KB base64 -> ~30.7 KB JSON payload (under 32 KB frame limit)
+TARGET_SIZE_KB = 23
 
 def get_image_size_kb(image_path):
     """Get image size in KB"""
@@ -118,10 +131,15 @@ def main():
         if resize_image_to_target_size(input_path, output_path, TARGET_SIZE_KB):
             resized_count += 1
             
-            # Verify base64 size
+            # Verify full payload size (this is what actually hits the 32 KB frame limit)
             with open(output_path, 'rb') as f:
-                base64_size = len(base64.b64encode(f.read()))
-            print(f"  Base64 size: {base64_size / 1024:.1f} KB")
+                raw_bytes = f.read()
+            b64_str = base64.b64encode(raw_bytes).decode('utf-8')
+            payload = json.dumps({"action": "frame", "body": b64_str})
+            payload_kb = len(payload.encode('utf-8')) / 1024
+            under_limit = "OK" if payload_kb < 32 else "OVER LIMIT!"
+            print(f"  Base64 size: {len(b64_str) / 1024:.1f} KB")
+            print(f"  Full JSON payload: {payload_kb:.1f} KB [{under_limit}]")
         
         print()
     
