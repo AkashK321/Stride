@@ -185,7 +185,6 @@ jobs:
         working-directory: aws_resources
         env:
           CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
-          CDK_DEFAULT_REGION: us-east-1
         run: |
           if cdk deploy --require-approval never --all --outputs-file cdk-outputs.json; then
             echo "✅ Deployment successful!"

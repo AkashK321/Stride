@@ -140,7 +140,6 @@ jobs:
         working-directory: aws_resources
         env:
           CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
-          CDK_DEFAULT_REGION: us-east-1
         run: |
           # Use CDK list to get the stack name (app.py reads branch from git, same as deploy)
           # This ensures we get the exact same stack name that was used during deployment
@@ -160,7 +159,6 @@ jobs:
         working-directory: aws_resources
         env:
           CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
-          CDK_DEFAULT_REGION: us-east-1
         run: |
           STACK_NAME="${{ steps.stack-name.outputs.stack_name }}"
           
@@ -219,4 +217,3 @@ jobs:
         working-directory: aws_resources
         env:
           CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
-          CDK_DEFAULT_REGION: us-east-1
