@@ -25,6 +25,7 @@ dependencies {
     implementation("software.amazon.awssdk:apigatewaymanagementapi")
     implementation("software.amazon.awssdk:url-connection-client")
     implementation("software.amazon.awssdk:dynamodb")
+    implementation("software.amazon.awssdk:sagemakerruntime")
     
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.14.2")
     implementation(kotlin("stdlib"))
@@ -33,6 +34,7 @@ dependencies {
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5:1.9.23")
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.0")
+    testImplementation("io.mockk:mockk:1.13.10")
 }
 
 java {

@@ -7,6 +7,7 @@ import com.amazonaws.services.lambda.runtime.LambdaLogger
 import software.amazon.awssdk.auth.credentials.EnvironmentVariableCredentialsProvider
 import software.amazon.awssdk.core.SdkBytes
 import software.amazon.awssdk.regions.Region
+import software.amazon.awssdk.services.sagemakerruntime.SageMakerRuntimeClient
 import software.amazon.awssdk.services.apigatewaymanagementapi.ApiGatewayManagementApiClient
 import software.amazon.awssdk.services.apigatewaymanagementapi.model.PostToConnectionRequest
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
@@ -23,24 +24,44 @@ data class Detection(
 )
 
 data class DetectedObject(
-    val object: Detection,
+    val obj: Detection,
     val distanceMeters: Double
 )
 
-class ObjectDetectionHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGatewayV2WebSocketResponse> {
+class ObjectDetectionHandler (
+    private val ddbClient: DynamoDbClient = DynamoDbClient.builder()
+        .region(Region.US_EAST_1)
+        .httpClient(UrlConnectionHttpClient.create())
+        .build(),
+    
+    private val sagemakerClient: SageMakerRuntimeClient = SageMakerRuntimeClient.builder()
+        .region(Region.US_EAST_1)
+        .httpClient(UrlConnectionHttpClient.create())
+        .build(),
 
-    private var apiClient: ApiGatewayManagementApiClient? = null
+    private val endpointName: String = System.getenv("ENDPOINT_NAME") ?: "default-endpoint",
+    private val configTableName: String = System.getenv("CONFIG_TABLE_NAME") ?: "default-table",
+
+    private val apiGatewayFactory: (String) -> ApiGatewayManagementApiClient = { endpointUrl ->
+        ApiGatewayManagementApiClient.builder()
+            .region(Region.US_EAST_1)
+            .endpointOverride(URI.create(endpointUrl))
+            .credentialsProvider(EnvironmentVariableCredentialsProvider.create())
+            .httpClient(UrlConnectionHttpClient.create())
+            .build()
+    }
+
+) : RequestHandler<APIGatewayV2WebSocketEvent, APIGatewayV2WebSocketResponse> {
+
     private val mapper = jacksonObjectMapper()
 
     companion object {
-        private val classHeightMap = mutableMapOf<Int, Float>()
-        private var isCacheLoaded = false
+        internal val classHeightMap = mutableMapOf<Int, Float>()
+        internal var isCacheLoaded = false
     }
 
-    private val ddbClient = DynamoDbClient.builder()
-        .region(Region.US_EAST_1)
-        .httpClient(UrlConnectionHttpClient.create())
-        .build()
+    // public get classHeightCache() = classHeightMap
+    // public get isClassHeightCacheLoaded() = isCacheLoaded
     
     private fun loadClassHeightCache(logger: LambdaLogger) {
         if (isCacheLoaded) {
@@ -68,7 +89,7 @@ class ObjectDetectionHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGat
         }
     }
     
-    fun estimateDistance(height: Int, obj: Int, focalLength: Double = 700.0): Double {
+    fun estimateDistance(height: Int, obj: Int, focalLength: Double = 800.0): Double {
         val avgHeight = classHeightMap[obj] ?: 1.7f
 
         val perceivedHeight = height.toDouble()
@@ -106,19 +127,6 @@ class ObjectDetectionHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGat
 
         loadClassHeightCache(logger)
 
-        if (apiClient == null) {
-            val domainName = input.requestContext.domainName
-            val stage = input.requestContext.stage
-            val endpoint = "https://$domainName/$stage"
-
-            apiClient = ApiGatewayManagementApiClient.builder()
-                .credentialsProvider(EnvironmentVariableCredentialsProvider.create())
-                .region(Region.US_EAST_1) // Adjust region as necessary
-                .endpointOverride(URI.create(endpoint))
-                .httpClient(UrlConnectionHttpClient.create())
-                .build()
-        }
-
         logger.log("Processing frame from connection: $connectionId")
         if (rawData == "{}") {
             logger.log("Warning: Received empty frame.")
@@ -154,7 +162,20 @@ class ObjectDetectionHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGat
         val estimatedDistances = estimateDistances(detections)
 
         try {
-            val responseMessage = "Frame received: ${imageBytes.size} bytes, Valid JPEG: $validImage, Estimated Distances: ${estimatedDistances.size}"
+            val distancesList = estimatedDistances.map { detected ->
+                mapOf(
+                    "classId" to detected.obj.classId,
+                    "distance" to String.format(java.util.Locale.US, "%.3f", detected.distanceMeters)
+                )
+            }
+
+            val responsePayload = mapOf(
+                "frameSize" to imageBytes.size,
+                "valid" to validImage,
+                "estimatedDistances" to distancesList
+            )
+
+            val responseMessage = mapper.writeValueAsString(responsePayload)
             logger.log("Sending response: $responseMessage")
 
             val postRequest = PostToConnectionRequest.builder()
@@ -162,7 +183,7 @@ class ObjectDetectionHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGat
                 .data(SdkBytes.fromByteArray(responseMessage.toByteArray()))
                 .build()
 
-            apiClient!!.postToConnection(postRequest)
+            apiGatewayFactory(endpointName).postToConnection(postRequest)
             logger.log("Response sent to connection: $connectionId")
         } catch (e: Exception) {
             logger.log("Caught exception while sending acknowledgment: ${e.message}")
