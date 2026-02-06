@@ -111,7 +111,8 @@ class ObjectDetectionHandler (
     }
 
     fun getDetections(imageBytes: ByteArray): List<Detection> {
-        TODO("Implement object detection logic with SageMaker")
+        //TODO Implement object detection logic with SageMaker
+        return emptyList()
     }
 
     override fun handleRequest(
