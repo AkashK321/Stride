@@ -157,7 +157,7 @@ class CdkStack(Stack):
             description="Stack name used for this deployment"
         )
 
-        object_detection_handler.add_environment("API_ENDPOINT", ws_api.api_endpoint+"/prod")
+        object_detection_handler.add_environment("ENDPOINT_NAME", ws_api.api_endpoint+"/prod")
 
         # Setup DynamoDB Table to map Object Avg Heights for distance estimation
         coco_config_table = ddb.Table(
