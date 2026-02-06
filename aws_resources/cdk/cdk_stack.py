@@ -17,6 +17,8 @@ from aws_cdk import (
     custom_resources as cr,
     BundlingOptions,
     aws_iam as iam,
+    aws_ecr as ecr,
+    aws_sagemaker as sagemaker,
 )
 from constructs import Construct
 import os
@@ -103,10 +105,104 @@ class CdkStack(Stack):
             handler="com.handlers.ObjectDetectionHandler",
             code=code_asset,  # Uses either the local JAR or the Docker builder
             memory_size=3008,
-            timeout=Duration.seconds(30),
+            timeout=Duration.seconds(29),  # Match API Gateway WebSocket timeout (29s max)
             snap_start=_lambda.SnapStartConf.ON_PUBLISHED_VERSIONS,
         )
 
+        # ========================================
+        # SageMaker Resources for YOLOv11
+        # ========================================
+        
+        # ECR Repository for YOLOv11 inference container
+        # The ECR repository is created separately by GitHub Actions workflow (build-sagemaker-image.yaml)
+        # Here we just reference it by name
+        ecr_repo_name = "stride-yolov11-inference"
+        
+        # Reference the ECR repository by name (created by GitHub Actions or manually)
+        # This avoids CloudFormation trying to create/manage the repository
+        ecr_repo = ecr.Repository.from_repository_name(
+            self, "YoloV11InferenceRepo",
+            repository_name=ecr_repo_name
+        )
+        
+        # Note: The ECR repository must exist before deploying this stack
+        # Run the "Build and Push SageMaker Docker Image" GitHub Action first
+
+        # Create IAM Role for SageMaker Endpoint
+        sagemaker_role = iam.Role(
+            self, "SageMakerExecutionRole",
+            assumed_by=iam.ServicePrincipal("sagemaker.amazonaws.com"),
+            managed_policies=[
+                iam.ManagedPolicy.from_aws_managed_policy_name("AmazonSageMakerFullAccess")
+            ]
+        )
+
+        # Grant SageMaker role permission to pull from ECR
+        ecr_repo.grant_pull(sagemaker_role)
+
+        # Get AWS account and region for ECR image URI
+        account = Stack.of(self).account
+        region = Stack.of(self).region
+        
+        # Construct ECR image URI (will be populated after docker build/push)
+        ecr_image_uri = f"{account}.dkr.ecr.{region}.amazonaws.com/{ecr_repo.repository_name}:latest"
+
+        # Create SageMaker Model
+        sagemaker_model = sagemaker.CfnModel(
+            self, "YoloV11Model",
+            execution_role_arn=sagemaker_role.role_arn,
+            model_name="stride-yolov11-nano-model",
+            primary_container=sagemaker.CfnModel.ContainerDefinitionProperty(
+                image=ecr_image_uri,
+                mode="SingleModel"
+                # Note: No ModelDataUrl needed - model weights are baked into the container
+            )
+        )
+
+        # Create SageMaker Endpoint Configuration
+        endpoint_config = sagemaker.CfnEndpointConfig(
+            self, "YoloV11EndpointConfig",
+            endpoint_config_name="stride-yolov11-nano-config",
+            production_variants=[
+                sagemaker.CfnEndpointConfig.ProductionVariantProperty(
+                    variant_name="AllTraffic",
+                    model_name=sagemaker_model.model_name,
+                    initial_instance_count=1,
+                    instance_type="ml.g4dn.xlarge",  # GPU instance
+                    initial_variant_weight=1.0
+                )
+            ]
+        )
+        endpoint_config.add_dependency(sagemaker_model)
+
+        # Create SageMaker Endpoint
+        sagemaker_endpoint = sagemaker.CfnEndpoint(
+            self, "YoloV11Endpoint",
+            endpoint_name="stride-yolov11-nano-endpoint",
+            endpoint_config_name=endpoint_config.endpoint_config_name
+        )
+        sagemaker_endpoint.add_dependency(endpoint_config)
+
+        # Grant Lambda permission to invoke SageMaker endpoint
+        object_detection_handler.add_to_role_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=["sagemaker:InvokeEndpoint"],
+                resources=[
+                    f"arn:aws:sagemaker:{region}:{account}:endpoint/{sagemaker_endpoint.endpoint_name}"
+                ]
+            )
+        )
+
+        # Add environment variables to Lambda for SageMaker endpoint
+        object_detection_handler.add_environment(
+            "SAGEMAKER_ENDPOINT_NAME", 
+            sagemaker_endpoint.endpoint_name
+        )
+        object_detection_handler.add_environment(
+            "AWS_REGION_SAGEMAKER", 
+            region
+        )
 
         # Define the API Gateway REST API
         api = apigw.LambdaRestApi(
@@ -138,6 +234,11 @@ class CdkStack(Stack):
             route_key="frame", 
             integration=integrations.WebSocketLambdaIntegration("FrameIntegration", object_detection_handler)
         )
+        # Add $default route to catch unmatched messages (for debugging)
+        ws_api.add_route(
+            route_key="$default",
+            integration=integrations.WebSocketLambdaIntegration("DefaultIntegration", object_detection_handler)
+        )
         ws_api.grant_manage_connections(object_detection_handler)
 
         # Add stack outputs for reporting to CICD
@@ -154,6 +255,22 @@ class CdkStack(Stack):
         CfnOutput(self, "StackName",
             value=self.stack_name,
             description="Stack name used for this deployment"
+        )
+
+        # SageMaker Outputs
+        CfnOutput(self, "ECRRepositoryURI",
+            value=ecr_repo.repository_uri,
+            description="ECR repository URI for YOLOv11 inference container"
+        )
+
+        CfnOutput(self, "SageMakerEndpointName",
+            value=sagemaker_endpoint.endpoint_name,
+            description="SageMaker endpoint name for YOLOv11 inference"
+        )
+
+        CfnOutput(self, "SageMakerEndpointArn",
+            value=f"arn:aws:sagemaker:{region}:{account}:endpoint/{sagemaker_endpoint.endpoint_name}",
+            description="SageMaker endpoint ARN"
         )
 
         # TODO: RDS setup disabled for now - to be re-enabled when ready

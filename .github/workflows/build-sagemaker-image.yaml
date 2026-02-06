@@ -1,0 +1,81 @@
+name: Build and Push SageMaker Docker Image
+
+on:
+  workflow_dispatch:  # Manual trigger - use this for first build and updates
+  push:
+    paths:
+      - 'aws_resources/sagemaker/**'  # Auto-run only when inference code changes
+      - '.github/workflows/build-sagemaker-image.yaml'
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: stride-yolov11-inference
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set AWS Account ID
+        id: account
+        run: |
+          echo "account_id=${{ secrets.AWS_ACCOUNT_ID }}" >> $GITHUB_OUTPUT
+          echo "AWS Account: ${{ secrets.AWS_ACCOUNT_ID }}"
+
+      - name: Create ECR repository if it doesn't exist
+        continue-on-error: true
+        run: |
+          aws ecr create-repository \
+            --repository-name ${{ env.ECR_REPOSITORY }} \
+            --region ${{ env.AWS_REGION }} || true
+
+      - name: Build Docker image
+        working-directory: aws_resources/sagemaker
+        run: |
+          echo "Building YOLOv11 SageMaker inference container..."
+          docker build -t ${{ env.ECR_REPOSITORY }}:latest .
+          echo "✅ Docker image built successfully"
+
+      - name: Tag Docker image for ECR
+        env:
+          ECR_URI: ${{ steps.account.outputs.account_id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+        run: |
+          docker tag ${{ env.ECR_REPOSITORY }}:latest \
+            $ECR_URI/${{ env.ECR_REPOSITORY }}:latest
+          echo "✅ Image tagged for ECR"
+
+      - name: Push Docker image to ECR
+        env:
+          ECR_URI: ${{ steps.account.outputs.account_id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+        run: |
+          docker push $ECR_URI/${{ env.ECR_REPOSITORY }}:latest
+          echo "✅ Image pushed to ECR successfully"
+          echo "ECR Image URI: $ECR_URI/${{ env.ECR_REPOSITORY }}:latest"
+
+      - name: Summary
+        env:
+          ECR_URI: ${{ steps.account.outputs.account_id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+        run: |
+          echo "### ✅ Docker Image Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Repository:** ${{ env.ECR_REPOSITORY }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** latest" >> $GITHUB_STEP_SUMMARY
+          echo "**Image URI:** \`$ECR_URI/${{ env.ECR_REPOSITORY }}:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Next step: Deploy CDK stack to create SageMaker endpoint" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# Start nginx
+nginx &
+
+# Start gunicorn with Flask app
+exec gunicorn --bind unix:/tmp/gunicorn.sock \
+    --workers 1 \
+    --threads 4 \
+    --timeout 300 \
+    --log-level info \
+    --access-logfile - \
+    --error-logfile - \
+    wsgi:app

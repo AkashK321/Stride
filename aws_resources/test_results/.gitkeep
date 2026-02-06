@@ -1,0 +1,2 @@
+# This file ensures the test_results directory is tracked by git
+# Actual test result JSON files should be ignored (see .gitignore)
