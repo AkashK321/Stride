@@ -29,10 +29,10 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
         context: Context,
     ): APIGatewayProxyResponseEvent {
         context.logger.log("Request: ${input.httpMethod} ${input.path}")
-        
+
         val path = input.path ?: ""
         val method = input.httpMethod ?: ""
-        
+
         return when {
             path == "/login" && method == "POST" -> handleLogin(input, context)
             path == "/register" && method == "POST" -> handleRegister(input, context)
@@ -50,7 +50,7 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
             // Get environment variables
             val userPoolId = System.getenv("USER_POOL_ID")
             val clientId = System.getenv("USER_POOL_CLIENT_ID")
-            
+
             if (userPoolId.isNullOrEmpty() || clientId.isNullOrEmpty()) {
                 context.logger.log("ERROR: Missing USER_POOL_ID or USER_POOL_CLIENT_ID environment variables")
                 return createErrorResponse(500, "Server configuration error")
@@ -66,27 +66,37 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
                 return createErrorResponse(400, "Invalid request format. Expected JSON with username and password")
             }
 
-            if (loginRequest.username.isNullOrEmpty() || loginRequest.password.isNullOrEmpty()) {
+            // Validate and normalize username (trim whitespace)
+            val normalizedUsername = try {
+                validateAndNormalizeUsername(loginRequest.username)
+            } catch (e: IllegalArgumentException) {
+                return createErrorResponse(400, e.message ?: "Invalid username format")
+            }
+
+            // Validate password (trim whitespace, but don't normalize - passwords are case-sensitive)
+            val normalizedPassword = loginRequest.password?.trim()
+            
+            if (normalizedUsername == null || normalizedPassword.isNullOrEmpty()) {
                 return createErrorResponse(400, "Username and password are required")
             }
 
             // Authenticate with Cognito using USER_PASSWORD_AUTH (matches client configuration)
-            val authRequest = InitiateAuthRequest.builder()  // Changed from AdminInitiateAuthRequest
+            val authRequest = InitiateAuthRequest.builder()
                 .clientId(clientId)
-                .authFlow(AuthFlowType.USER_PASSWORD_AUTH)  // Changed to match client config
+                .authFlow(AuthFlowType.USER_PASSWORD_AUTH)
                 .authParameters(
                     mapOf(
-                        "USERNAME" to loginRequest.username,
-                        "PASSWORD" to loginRequest.password
+                        "USERNAME" to normalizedUsername,
+                        "PASSWORD" to normalizedPassword
                     )
                 )
                 .build()
 
             val authResponse: InitiateAuthResponse = cognitoClient.initiateAuth(authRequest)
-            
+
             // Check if authentication was successful
             val authResult: AuthenticationResultType? = authResponse.authenticationResult()
-        
+
             if (authResult != null) {
                 // Success - return tokens
                 val responseBody = mapper.writeValueAsString(
@@ -98,7 +108,7 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
                         "tokenType" to authResult.tokenType()
                     )
                 )
-                
+
                 return APIGatewayProxyResponseEvent()
                     .withStatusCode(200)
                     .withBody(responseBody)
@@ -108,18 +118,18 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
                 context.logger.log("Authentication challenge required: ${authResponse.challengeName()}")
                 return createErrorResponse(401, "Authentication challenge required: ${authResponse.challengeName()}")
             }
-            
+
         } catch (e: CognitoIdentityProviderException) {
             context.logger.log("ERROR: Cognito authentication failed: ${e.message}")
-            
+
             return when {
-                e.message?.contains("NotAuthorizedException") == true -> 
+                e.message?.contains("NotAuthorizedException") == true ->
                     createErrorResponse(401, "Invalid username or password")
-                e.message?.contains("UserNotFoundException") == true -> 
+                e.message?.contains("UserNotFoundException") == true ->
                     createErrorResponse(401, "User not found")
-                e.message?.contains("UserNotConfirmedException") == true -> 
+                e.message?.contains("UserNotConfirmedException") == true ->
                     createErrorResponse(403, "User account is not confirmed")
-                else -> 
+                else ->
                     createErrorResponse(401, "Authentication failed: ${e.message}")
             }
         } catch (e: Exception) {
@@ -128,7 +138,7 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
             return createErrorResponse(500, "Internal server error")
         }
     }
-    
+
     private fun createErrorResponse(
         statusCode: Int,
         message: String
@@ -139,7 +149,110 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
             .withBody(errorBody)
             .withHeaders(mapOf("Content-Type" to "application/json"))
     }
-    
+
+    // Validation and normalization helper functions
+
+    private fun validateAndNormalizeEmail(email: String?): String? {
+        if (email.isNullOrBlank()) return null
+        
+        // Trim whitespace
+        val trimmed = email.trim()
+        
+        // Convert to lowercase (Cognito requires lowercase emails)
+        val normalized = trimmed.lowercase()
+        
+        // Validate email format (RFC 5322 compliant, simplified)
+        // Cognito accepts: local@domain format
+        val emailRegex = Regex(
+            "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
+        )
+        
+        if (!normalized.matches(emailRegex)) {
+            throw IllegalArgumentException("Invalid email format")
+        }
+        
+        // Cognito email requirements:
+        // - Max 256 characters total
+        // - Local part (before @) max 64 characters
+        // - Domain part (after @) max 255 characters
+        val parts = normalized.split("@")
+        if (parts.size != 2) {
+            throw IllegalArgumentException("Invalid email format")
+        }
+        
+        if (parts[0].length > 64) {
+            throw IllegalArgumentException("Email local part exceeds 64 characters")
+        }
+        
+        if (parts[1].length > 255) {
+            throw IllegalArgumentException("Email domain part exceeds 255 characters")
+        }
+        
+        if (normalized.length > 256) {
+            throw IllegalArgumentException("Email exceeds 256 characters")
+        }
+        
+        return normalized
+    }
+
+    private fun validateAndNormalizePhoneNumber(phone: String?): String? {
+        if (phone.isNullOrBlank()) return null
+        
+        // Trim whitespace
+        val trimmed = phone.trim()
+        
+        // Remove common formatting characters
+        val cleaned = trimmed.replace(Regex("[\\s\\-\\(\\)\\.]"), "")
+        
+        // Cognito phone number requirements:
+        // - Must start with + followed by country code
+        // - Format: +[country code][number]
+        // - Example: +1234567890 (US), +441234567890 (UK)
+        val phoneRegex = Regex("^\\+[1-9]\\d{1,14}$")
+        
+        if (!cleaned.matches(phoneRegex)) {
+            throw IllegalArgumentException("Invalid phone number format. Must be E.164 format: +[country code][number]")
+        }
+        
+        // E.164 max length is 15 digits (excluding +)
+        if (cleaned.length > 16) { // + plus 15 digits
+            throw IllegalArgumentException("Phone number exceeds maximum length")
+        }
+        
+        return cleaned
+    }
+
+    private fun validateAndNormalizeUsername(username: String?): String? {
+        if (username.isNullOrBlank()) return null
+        
+        val trimmed = username.trim()
+        
+        // Cognito username requirements:
+        // - 1-128 characters
+        // - Can contain letters, numbers, and these special chars: . _ - + = , @
+        // - Cannot start with a number
+        if (trimmed.isEmpty()) {
+            throw IllegalArgumentException("Username cannot be empty")
+        }
+        
+        if (trimmed.length > 128) {
+            throw IllegalArgumentException("Username exceeds 128 characters")
+        }
+        
+        // Cannot start with a number
+        if (trimmed.first().isDigit()) {
+            throw IllegalArgumentException("Username cannot start with a number")
+        }
+        
+        // Allowed characters: letters, numbers, and . _ - + = , @
+        val usernameRegex = Regex("^[a-zA-Z][a-zA-Z0-9._\\-+=,@]*$")
+        if (!trimmed.matches(usernameRegex)) {
+            throw IllegalArgumentException("Username contains invalid characters. Allowed: letters, numbers, and . _ - + = , @")
+        }
+        
+        return trimmed
+    }
+
     private fun handleRegister(
         input: APIGatewayProxyRequestEvent,
         context: Context
@@ -149,7 +262,7 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
         try {
             // Get environment variables
             val userPoolId = System.getenv("USER_POOL_ID")
-            
+
             if (userPoolId.isNullOrEmpty()) {
                 context.logger.log("ERROR: Missing USER_POOL_ID environment variable")
                 return createErrorResponse(500, "Server configuration error")
@@ -165,34 +278,68 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
                 return createErrorResponse(400, "Invalid request format. Expected JSON with username, password, and email")
             }
 
-            if (registerRequest.username.isNullOrEmpty() || 
-                registerRequest.password.isNullOrEmpty() || 
-                registerRequest.email.isNullOrEmpty()) {
+            // Validate and normalize all fields
+            val normalizedUsername = try {
+                validateAndNormalizeUsername(registerRequest.username)
+            } catch (e: IllegalArgumentException) {
+                return createErrorResponse(400, e.message ?: "Invalid username format")
+            }
+
+            val normalizedEmail = try {
+                validateAndNormalizeEmail(registerRequest.email)
+            } catch (e: IllegalArgumentException) {
+                return createErrorResponse(400, e.message ?: "Invalid email format")
+            }
+
+            // Optional: validate phone number if provided
+            val normalizedPhone = registerRequest.phoneNumber?.let { phone ->
+                try {
+                    validateAndNormalizePhoneNumber(phone)
+                } catch (e: IllegalArgumentException) {
+                    return createErrorResponse(400, e.message ?: "Invalid phone number format")
+                }
+            }
+
+            // Validate password (trim but don't normalize)
+            val normalizedPassword = registerRequest.password?.trim()
+            
+            if (normalizedUsername == null || normalizedPassword.isNullOrEmpty() || normalizedEmail == null) {
                 return createErrorResponse(400, "Username, password, and email are required")
             }
 
-            // Create user in Cognito
+            // Build user attributes list
+            val userAttributes = mutableListOf(
+                software.amazon.awssdk.services.cognitoidentityprovider.model.AttributeType.builder()
+                    .name("email")
+                    .value(normalizedEmail)  // Already lowercase and validated
+                    .build()
+            )
+            
+            // Add phone number if provided
+            normalizedPhone?.let { phone ->
+                userAttributes.add(
+                    software.amazon.awssdk.services.cognitoidentityprovider.model.AttributeType.builder()
+                        .name("phone_number")
+                        .value(phone)  // Already in E.164 format
+                        .build()
+                )
+            }
+
+            // Create user in Cognito with normalized values
             val createUserRequest = AdminCreateUserRequest.builder()
                 .userPoolId(userPoolId)
-                .username(registerRequest.username)
-                .userAttributes(
-                    listOf(
-                        software.amazon.awssdk.services.cognitoidentityprovider.model.AttributeType.builder()
-                            .name("email")
-                            .value(registerRequest.email)
-                            .build()
-                    )
-                )
+                .username(normalizedUsername)  // Trimmed and validated
+                .userAttributes(userAttributes)
                 .messageAction(MessageActionType.SUPPRESS)  // Don't send welcome email
                 .build()
 
             cognitoClient.adminCreateUser(createUserRequest)
 
-            // Set password as permanent to avoid NEW_PASSWORD_REQUIRED challenge
+            // Set password with trimmed value
             val setPasswordRequest = AdminSetUserPasswordRequest.builder()
                 .userPoolId(userPoolId)
-                .username(registerRequest.username)
-                .password(registerRequest.password)
+                .username(normalizedUsername)
+                .password(normalizedPassword)
                 .permanent(true)
                 .build()
 
@@ -202,23 +349,23 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
             val responseBody = mapper.writeValueAsString(
                 mapOf("message" to "User registered successfully")
             )
-            
+
             return APIGatewayProxyResponseEvent()
                 .withStatusCode(201)
                 .withBody(responseBody)
                 .withHeaders(mapOf("Content-Type" to "application/json"))
-            
+
         } catch (e: CognitoIdentityProviderException) {
             context.logger.log("ERROR: Cognito registration failed: ${e.message}")
-            
+
             return when {
-                e.message?.contains("UsernameExistsException") == true -> 
+                e.message?.contains("UsernameExistsException") == true ->
                     createErrorResponse(409, "Username already exists")
-                e.message?.contains("InvalidPasswordException") == true -> 
+                e.message?.contains("InvalidPasswordException") == true ->
                     createErrorResponse(400, "Password does not meet requirements")
-                e.message?.contains("InvalidParameterException") == true -> 
+                e.message?.contains("InvalidParameterException") == true ->
                     createErrorResponse(400, "Invalid parameter: ${e.message}")
-                else -> 
+                else ->
                     createErrorResponse(400, "Registration failed: ${e.message}")
             }
         } catch (e: Exception) {
@@ -227,17 +374,18 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
             return createErrorResponse(500, "Internal server error")
         }
     }
-    
+
     // Data class for login request
     private data class LoginRequest(
         val username: String?,
         val password: String?
     )
-    
+
     // Data class for register request
     private data class RegisterRequest(
         val username: String?,
         val password: String?,
-        val email: String?
+        val email: String?,
+        val phoneNumber: String? = null  // Optional
     )
 }
