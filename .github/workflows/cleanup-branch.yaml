@@ -76,6 +76,7 @@ jobs:
     timeout-minutes: 15
     
     # Only run if PR was merged, workflow_dispatch, or push (for testing)
+    
     if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     
     steps:
