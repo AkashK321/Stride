@@ -75,17 +75,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     
-    # Only run if PR was merged (not just closed)
-    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
+    # Only run if PR was merged, workflow_dispatch, or push (for testing)
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     
     steps:
       # Step 1: Extract branch name
       - name: Get branch name
         id: branch-info
         run: |
-          # Get branch name from PR event or manual input
+          # Get branch name from PR event, push event, or manual input
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             BRANCH_NAME="${{ inputs.branch_name }}"
+          elif [ "${{ github.event_name }}" == "push" ]; then
+            # For push events, extract branch name from ref (e.g., refs/heads/ci/48-branch-cleanup)
+            BRANCH_NAME=$(echo "${{ github.ref }}" | sed 's|refs/heads/||')
           else
             BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
           fi
