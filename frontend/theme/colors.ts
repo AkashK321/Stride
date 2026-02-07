@@ -25,7 +25,7 @@ export const colors = {
     
     // Text colors
     text: "#000000",
-    textSecondary: "#6B7280",
+    textSecondary: "#636161",
     placeholder: "#9CA3AF",
     
     // Background colors

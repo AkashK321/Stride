@@ -1,19 +1,52 @@
-## Stride Frontend
+# Stride Frontend
 
-This is the React Native frontend for Stride, built with Expo and `expo-router`.
+React Native mobile application built with Expo and Expo Router.
 
-### Get started
+## Prerequisites
 
-1. **Install dependencies**
+- Node.js (v18 or higher)
+- npm or yarn
+- Expo CLI (installed globally or via npx)
+
+## Setup
+
+1. **Install dependencies:**
 
    ```bash
+   cd frontend
    npm install
    ```
 
-2. **Start the app**
+2. **Configure environment variables:**
+   
+   Create a `.env` file in the `frontend/` directory:
+   ```bash
+   cp .env.example .env
+   ```
+   
+   Edit `.env` and set the `EXPO_PUBLIC_API_BASE_URL` variable:
+   ```
+   EXPO_PUBLIC_API_BASE_URL=https://your-api-gateway-url.execute-api.us-east-1.amazonaws.com/prod
+   ```
+   
+   **Finding your API Gateway URL:**
+   - After deploying the AWS CDK stack, the API Gateway URL is available in the CloudFormation stack outputs
+   - Look for the output named `RestAPIEndpointURL`
+   - The URL format is: `https://xxxxx.execute-api.us-east-1.amazonaws.com/prod`
+   
+   **Note:** The `.env` file is git-ignored and should not be committed to version control.
+
+3. **Start the development server:**
 
    ```bash
-   npx expo start
+   npm start
+   ```
+   
+   Or for a specific platform:
+   ```bash
+   npm run ios      # iOS simulator
+   npm run android  # Android emulator
+   npm run web      # Web browser
    ```
 
 You can open the app in:
@@ -22,7 +55,31 @@ You can open the app in:
 - **iOS simulator** / **Android emulator**
 - A **development build** if you add native modules later
 
----
+## Environment Variables
+
+### Required
+
+- `EXPO_PUBLIC_API_BASE_URL` - The base URL for the API Gateway REST API endpoint
+  - Must be set in `.env` file
+  - Format: `https://xxxxx.execute-api.us-east-1.amazonaws.com/prod`
+  - No trailing slash
+
+### Expo Environment Variables
+
+In Expo, environment variables prefixed with `EXPO_PUBLIC_` are exposed to client-side code. This is necessary for the API base URL since it's used in the React Native app.
+
+**Important:** After modifying `.env` file, you must restart the Expo development server for changes to take effect.
+
+## Development
+
+- **Linting:** `npm run lint`
+- **Type checking:** TypeScript is configured and will show errors in your IDE
+
+## Building
+
+For production builds, see the [Expo documentation](https://docs.expo.dev/build/introduction/).
+
+## Project Structure
 
 ### File structure overview
 
@@ -63,9 +120,15 @@ frontend/
 │  ├─ spacing.ts                # Spacing scale (margins/padding)
 │  ├─ typography.ts             # Font sizes, weights, and text styles
 │  └─ index.ts                  # Theme barrel exports / helpers
+├─ contexts/                    # React contexts (AuthContext, etc.)
+├─ services/                    # API and business logic services
+│  ├─ api.ts                    # API client for backend requests
+│  └─ tokenStorage.ts           # Secure token storage and refresh logic
 ├─ types/                       # Shared TypeScript types and interfaces
 ├─ utils/                       # Small, pure utility functions and helpers
 ├─ app.json                     # Expo app configuration (name, icons, splash, etc.)
+├─ .env                         # Environment variables (not committed)
+├─ .env.example                 # Environment variable template
 ├─ eslint.config.js             # ESLint configuration
 ├─ expo-env.d.ts                # Expo environment type declarations
 ├─ package.json                 # Frontend dependencies and scripts
@@ -131,10 +194,19 @@ Keeping hooks in one place makes it easier to share logic across screens without
 
 Integration points with external systems:
 
-- HTTP clients for your backend (e.g., `apiClient`, `authService`).
+- **`api.ts`**: HTTP client for backend API requests (login, register, token refresh)
+- **`tokenStorage.ts`**: Secure token storage using `expo-secure-store` and automatic token refresh logic
 - Analytics, logging, feature flags, or any other side-effectful services.
 
 By routing all external calls through `services`, components and hooks stay focused on UI and state, not on networking details.
+
+#### `contexts/`
+
+React Context providers for global application state:
+
+- **`AuthContext.tsx`**: Manages authentication state, login/logout, and token refresh across the app
+
+Contexts provide a way to share state and functions across components without prop drilling.
 
 #### `theme/`
 
@@ -168,7 +240,29 @@ Instead of defining styles, colors, and UI elements directly inside each screen,
 
 ---
 
-### Learn more about Expo & Expo Router
+## Troubleshooting
+
+### "EXPO_PUBLIC_API_BASE_URL environment variable is not set"
+
+- Ensure you have created a `.env` file in the `frontend/` directory
+- Verify the file contains `EXPO_PUBLIC_API_BASE_URL=your-url-here`
+- Restart the Expo development server after creating/modifying `.env`
+- Check that there are no typos in the variable name
+
+### API requests failing
+
+- Verify the `EXPO_PUBLIC_API_BASE_URL` is correct
+- Check that the API Gateway is deployed and accessible
+- Ensure the URL doesn't have a trailing slash
+- Check network connectivity and CORS settings on the API Gateway
+
+### Other Issues
+
+- **Metro bundler cache issues:** Try clearing the cache with `npx expo start --clear`
+- **TypeScript errors:** Ensure all dependencies are installed and run `npm install` again
+- **Expo Go limitations:** Some features (like secure storage) may have limitations in Expo Go; consider using a development build
+
+## Learn More
 
 To learn more about developing with Expo and `expo-router`, see:
 
