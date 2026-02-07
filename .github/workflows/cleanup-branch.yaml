@@ -200,22 +200,22 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-1
       
-      # Step 9: Destroy CDK stack (removed the "Get stack name" step since we calculate it above)
+        # Step 9: Destroy CDK stack
       - name: Destroy CDK stack
-        working-directory: aws_resources
-        env:
-          CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
         run: |
           STACK_NAME="${{ steps.stack-name.outputs.stack_name }}"
           
           echo "Destroying stack: $STACK_NAME"
           
-          # Use CDK destroy to remove the stack
-          # CDK will handle the deletion of all resources in the stack
-          if cdk destroy --force --require-approval never "$STACK_NAME"; then
-            echo "Stack destruction completed: $STACK_NAME"
+          # Use AWS CLI to delete the stack directly (avoids CDK app.py issues)
+          # This is more reliable since we already know the exact stack name
+          if aws cloudformation delete-stack \
+            --stack-name "$STACK_NAME" \
+            --region us-east-1; then
+            echo "✅ Stack deletion initiated: $STACK_NAME"
+            echo "Note: Stack deletion may take several minutes to complete"
           else
-            echo "Failed to destroy stack: $STACK_NAME"
+            echo "❌ Failed to initiate stack deletion: $STACK_NAME"
             exit 1
           fi
       
