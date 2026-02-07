@@ -38,6 +38,9 @@ export interface TextFieldProps {
   secureTextEntry?: boolean;
   keyboardType?: "default" | "email-address" | "numeric" | "phone-pad" | "number-pad";
   autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  autoFocus?: boolean;
+  returnKeyType?: "done" | "go" | "next" | "search" | "send";
+  onSubmitEditing?: () => void;
   accessibilityLabel?: string;
   accessibilityHint?: string;
   style?: ViewStyle;
@@ -45,7 +48,7 @@ export interface TextFieldProps {
   rightIcon?: React.ReactNode;
 }
 
-export default function TextField({
+const TextField = React.forwardRef<TextInput, TextFieldProps>(({
   value,
   onChangeText,
   placeholder,
@@ -56,14 +59,16 @@ export default function TextField({
   secureTextEntry = false,
   keyboardType = "default",
   autoCapitalize = "none",
+  autoFocus = false,
+  returnKeyType = "done",
+  onSubmitEditing,
   accessibilityLabel,
   accessibilityHint,
   style,
   inputStyle,
   rightIcon,
-}: TextFieldProps) {
+}, ref) => {
   const [isFocused, setIsFocused] = React.useState(false);
-  const inputRef = React.useRef<TextInput>(null);
 
   const handleFocus = () => {
     if (!disabled) {
@@ -112,7 +117,7 @@ export default function TextField({
       React.createElement(
         TextInput,
         {
-          ref: inputRef,
+          ref: ref,
           value,
           onChangeText,
           placeholder,
@@ -121,6 +126,9 @@ export default function TextField({
           secureTextEntry,
           keyboardType,
           autoCapitalize,
+          autoFocus,
+          returnKeyType,
+          onSubmitEditing,
           onFocus: handleFocus,
           onBlur: handleBlur,
           accessibilityLabel: accessibilityLabel || label || placeholder,
@@ -160,4 +168,8 @@ export default function TextField({
       error,
     ),
   );
-}
+});
+
+TextField.displayName = "TextField";
+
+export default TextField;

@@ -9,7 +9,7 @@
  * alongside this screen in the (auth) directory.
  */
 import * as React from "react";
-import { View, Text, Alert, Pressable, Keyboard, TouchableWithoutFeedback } from "react-native";
+import { View, Text, Alert, Pressable, Keyboard, TouchableWithoutFeedback, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -25,6 +25,8 @@ import { useAuth } from "../../contexts/AuthContext";
 export default function Landing() {
   const router = useRouter();
   const { login: authLogin } = useAuth();
+  const usernameRef = React.useRef<TextInput>(null);
+  const passwordRef = React.useRef<TextInput>(null);
   const [username, setUsername] = React.useState("");
   const [usernameError, setUsernameError] = React.useState("");
   const [password, setPassword] = React.useState("");
@@ -135,10 +137,15 @@ export default function Landing() {
       "Sign in to your account"
     ),
     React.createElement(TextField, {
+      ref: usernameRef,
       value: username,
       onChangeText: setUsername,
       error: usernameError,
       autoCapitalize: "none",
+      returnKeyType: "next",
+      onSubmitEditing: () => {
+        passwordRef.current?.focus();
+      },
       placeholder: "Username",
       style: {
         width: "100%",
@@ -146,11 +153,14 @@ export default function Landing() {
       },
     }),
     React.createElement(TextField, {
+      ref: passwordRef,
       value: password,
       onChangeText: setPassword,
       error: passwordError,
       secureTextEntry: !showPassword,
       autoCapitalize: "none",
+      returnKeyType: "go",
+      onSubmitEditing: handleSignIn,
       placeholder: "Password",
       style: {
         width: "100%",
