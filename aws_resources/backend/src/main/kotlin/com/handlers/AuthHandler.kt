@@ -107,6 +107,10 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
                     .withStatusCode(200)
                     .withBody(responseBody)
                     .withHeaders(mapOf("Content-Type" to "application/json"))
+            } else {
+                // Challenge required (shouldn't happen if Cognito is configured correctly)
+                context.logger.log("Authentication challenge required: ${authResponse.challengeName()}")
+                return createErrorResponse(401, "Authentication challenge required: ${authResponse.challengeName()}")
             }
 
         } catch (e: CognitoIdentityProviderException) {
