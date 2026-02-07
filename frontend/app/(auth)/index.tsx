@@ -14,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import Button from "../../components/Button";
 import TextField from "../../components/TextField";
+import Label from "../../components/Label";
 import { spacing } from "../../theme/spacing";
 import { typography } from "../../theme/typography";
 import { colors } from "../../theme/colors";
@@ -36,27 +37,45 @@ export default function Landing() {
       },
       edges: ["top", "bottom"],
     },
-    React.createElement(Text, {
-      style: {
-        ...typography.h1,
-        fontSize: 40,
-        marginBottom: spacing.sm,
-      },
-    },
-      "Welcome back to ",
-      React.createElement(Text, {
+    React.createElement(
+      Text,
+      {
         style: {
-          color: colors.primary,
+          ...typography.h1,
+          fontSize: 40,
+          marginBottom: spacing.sm,
         },
-      }, "Stride."),
+      },
+      "Welcome back to ",
+      React.createElement(
+        Text,
+        {
+          style: {
+            color: colors.primary,
+          },
+        },
+        "Stride."
+      )
     ),
+    React.createElement(
+      Label,
+      {
+        variant: "formHeader",
+        style: {
+          marginBottom: spacing.md,
+          alignSelf: "flex-start",
+        },
+      },
+      "Sign in to your account"
+    ),
+
     React.createElement(Button, {
       onPress: () => router.replace("/home"),
       title: "Sign in",
       accessibilityLabel: "Sign in to your account",
       accessibilityRole: "button",
       accessibilityHint: "Sign in to your account to continue",
-    }),
+    })
   );
 }
 
