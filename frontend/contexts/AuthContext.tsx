@@ -34,16 +34,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Protect routes based on authentication
   React.useEffect(() => {
-    if (isLoading) return;
+    if (isLoading) return; // Wait for auth check to complete
 
     const inAuthGroup = segments[0] === "(auth)";
+    const inTabsGroup = segments[0] === "(tabs)";
 
-    if (!isAuthenticated && !inAuthGroup) {
-      // Redirect to login if not authenticated and not in auth group
-      router.replace("/");
-    } else if (isAuthenticated && inAuthGroup) {
-      // Redirect to home if authenticated and in auth group
+    // If not authenticated, redirect to login (unless already in auth group)
+    if (!isAuthenticated) {
+      if (!inAuthGroup) {
+        // User is trying to access protected route - redirect to login
+        router.replace("/");
+      }
+      // If already in auth group, allow access (user is on login/register page)
+      return;
+    }
+
+    // If authenticated, redirect away from auth pages to home
+    if (isAuthenticated && inAuthGroup) {
       router.replace("/home");
+      return;
+    }
+
+    // If authenticated and trying to access tabs, allow access
+    if (isAuthenticated && inTabsGroup) {
+      // User is authenticated and accessing protected routes - allow
+      return;
     }
   }, [isAuthenticated, isLoading, segments, router]);
 

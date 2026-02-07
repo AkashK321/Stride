@@ -8,11 +8,51 @@
  * This layout is required by expo-router and serves as the entry point for all navigation.
  */
 import * as React from "react";
+import { View, ActivityIndicator } from "react-native";
 import { Stack } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useFonts, Roboto_400Regular, Roboto_700Bold, Roboto_300Light } from "@expo-google-fonts/roboto";
-import { AuthProvider } from "../contexts/AuthContext";
+import { AuthProvider, useAuth } from "../contexts/AuthContext";
 import { setupAutoRefresh } from "../services/tokenStorage";
+import { colors } from "../theme/colors";
+
+/**
+ * Inner component that has access to AuthContext
+ */
+function AppContent() {
+  const { isLoading } = useAuth();
+
+  // Setup automatic token refresh
+  React.useEffect(() => {
+    const cleanup = setupAutoRefresh(5); // Check every 5 minutes
+    return cleanup;
+  }, []);
+
+  // Show loading screen while checking authentication
+  if (isLoading) {
+    return React.createElement(
+      View,
+      {
+        style: {
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: colors.background,
+        },
+      },
+      React.createElement(ActivityIndicator, {
+        size: "large",
+        color: colors.primary,
+      }),
+    );
+  }
+
+  return React.createElement(Stack, {
+    screenOptions: {
+      headerShown: false,
+    },
+  });
+}
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
@@ -20,12 +60,6 @@ export default function RootLayout() {
     Roboto_400Regular,
     Roboto_700Bold,
   });
-
-  // Setup automatic token refresh
-  React.useEffect(() => {
-    const cleanup = setupAutoRefresh(5); // Check every 5 minutes
-    return cleanup;
-  }, []);
 
   if (!fontsLoaded) {
     return null;
@@ -37,11 +71,15 @@ export default function RootLayout() {
     React.createElement(
       AuthProvider,
       null,
-      React.createElement(Stack, {
-        screenOptions: {
-          headerShown: false,
-        },
-      }),
+      React.createElement(AppContent),
     ),
   );
 }
+
+/**
+ * Navigation guard that prevents access to protected routes when not authenticated.
+ * 
+ * The AuthContext handles most route protection automatically, but this provides
+ * an additional layer of security. The AuthProvider's useEffect hook will redirect
+ * users appropriately based on their authentication state.
+ */
