@@ -50,12 +50,12 @@ on:
       - 'aws_resources/**'
       - '.github/workflows/**'
 
-# This is a test to see if the cleanup branch workflow works
-  push:
-    branches:
-      - 'fix/91-cleanup-permissions'
-    paths:
-      - '.github/workflows/cleanup-branch.yaml'
+# # This is a test to see if the cleanup branch workflow works
+#   push:
+#     branches:
+#       - 'fix/91-cleanup-permissions'
+#     paths:
+#       - '.github/workflows/cleanup-branch.yaml'
   
   workflow_dispatch:
     inputs:
@@ -76,7 +76,7 @@ jobs:
     timeout-minutes: 15
     
     # Only run if PR was merged, workflow_dispatch, or push (for testing)
-    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
     
     steps:
       # Step 1: Extract branch name
