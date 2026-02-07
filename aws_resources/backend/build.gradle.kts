@@ -20,13 +20,14 @@ repositories {
 dependencies {
     implementation("com.amazonaws:aws-lambda-java-core:1.2.3")
     implementation("com.amazonaws:aws-lambda-java-events:3.11.4")
-
     implementation(platform("software.amazon.awssdk:bom:2.25.11"))
     implementation("software.amazon.awssdk:apigatewaymanagementapi")
     implementation("software.amazon.awssdk:url-connection-client")
     implementation("software.amazon.awssdk:dynamodb")
     implementation("software.amazon.awssdk:sagemakerruntime")
-    
+    implementation("software.amazon.awssdk:apigatewaymanagementapi:2.21.0")
+    implementation("software.amazon.awssdk:url-connection-client:2.21.0")
+    implementation("software.amazon.awssdk:cognitoidentityprovider:2.21.0")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.14.2")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.14.2")
     implementation(kotlin("stdlib"))
@@ -36,6 +37,7 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.0")
     testImplementation("io.mockk:mockk:1.13.10")
+    testImplementation("uk.org.webcompere:system-stubs-jupiter:2.1.0")
 }
 
 java {
