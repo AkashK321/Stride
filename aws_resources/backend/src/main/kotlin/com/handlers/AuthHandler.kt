@@ -66,14 +66,8 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
                 return createErrorResponse(400, "Invalid request format. Expected JSON with username and password")
             }
 
-            // Validate and normalize username (trim whitespace)
-            val normalizedUsername = try {
-                validateAndNormalizeUsername(loginRequest.username)
-            } catch (e: IllegalArgumentException) {
-                return createErrorResponse(400, e.message ?: "Invalid username format")
-            }
-
-            // Validate password (trim whitespace, but don't normalize - passwords are case-sensitive)
+            // Normalize inputs (trim whitespace)
+            val normalizedUsername = normalizeUsername(loginRequest.username)
             val normalizedPassword = loginRequest.password?.trim()
             
             if (normalizedUsername == null || normalizedPassword.isNullOrEmpty()) {
@@ -150,107 +144,20 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
             .withHeaders(mapOf("Content-Type" to "application/json"))
     }
 
-    // Validation and normalization helper functions
+    // Normalization helper functions (Cognito handles validation)
 
-    private fun validateAndNormalizeEmail(email: String?): String? {
-        if (email.isNullOrBlank()) return null
-        
-        // Trim whitespace
-        val trimmed = email.trim()
-        
-        // Convert to lowercase (Cognito requires lowercase emails)
-        val normalized = trimmed.lowercase()
-        
-        // Validate email format (RFC 5322 compliant, simplified)
-        // Cognito accepts: local@domain format
-        val emailRegex = Regex(
-            "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
-        )
-        
-        if (!normalized.matches(emailRegex)) {
-            throw IllegalArgumentException("Invalid email format")
-        }
-        
-        // Cognito email requirements:
-        // - Max 256 characters total
-        // - Local part (before @) max 64 characters
-        // - Domain part (after @) max 255 characters
-        val parts = normalized.split("@")
-        if (parts.size != 2) {
-            throw IllegalArgumentException("Invalid email format")
-        }
-        
-        if (parts[0].length > 64) {
-            throw IllegalArgumentException("Email local part exceeds 64 characters")
-        }
-        
-        if (parts[1].length > 255) {
-            throw IllegalArgumentException("Email domain part exceeds 255 characters")
-        }
-        
-        if (normalized.length > 256) {
-            throw IllegalArgumentException("Email exceeds 256 characters")
-        }
-        
-        return normalized
+    private fun normalizeEmail(email: String?): String? {
+        return email?.trim()?.lowercase()?.takeIf { it.isNotBlank() }
     }
 
-    private fun validateAndNormalizePhoneNumber(phone: String?): String? {
+    private fun normalizePhoneNumber(phone: String?): String? {
         if (phone.isNullOrBlank()) return null
-        
-        // Trim whitespace
-        val trimmed = phone.trim()
-        
-        // Remove common formatting characters
-        val cleaned = trimmed.replace(Regex("[\\s\\-\\(\\)\\.]"), "")
-        
-        // Cognito phone number requirements:
-        // - Must start with + followed by country code
-        // - Format: +[country code][number]
-        // - Example: +1234567890 (US), +441234567890 (UK)
-        val phoneRegex = Regex("^\\+[1-9]\\d{1,14}$")
-        
-        if (!cleaned.matches(phoneRegex)) {
-            throw IllegalArgumentException("Invalid phone number format. Must be E.164 format: +[country code][number]")
-        }
-        
-        // E.164 max length is 15 digits (excluding +)
-        if (cleaned.length > 16) { // + plus 15 digits
-            throw IllegalArgumentException("Phone number exceeds maximum length")
-        }
-        
-        return cleaned
+        // Remove common formatting characters, let Cognito validate format
+        return phone.trim().replace(Regex("[\\s\\-\\(\\)\\.]"), "").takeIf { it.isNotBlank() }
     }
 
-    private fun validateAndNormalizeUsername(username: String?): String? {
-        if (username.isNullOrBlank()) return null
-        
-        val trimmed = username.trim()
-        
-        // Cognito username requirements:
-        // - 1-128 characters
-        // - Can contain letters, numbers, and these special chars: . _ - + = , @
-        // - Cannot start with a number
-        if (trimmed.isEmpty()) {
-            throw IllegalArgumentException("Username cannot be empty")
-        }
-        
-        if (trimmed.length > 128) {
-            throw IllegalArgumentException("Username exceeds 128 characters")
-        }
-        
-        // Cannot start with a number
-        if (trimmed.first().isDigit()) {
-            throw IllegalArgumentException("Username cannot start with a number")
-        }
-        
-        // Allowed characters: letters, numbers, and . _ - + = , @
-        val usernameRegex = Regex("^[a-zA-Z][a-zA-Z0-9._\\-+=,@]*$")
-        if (!trimmed.matches(usernameRegex)) {
-            throw IllegalArgumentException("Username contains invalid characters. Allowed: letters, numbers, and . _ - + = , @")
-        }
-        
-        return trimmed
+    private fun normalizeUsername(username: String?): String? {
+        return username?.trim()?.takeIf { it.isNotBlank() }
     }
 
     private fun handleRegister(
@@ -278,29 +185,10 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
                 return createErrorResponse(400, "Invalid request format. Expected JSON with username, password, and email")
             }
 
-            // Validate and normalize all fields
-            val normalizedUsername = try {
-                validateAndNormalizeUsername(registerRequest.username)
-            } catch (e: IllegalArgumentException) {
-                return createErrorResponse(400, e.message ?: "Invalid username format")
-            }
-
-            val normalizedEmail = try {
-                validateAndNormalizeEmail(registerRequest.email)
-            } catch (e: IllegalArgumentException) {
-                return createErrorResponse(400, e.message ?: "Invalid email format")
-            }
-
-            // Optional: validate phone number if provided
-            val normalizedPhone = registerRequest.phoneNumber?.let { phone ->
-                try {
-                    validateAndNormalizePhoneNumber(phone)
-                } catch (e: IllegalArgumentException) {
-                    return createErrorResponse(400, e.message ?: "Invalid phone number format")
-                }
-            }
-
-            // Validate password (trim but don't normalize)
+            // Normalize inputs (trim whitespace, lowercase email)
+            val normalizedUsername = normalizeUsername(registerRequest.username)
+            val normalizedEmail = normalizeEmail(registerRequest.email)
+            val normalizedPhone = normalizePhoneNumber(registerRequest.phoneNumber)
             val normalizedPassword = registerRequest.password?.trim()
             
             if (normalizedUsername == null || normalizedPassword.isNullOrEmpty() || normalizedEmail == null) {

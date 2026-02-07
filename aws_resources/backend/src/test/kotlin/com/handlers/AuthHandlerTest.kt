@@ -170,6 +170,60 @@ class AuthHandlerTest {
         assertEquals("application/json", response.headers["Content-Type"])
     }
 
+    // Normalization tests (whitespace trimming)
+
+    @Test
+    @DisplayName("Login with username having whitespace is trimmed")
+    fun `login username with whitespace is trimmed`(envVars: EnvironmentVariables) {
+        // Given
+        envVars.set("USER_POOL_ID", "test-pool-id")
+        envVars.set("USER_POOL_CLIENT_ID", "test-client-id")
+        
+        val event = createLoginEvent("  testuser  ", "testpass")
+        
+        // When
+        val response = handler.handleRequest(event, mockContext)
+        
+        // Then - should pass normalization (not 400 validation error)
+        assertNotEquals(400, response.statusCode)
+    }
+
+    @Test
+    @DisplayName("Login with password having whitespace is trimmed")
+    fun `login password with whitespace is trimmed`(envVars: EnvironmentVariables) {
+        // Given
+        envVars.set("USER_POOL_ID", "test-pool-id")
+        envVars.set("USER_POOL_CLIENT_ID", "test-client-id")
+        
+        val event = createLoginEvent("testuser", "  testpass  ")
+        
+        // When
+        val response = handler.handleRequest(event, mockContext)
+        
+        // Then - should pass normalization (not 400 validation error)
+        assertNotEquals(400, response.statusCode)
+    }
+
+    @Test
+    @DisplayName("Login with username that is only whitespace returns 400")
+    fun `login username only whitespace returns 400`(envVars: EnvironmentVariables) {
+        // Given
+        envVars.set("USER_POOL_ID", "test-pool-id")
+        envVars.set("USER_POOL_CLIENT_ID", "test-client-id")
+        
+        val event = createLoginEvent("   ", "testpass")
+        
+        // When
+        val response = handler.handleRequest(event, mockContext)
+        
+        // Then
+        assertEquals(400, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("Username and password are required"))
+    }
+
     // Helper methods
     private fun createLoginEvent(username: String, password: String): APIGatewayProxyRequestEvent {
         return APIGatewayProxyRequestEvent().apply {
