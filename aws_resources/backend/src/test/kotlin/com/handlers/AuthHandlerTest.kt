@@ -18,7 +18,10 @@ class AuthHandlerTest {
     private lateinit var handler: AuthHandler
 
     @BeforeEach
-    fun setUp() {
+    fun setUp(envVars: EnvironmentVariables) {
+        // Set AWS region for Cognito client initialization
+        envVars.set("AWS_REGION", "us-east-1")
+        
         // Mock context logger
         every { mockContext.logger } returns mockk(relaxed = true)
         

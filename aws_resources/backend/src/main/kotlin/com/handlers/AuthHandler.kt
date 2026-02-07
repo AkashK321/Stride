@@ -14,12 +14,14 @@ import software.amazon.awssdk.services.cognitoidentityprovider.model.CognitoIden
 import software.amazon.awssdk.services.cognitoidentityprovider.model.AdminCreateUserRequest
 import software.amazon.awssdk.services.cognitoidentityprovider.model.AdminSetUserPasswordRequest
 import software.amazon.awssdk.services.cognitoidentityprovider.model.MessageActionType
+import software.amazon.awssdk.regions.Region
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 
 class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
 
     private val cognitoClient = CognitoIdentityProviderClient.builder()
+        .region(Region.of(System.getenv("AWS_REGION") ?: "us-east-1"))
         .httpClient(UrlConnectionHttpClient.builder().build())
         .build()
     private val mapper = jacksonObjectMapper()
