@@ -112,10 +112,10 @@ def test_register_duplicate_username(api_base_url, test_user_credentials):
         timeout=10
     )
 
-    assert response2.status_code == 400, f"Expected 400, got {response2.status_code}: {response2.text}"
+    assert response2.status_code == 409, f"Expected 409, got {response2.status_code}: {response2.text}"
     data = response2.json()
     assert "error" in data
-    assert "already exists" in data["error"].lower()
+    assert data["error"] == "Username already exists"
 
 
 def test_login_success(api_base_url, test_user_credentials):
@@ -169,8 +169,8 @@ def test_login_invalid_credentials(api_base_url):
     assert response.status_code == 401, f"Expected 401, got {response.status_code}: {response.text}"
     data = response.json()
     assert "error" in data
-    error_lower = data["error"].lower()
-    assert ("invalid" in error_lower or "not found" in error_lower or "does not exist" in error_lower)
+    # Should be either "Invalid username or password" or "User not found"
+    assert data["error"] in ["Invalid username or password", "User not found"]
 
 
 def test_login_missing_fields(api_base_url):

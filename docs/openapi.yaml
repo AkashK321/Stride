@@ -1,0 +1,401 @@
+openapi: 3.0.3
+info:
+  title: Stride API
+  description: |
+    REST API for the Stride application. Provides authentication endpoints
+    for user login and registration using AWS Cognito.
+  version: 1.0.0
+  contact:
+    name: Stride Development Team
+
+servers:
+  - url: https://{apiId}.execute-api.{region}.amazonaws.com/prod
+    description: Production API Gateway endpoint
+
+tags:
+  - name: Authentication
+    description: User authentication and registration endpoints
+  - name: Items
+    description: Items endpoint (placeholder)
+
+paths:
+  /login:
+    post:
+      tags:
+        - Authentication
+      summary: User login
+      description: |
+        Authenticates a user with username and password using AWS Cognito.
+        Returns JWT tokens (access token, ID token, and refresh token) upon successful authentication.
+        
+        **Input Normalization:**
+        - Username and password are trimmed of leading/trailing whitespace
+        - Cognito handles all format validation
+        
+        **Error Handling:**
+        - Invalid credentials return 401
+        - Missing fields return 400
+        - Rate limiting returns 429
+        - Server errors return 500
+        
+        **Error Message Sanitization:**
+        - All error messages are sanitized to remove sensitive information (Request IDs, Service names, Status Codes)
+        - User-friendly messages are returned instead of raw Cognito error messages
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            examples:
+              validLogin:
+                summary: Valid login request
+                value:
+                  username: "johndoe"
+                  password: "SecurePass123!"
+      responses:
+        '200':
+          description: Successful authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+              examples:
+                success:
+                  summary: Successful login response
+                  value:
+                    accessToken: "eyJraWQiOiJcL3Z..."
+                    idToken: "eyJraWQiOiJcL3Z..."
+                    refreshToken: "eyJjdHkiOiJKV1QiLCJlbmMiOiJBMjU2R0NNIn0..."
+                    expiresIn: 3600
+                    tokenType: "Bearer"
+        '400':
+          description: Bad request - missing or invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingFields:
+                  summary: Missing required fields
+                  value:
+                    error: "Username and password are required"
+                invalidFormat:
+                  summary: Invalid JSON format
+                  value:
+                    error: "Invalid request format. Expected JSON with username and password"
+        '401':
+          description: Unauthorized - invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidCredentials:
+                  summary: Invalid username or password
+                  value:
+                    error: "Invalid username or password"
+                userNotFound:
+                  summary: User does not exist
+                  value:
+                    error: "User not found"
+                challengeRequired:
+                  summary: Authentication challenge required
+                  value:
+                    error: "Authentication challenge required: NEW_PASSWORD_REQUIRED"
+        '429':
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                tooManyRequests:
+                  summary: Rate limit exceeded
+                  value:
+                    error: "Too many requests. Please try again later"
+        '403':
+          description: Forbidden - user account not confirmed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                notConfirmed:
+                  summary: User account not confirmed
+                  value:
+                    error: "User account is not confirmed"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                serverError:
+                  summary: Server configuration error
+                  value:
+                    error: "Server configuration error"
+                internalError:
+                  summary: Internal server error
+                  value:
+                    error: "Internal server error"
+
+  /register:
+    post:
+      tags:
+        - Authentication
+      summary: User registration
+      description: |
+        Registers a new user in AWS Cognito with username, password, and email.
+        Phone number is optional. The user is created with a permanent password
+        and can immediately log in.
+        
+        **Input Normalization:**
+        - Username is trimmed of leading/trailing whitespace
+        - Email is trimmed and converted to lowercase
+        - Phone number is trimmed and formatting characters are removed
+        - Password is trimmed
+        - Cognito handles all format validation
+        
+        **Error Handling:**
+        - Duplicate username or alias returns 409
+        - Invalid password format returns 400
+        - Missing required fields return 400
+        - Rate limiting returns 429
+        - Server errors return 500
+        
+        **Error Message Sanitization:**
+        - All error messages are sanitized to remove sensitive information (Request IDs, Service names, Status Codes)
+        - User-friendly messages are returned instead of raw Cognito error messages
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            examples:
+              validRegistration:
+                summary: Valid registration with all fields
+                value:
+                  username: "johndoe"
+                  password: "SecurePass123!"
+                  email: "john.doe@example.com"
+                  phoneNumber: "+1234567890"
+              minimalRegistration:
+                summary: Registration without phone number
+                value:
+                  username: "johndoe"
+                  password: "SecurePass123!"
+                  email: "john.doe@example.com"
+      responses:
+        '201':
+          description: User successfully registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+              examples:
+                success:
+                  summary: Successful registration
+                  value:
+                    message: "User registered successfully"
+        '400':
+          description: Bad request - missing fields, invalid input, or password requirements not met
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingFields:
+                  summary: Missing required fields
+                  value:
+                    error: "Username, password, and email are required"
+                invalidFormat:
+                  summary: Invalid JSON format
+                  value:
+                    error: "Invalid request format. Expected JSON with username, password, and email"
+                invalidPassword:
+                  summary: Password doesn't meet requirements
+                  value:
+                    error: "Password does not meet requirements"
+                invalidParameter:
+                  summary: Invalid parameter (sanitized message)
+                  value:
+                    error: "Invalid parameter provided"
+        '409':
+          description: Conflict - username or alias already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                duplicateUsername:
+                  summary: Username already exists
+                  value:
+                    error: "Username already exists"
+                duplicateAlias:
+                  summary: Email or phone already exists
+                  value:
+                    error: "An account with this email or phone number already exists"
+        '429':
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                tooManyRequests:
+                  summary: Rate limit exceeded
+                  value:
+                    error: "Too many requests. Please try again later"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                serverError:
+                  summary: Server configuration error
+                  value:
+                    error: "Server configuration error"
+                internalError:
+                  summary: Internal server error
+                  value:
+                    error: "Internal server error"
+
+  /items:
+    get:
+      tags:
+        - Items
+      summary: Get items
+      description: |
+        Placeholder endpoint for retrieving items. Implementation status may vary.
+        Returns 404 if not implemented.
+      operationId: getItems
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Hello from Kotlin"
+                  path:
+                    type: string
+                    example: "/items"
+        '404':
+          description: Endpoint not implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    LoginRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          description: User's username (will be trimmed)
+          example: "johndoe"
+          minLength: 1
+        password:
+          type: string
+          description: User's password (will be trimmed)
+          example: "SecurePass123!"
+          format: password
+          minLength: 1
+
+    LoginResponse:
+      type: object
+      required:
+        - accessToken
+        - idToken
+        - refreshToken
+        - expiresIn
+        - tokenType
+      properties:
+        accessToken:
+          type: string
+          description: JWT access token for API authentication
+          example: "eyJraWQiOiJcL3Z..."
+        idToken:
+          type: string
+          description: JWT ID token containing user identity information
+          example: "eyJraWQiOiJcL3Z..."
+        refreshToken:
+          type: string
+          description: Refresh token for obtaining new access tokens
+          example: "eyJjdHkiOiJKV1QiLCJlbmMiOiJBMjU2R0NNIn0..."
+        expiresIn:
+          type: integer
+          description: Token expiration time in seconds
+          example: 3600
+        tokenType:
+          type: string
+          description: Token type (always "Bearer" for Cognito)
+          example: "Bearer"
+          enum:
+            - Bearer
+
+    RegisterRequest:
+      type: object
+      required:
+        - username
+        - password
+        - email
+      properties:
+        username:
+          type: string
+          description: Desired username (will be trimmed, must be unique)
+          example: "johndoe"
+          minLength: 1
+        password:
+          type: string
+          description: User's password (will be trimmed, must meet Cognito password policy)
+          example: "SecurePass123!"
+          format: password
+          minLength: 1
+        email:
+          type: string
+          description: User's email address (will be trimmed and lowercased)
+          format: email
+          example: "john.doe@example.com"
+        phoneNumber:
+          type: string
+          description: |
+            Optional phone number in E.164 format (e.g., +1234567890).
+            Formatting characters will be removed automatically.
+          example: "+1234567890"
+          pattern: '^\+?[1-9]\d{1,14}$'
+
+    RegisterResponse:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Success message
+          example: "User registered successfully"
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Error message describing what went wrong
+          example: "Invalid username or password"

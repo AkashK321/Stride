@@ -116,18 +116,21 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
             }
 
         } catch (e: CognitoIdentityProviderException) {
+            // Log full error details for debugging (includes Request ID)
             context.logger.log("ERROR: Cognito authentication failed: ${e.message}")
-
-            return when {
-                e.message?.contains("NotAuthorizedException") == true ->
-                    createErrorResponse(401, "Invalid username or password")
-                e.message?.contains("UserNotFoundException") == true ->
-                    createErrorResponse(401, "User not found")
-                e.message?.contains("UserNotConfirmedException") == true ->
-                    createErrorResponse(403, "User account is not confirmed")
-                else ->
-                    createErrorResponse(401, "Authentication failed: ${e.message}")
+            
+            val errorCode = e.awsErrorDetails()?.errorCode()
+            val userFriendlyMessage = parseCognitoError(e)
+            
+            // Map error codes to appropriate HTTP status codes
+            val statusCode = when (errorCode) {
+                "NotAuthorizedException", "UserNotFoundException" -> 401
+                "UserNotConfirmedException" -> 403
+                "TooManyRequestsException", "LimitExceededException" -> 429
+                else -> 401
             }
+            
+            return createErrorResponse(statusCode, userFriendlyMessage)
         } catch (e: Exception) {
             context.logger.log("ERROR: Unexpected error during login: ${e.message}")
             e.printStackTrace()
@@ -144,6 +147,163 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
             .withStatusCode(statusCode)
             .withBody(errorBody)
             .withHeaders(mapOf("Content-Type" to "application/json"))
+    }
+
+    /**
+     * Parses and sanitizes Cognito error messages to make them user-friendly.
+     * Removes sensitive information like Request IDs, Service names, and Status Codes.
+     * 
+     * @param exception The CognitoIdentityProviderException to parse
+     * @return A sanitized, user-friendly error message
+     */
+    private fun parseCognitoError(exception: CognitoIdentityProviderException): String {
+        // Try to get the error code/type from the exception
+        // awsErrorDetails() may return null, so we handle that gracefully
+        val errorDetails = try {
+            exception.awsErrorDetails()
+        } catch (e: Exception) {
+            null
+        }
+        
+        val errorCode = errorDetails?.errorCode()
+        val errorMessage = errorDetails?.errorMessage()
+        val rawMessage = exception.message
+        
+        // First, try to extract error code from the raw message if awsErrorDetails is not available
+        val extractedErrorCode = errorCode ?: extractErrorCodeFromMessage(rawMessage)
+        
+        // Use error code to map to user-friendly messages
+        val userFriendlyMessage = when (extractedErrorCode) {
+            "NotAuthorizedException" -> "Invalid username or password"
+            "UserNotFoundException" -> "User not found"
+            "UserNotConfirmedException" -> "User account is not confirmed"
+            "UsernameExistsException" -> "Username already exists"
+            "AliasExistsException" -> "An account with this email or phone number already exists"
+            "InvalidPasswordException" -> "Password does not meet requirements"
+            "InvalidParameterException" -> {
+                // Try to extract meaningful part from error message
+                sanitizeErrorMessage(errorMessage ?: rawMessage ?: "Invalid parameter provided")
+            }
+            "TooManyRequestsException" -> "Too many requests. Please try again later"
+            "LimitExceededException" -> "Account limit exceeded. Please try again later"
+            "CodeMismatchException" -> "Invalid verification code"
+            "ExpiredCodeException" -> "Verification code has expired"
+            "InvalidUserPoolConfigurationException" -> "Server configuration error"
+            else -> {
+                // For unknown errors, try to extract meaningful part from message
+                val message = errorMessage ?: rawMessage ?: "An error occurred"
+                sanitizeErrorMessage(message)
+            }
+        }
+        
+        return userFriendlyMessage
+    }
+    
+    /**
+     * Extracts the error code from a Cognito error message.
+     * Cognito messages often contain the exception type in the message.
+     * Also handles cases where the message contains human-readable text that maps to exceptions.
+     * 
+     * @param message The error message to parse
+     * @return The extracted error code, or null if not found
+     */
+    private fun extractErrorCodeFromMessage(message: String?): String? {
+        if (message.isNullOrBlank()) return null
+        
+        // First, try to find explicit exception names in the message
+        val exceptionPatterns = listOf(
+            "NotAuthorizedException",
+            "UserNotFoundException",
+            "UserNotConfirmedException",
+            "UsernameExistsException",
+            "AliasExistsException",
+            "InvalidPasswordException",
+            "InvalidParameterException",
+            "TooManyRequestsException",
+            "LimitExceededException",
+            "CodeMismatchException",
+            "ExpiredCodeException",
+            "InvalidUserPoolConfigurationException"
+        )
+        
+        val explicitException = exceptionPatterns.firstOrNull { 
+            message.contains(it, ignoreCase = true) 
+        }
+        if (explicitException != null) return explicitException
+        
+        // If no explicit exception found, try to infer from message content
+        val messageLower = message.lowercase()
+        return when {
+            messageLower.contains("user account already exists") || 
+            messageLower.contains("username already exists") || 
+            messageLower.contains("already exists") -> "UsernameExistsException"
+            messageLower.contains("invalid password") || 
+            messageLower.contains("password does not meet") -> "InvalidPasswordException"
+            messageLower.contains("user not found") -> "UserNotFoundException"
+            messageLower.contains("not authorized") || 
+            messageLower.contains("invalid credentials") -> "NotAuthorizedException"
+            messageLower.contains("not confirmed") -> "UserNotConfirmedException"
+            messageLower.contains("too many requests") -> "TooManyRequestsException"
+            messageLower.contains("limit exceeded") -> "LimitExceededException"
+            else -> null
+        }
+    }
+
+    /**
+     * Sanitizes error messages by removing sensitive information.
+     * Removes patterns like:
+     * - (Service: CognitoIdentityProvider, Status Code: 400, Request ID: xxx)
+     * - Request IDs
+     * - Service names
+     * - Status codes
+     * 
+     * @param message The raw error message
+     * @return A sanitized error message
+     */
+    private fun sanitizeErrorMessage(message: String?): String {
+        if (message.isNullOrBlank()) {
+            return "An error occurred"
+        }
+        
+        // Remove patterns like: (Service: ..., Status Code: ..., Request ID: ...)
+        var sanitized = message.replace(
+            Regex("\\(Service:[^)]+\\)"),
+            ""
+        ).trim()
+        
+        // Remove standalone Request ID patterns
+        sanitized = sanitized.replace(
+            Regex("Request ID: [a-f0-9-]+", RegexOption.IGNORE_CASE),
+            ""
+        ).trim()
+        
+        // Remove Status Code patterns
+        sanitized = sanitized.replace(
+            Regex("Status Code: \\d+", RegexOption.IGNORE_CASE),
+            ""
+        ).trim()
+        
+        // Remove Service: patterns
+        sanitized = sanitized.replace(
+            Regex("Service: [^,]+", RegexOption.IGNORE_CASE),
+            ""
+        ).trim()
+        
+        // Clean up multiple spaces and trailing punctuation
+        sanitized = sanitized.replace(Regex("\\s+"), " ")
+            .replace(Regex("^[,;:\\s]+"), "")
+            .replace(Regex("[,;:\\s]+$"), "")
+            .trim()
+        
+        // If we've removed everything, return a generic message
+        if (sanitized.isBlank()) {
+            return "An error occurred"
+        }
+        
+        // Capitalize first letter if needed
+        return sanitized.replaceFirstChar { 
+            if (it.isLowerCase()) it.titlecase() else it.toString() 
+        }
     }
 
     // Normalization helper functions (Cognito handles validation)
@@ -246,18 +406,22 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
                 .withHeaders(mapOf("Content-Type" to "application/json"))
 
         } catch (e: CognitoIdentityProviderException) {
+            // Log full error details for debugging (includes Request ID)
             context.logger.log("ERROR: Cognito registration failed: ${e.message}")
-
-            return when {
-                e.message?.contains("UsernameExistsException") == true ->
-                    createErrorResponse(409, "Username already exists")
-                e.message?.contains("InvalidPasswordException") == true ->
-                    createErrorResponse(400, "Password does not meet requirements")
-                e.message?.contains("InvalidParameterException") == true ->
-                    createErrorResponse(400, "Invalid parameter: ${e.message}")
-                else ->
-                    createErrorResponse(400, "Registration failed: ${e.message}")
+            
+            val errorCode = e.awsErrorDetails()?.errorCode()
+            val userFriendlyMessage = parseCognitoError(e)
+            
+            // Map error codes to appropriate HTTP status codes
+            val statusCode = when (errorCode) {
+                "UsernameExistsException", "AliasExistsException" -> 409
+                "InvalidPasswordException", "InvalidParameterException" -> 400
+                "TooManyRequestsException", "LimitExceededException" -> 429
+                "InvalidUserPoolConfigurationException" -> 500
+                else -> 400
             }
+            
+            return createErrorResponse(statusCode, userFriendlyMessage)
         } catch (e: Exception) {
             context.logger.log("ERROR: Unexpected error during registration: ${e.message}")
             e.printStackTrace()
