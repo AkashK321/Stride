@@ -475,7 +475,6 @@ paths:
           in: query
           required: true
           description: Username to check
-          required: true
           schema:
             type: string
             example: "johndoe"
@@ -526,7 +525,6 @@ paths:
           in: query
           required: true
           description: Email address to check
-          required: true
           schema:
             type: string
             format: email
@@ -578,7 +576,6 @@ paths:
           in: query
           required: true
           description: Phone number in E.164 format to check
-          required: true
           schema:
             type: string
             pattern: '^\+?[1-9]\d{1,14}$'

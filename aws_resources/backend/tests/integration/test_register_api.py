@@ -182,3 +182,186 @@ def test_register_whitespace_normalization(api_base_url, test_user_credentials):
 
     # Should succeed (whitespace trimmed)
     assert response.status_code == 201, f"Expected 201, got {response.status_code}: {response.text}"
+
+
+def test_register_duplicate_email(api_base_url, test_user_credentials):
+    """Test registration with existing email address."""
+    # Register first time
+    response1 = requests.post(
+        f"{api_base_url}/register",
+        json={
+            "username": test_user_credentials["username"],
+            "password": test_user_credentials["password"],
+            "passwordConfirm": test_user_credentials["passwordConfirm"],
+            "email": test_user_credentials["email"],
+            "phoneNumber": test_user_credentials["phoneNumber"],
+            "firstName": test_user_credentials["firstName"],
+            "lastName": test_user_credentials["lastName"]
+        },
+        headers={"Content-Type": "application/json"},
+        timeout=10
+    )
+    assert response1.status_code == 201, f"First registration failed: {response1.text}"
+
+    # Try to register again with same email but different username
+    timestamp = int(time.time())
+    random_suffix = ''.join(random.choices(string.ascii_lowercase, k=4))
+    response2 = requests.post(
+        f"{api_base_url}/register",
+        json={
+            "username": f"different_user_{timestamp}_{random_suffix}",
+            "password": "DifferentPass123!",
+            "passwordConfirm": "DifferentPass123!",
+            "email": test_user_credentials["email"],  # Same email
+            "phoneNumber": f"+1555{timestamp % 10000000:07d}",  # Different phone
+            "firstName": "Different",
+            "lastName": "User"
+        },
+        headers={"Content-Type": "application/json"},
+        timeout=10
+    )
+
+    assert response2.status_code == 409, f"Expected 409, got {response2.status_code}: {response2.text}"
+    data = response2.json()
+    assert "error" in data
+    assert "email" in data["error"].lower()
+    assert "already exists" in data["error"].lower()
+    # Verify exact error message
+    assert data["error"] == "An account with this email already exists"
+
+
+def test_register_duplicate_phone(api_base_url, test_user_credentials):
+    """Test registration with existing phone number."""
+    # Register first time
+    response1 = requests.post(
+        f"{api_base_url}/register",
+        json={
+            "username": test_user_credentials["username"],
+            "password": test_user_credentials["password"],
+            "passwordConfirm": test_user_credentials["passwordConfirm"],
+            "email": test_user_credentials["email"],
+            "phoneNumber": test_user_credentials["phoneNumber"],
+            "firstName": test_user_credentials["firstName"],
+            "lastName": test_user_credentials["lastName"]
+        },
+        headers={"Content-Type": "application/json"},
+        timeout=10
+    )
+    assert response1.status_code == 201, f"First registration failed: {response1.text}"
+
+    # Try to register again with same phone number but different username and email
+    timestamp = int(time.time())
+    random_suffix = ''.join(random.choices(string.ascii_lowercase, k=4))
+    response2 = requests.post(
+        f"{api_base_url}/register",
+        json={
+            "username": f"different_user_{timestamp}_{random_suffix}",
+            "password": "DifferentPass123!",
+            "passwordConfirm": "DifferentPass123!",
+            "email": f"different_{timestamp}_{random_suffix}@example.com",  # Different email
+            "phoneNumber": test_user_credentials["phoneNumber"],  # Same phone
+            "firstName": "Different",
+            "lastName": "User"
+        },
+        headers={"Content-Type": "application/json"},
+        timeout=10
+    )
+
+    assert response2.status_code == 409, f"Expected 409, got {response2.status_code}: {response2.text}"
+    data = response2.json()
+    assert "error" in data
+    assert "phone" in data["error"].lower()
+    assert "already exists" in data["error"].lower()
+    # Verify exact error message
+    assert data["error"] == "An account with this phone number already exists"
+
+
+def test_register_duplicate_email_case_insensitive(api_base_url, test_user_credentials):
+    """Test that duplicate email check is case-insensitive (email is normalized to lowercase)."""
+    # Register first time with lowercase email
+    response1 = requests.post(
+        f"{api_base_url}/register",
+        json={
+            "username": test_user_credentials["username"],
+            "password": test_user_credentials["password"],
+            "passwordConfirm": test_user_credentials["passwordConfirm"],
+            "email": test_user_credentials["email"],
+            "phoneNumber": test_user_credentials["phoneNumber"],
+            "firstName": test_user_credentials["firstName"],
+            "lastName": test_user_credentials["lastName"]
+        },
+        headers={"Content-Type": "application/json"},
+        timeout=10
+    )
+    assert response1.status_code == 201, f"First registration failed: {response1.text}"
+
+    # Try to register again with same email but different case
+    timestamp = int(time.time())
+    random_suffix = ''.join(random.choices(string.ascii_lowercase, k=4))
+    uppercase_email = test_user_credentials["email"].upper()
+    response2 = requests.post(
+        f"{api_base_url}/register",
+        json={
+            "username": f"different_user_{timestamp}_{random_suffix}",
+            "password": "DifferentPass123!",
+            "passwordConfirm": "DifferentPass123!",
+            "email": uppercase_email,  # Same email, different case
+            "phoneNumber": f"+1555{timestamp % 10000000:07d}",  # Different phone
+            "firstName": "Different",
+            "lastName": "User"
+        },
+        headers={"Content-Type": "application/json"},
+        timeout=10
+    )
+
+    # Should be detected as duplicate (email is normalized to lowercase before check)
+    assert response2.status_code == 409, f"Expected 409, got {response2.status_code}: {response2.text}"
+    data = response2.json()
+    assert "error" in data
+    assert "email" in data["error"].lower()
+    # Verify exact error message (case-insensitive check should work)
+    assert data["error"] == "An account with this email already exists"
+
+
+def test_register_duplicate_email_and_phone(api_base_url, test_user_credentials):
+    """Test that when both email and phone are duplicates, email check happens first."""
+    # Register first time
+    response1 = requests.post(
+        f"{api_base_url}/register",
+        json={
+            "username": test_user_credentials["username"],
+            "password": test_user_credentials["password"],
+            "passwordConfirm": test_user_credentials["passwordConfirm"],
+            "email": test_user_credentials["email"],
+            "phoneNumber": test_user_credentials["phoneNumber"],
+            "firstName": test_user_credentials["firstName"],
+            "lastName": test_user_credentials["lastName"]
+        },
+        headers={"Content-Type": "application/json"},
+        timeout=10
+    )
+    assert response1.status_code == 201, f"First registration failed: {response1.text}"
+
+    # Try to register again with both same email and phone number
+    timestamp = int(time.time())
+    random_suffix = ''.join(random.choices(string.ascii_lowercase, k=4))
+    response2 = requests.post(
+        f"{api_base_url}/register",
+        json={
+            "username": f"different_user_{timestamp}_{random_suffix}",
+            "password": "DifferentPass123!",
+            "passwordConfirm": "DifferentPass123!",
+            "email": test_user_credentials["email"],  # Same email
+            "phoneNumber": test_user_credentials["phoneNumber"],  # Same phone
+            "firstName": "Different",
+            "lastName": "User"
+        },
+        headers={"Content-Type": "application/json"},
+        timeout=10
+    )
+
+    # Should return 409 for email (email is checked first)
+    assert response2.status_code == 409, f"Expected 409, got {response2.status_code}: {response2.text}"
+    data = response2.json()
+    assert "error" in data
+    assert data["error"] == "An account with this email already exists"

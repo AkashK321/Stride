@@ -149,7 +149,8 @@ class CdkStack(Stack):
             "cognito-idp:AdminGetUser",
             "cognito-idp:AdminCreateUser",
             "cognito-idp:AdminSetUserPassword",
-            "cognito-idp:AdminDeleteUser"  # For cleanup on registration failure
+            "cognito-idp:AdminDeleteUser",  # For cleanup on registration failure
+            "cognito-idp:ListUsers"  # For checking duplicate email/phone
         )
 
         # Add Cognito configuration to Lambda environment

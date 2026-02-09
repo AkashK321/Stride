@@ -15,6 +15,8 @@ import software.amazon.awssdk.services.cognitoidentityprovider.model.AdminCreate
 import software.amazon.awssdk.services.cognitoidentityprovider.model.AdminSetUserPasswordRequest
 import software.amazon.awssdk.services.cognitoidentityprovider.model.AdminDeleteUserRequest
 import software.amazon.awssdk.services.cognitoidentityprovider.model.MessageActionType
+import software.amazon.awssdk.services.cognitoidentityprovider.model.ListUsersRequest
+import software.amazon.awssdk.services.cognitoidentityprovider.model.AttributeType
 import software.amazon.awssdk.regions.Region
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
@@ -323,6 +325,72 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
         return username?.trim()?.takeIf { it.isNotBlank() }
     }
 
+    /**
+     * Checks if an email address already exists in the Cognito user pool.
+     * Uses ListUsers API with email filter to check for existing users.
+     * 
+     * @param userPoolId The Cognito user pool ID
+     * @param email The email address to check (should already be normalized/lowercase)
+     * @param context Lambda context for logging
+     * @return true if email exists, false otherwise
+     */
+    private fun checkEmailExists(userPoolId: String, email: String, context: Context): Boolean {
+        return try {
+            val listUsersRequest = ListUsersRequest.builder()
+                .userPoolId(userPoolId)
+                .filter("email = \"${email}\"")
+                .limit(1)
+                .build()
+            
+            val response = cognitoClient.listUsers(listUsersRequest)
+            val exists = response.users().isNotEmpty()
+            
+            if (exists) {
+                context.logger.log("Email already exists: $email")
+            }
+            
+            exists
+        } catch (e: Exception) {
+            // Log error but don't fail registration - let Cognito handle it
+            // This prevents the check from blocking registration if there's an API issue
+            context.logger.log("WARNING: Failed to check email existence: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * Checks if a phone number already exists in the Cognito user pool.
+     * Uses ListUsers API with phone_number filter to check for existing users.
+     * 
+     * @param userPoolId The Cognito user pool ID
+     * @param phoneNumber The phone number to check (should already be normalized/E.164 format)
+     * @param context Lambda context for logging
+     * @return true if phone number exists, false otherwise
+     */
+    private fun checkPhoneNumberExists(userPoolId: String, phoneNumber: String, context: Context): Boolean {
+        return try {
+            val listUsersRequest = ListUsersRequest.builder()
+                .userPoolId(userPoolId)
+                .filter("phone_number = \"${phoneNumber}\"")
+                .limit(1)
+                .build()
+            
+            val response = cognitoClient.listUsers(listUsersRequest)
+            val exists = response.users().isNotEmpty()
+            
+            if (exists) {
+                context.logger.log("Phone number already exists: $phoneNumber")
+            }
+            
+            exists
+        } catch (e: Exception) {
+            // Log error but don't fail registration - let Cognito handle it
+            // This prevents the check from blocking registration if there's an API issue
+            context.logger.log("WARNING: Failed to check phone number existence: ${e.message}")
+            false
+        }
+    }
+
     private fun handleRegister(
         input: APIGatewayProxyRequestEvent,
         context: Context
@@ -379,6 +447,18 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
 
             if (normalizedLastName.length > 64) {
                 return createErrorResponse(400, "Last name must be 64 characters or less")
+            }
+
+            // Check for duplicate email
+            val emailExists = checkEmailExists(userPoolId, normalizedEmail, context)
+            if (emailExists) {
+                return createErrorResponse(409, "An account with this email already exists")
+            }
+
+            // Check for duplicate phone number
+            val phoneExists = checkPhoneNumberExists(userPoolId, normalizedPhone, context)
+            if (phoneExists) {
+                return createErrorResponse(409, "An account with this phone number already exists")
             }
 
             // Build user attributes list with all required fields
