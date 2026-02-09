@@ -38,6 +38,9 @@ export interface TextFieldProps {
   secureTextEntry?: boolean;
   keyboardType?: "default" | "email-address" | "numeric" | "phone-pad" | "number-pad";
   autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  autoComplete?: "off" | "username" | "password" | "new-password" | "email" | "name" | "name-given" | "name-family" | "tel" | "street-address" | "postal-code" | "cc-number" | "cc-csc" | "cc-exp" | "cc-exp-month" | "cc-exp-year";
+  autoCorrect?: boolean;
+  spellCheck?: boolean;
   autoFocus?: boolean;
   returnKeyType?: "done" | "go" | "next" | "search" | "send";
   onSubmitEditing?: () => void;
@@ -59,6 +62,9 @@ const TextField = React.forwardRef<TextInput, TextFieldProps>(({
   secureTextEntry = false,
   keyboardType = "default",
   autoCapitalize = "none",
+  autoComplete = "off",
+  autoCorrect = true,
+  spellCheck = true,
   autoFocus = false,
   returnKeyType = "done",
   onSubmitEditing,
@@ -126,6 +132,9 @@ const TextField = React.forwardRef<TextInput, TextFieldProps>(({
           secureTextEntry,
           keyboardType,
           autoCapitalize,
+          autoComplete,
+          autoCorrect,
+          spellCheck,
           autoFocus,
           returnKeyType,
           onSubmitEditing,

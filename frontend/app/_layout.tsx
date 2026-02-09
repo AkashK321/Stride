@@ -51,8 +51,8 @@ function AppContent() {
   return React.createElement(Stack, {
     screenOptions: {
       headerShown: false,
-      gestureEnabled: true, // Enable swipe gestures in root stack
-      fullScreenGestureEnabled: true, // Enable full-screen gestures on iOS
+      gestureEnabled: false, // Disable swipe-back gesture
+      fullScreenGestureEnabled: false, // Disable full-screen swipe gesture on iOS
     },
   });
 }

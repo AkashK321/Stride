@@ -41,6 +41,21 @@ export interface RefreshTokenResponse {
   tokenType: string;
 }
 
+export interface RegisterRequest {
+  username: string;
+  password: string;
+  passwordConfirm: string;
+  email: string;
+  phoneNumber: string;
+  firstName: string;
+  lastName: string;
+}
+
+export interface RegisterResponse {
+  message: string;
+  username: string;
+}
+
 /**
  * Makes a POST request to the login endpoint.
  */
@@ -93,4 +108,45 @@ export async function refreshToken(refreshToken: string): Promise<RefreshTokenRe
   }
 
   return data as RefreshTokenResponse;
+}
+
+/**
+ * Makes a POST request to the register endpoint.
+ */
+export async function register(userData: RegisterRequest): Promise<RegisterResponse> {
+  const url = `${API_BASE_URL}/register`;
+  
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(userData),
+    });
+
+    let data;
+    try {
+      data = await response.json();
+    } catch (parseError) {
+      // If response is not JSON, get text instead
+      const text = await response.text();
+      throw new Error(`Registration failed: ${response.status} ${response.statusText}. Response: ${text}`);
+    }
+
+    if (!response.ok) {
+      const error: ApiError = data;
+      const errorMessage = error.error || `Registration failed: ${response.status} ${response.statusText}`;
+      throw new Error(errorMessage);
+    }
+
+    return data as RegisterResponse;
+  } catch (error) {
+    // Re-throw if it's already an Error with a message
+    if (error instanceof Error) {
+      throw error;
+    }
+    // Otherwise wrap it
+    throw new Error(`Registration failed: ${String(error)}`);
+  }
 }

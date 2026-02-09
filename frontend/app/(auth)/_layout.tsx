@@ -14,8 +14,8 @@ export default function AuthLayout() {
   return React.createElement(Stack, {
     screenOptions: {
       headerShown: false,
-      gestureEnabled: true, // Enable swipe-back gesture
-      fullScreenGestureEnabled: true, // Enable full-screen swipe gesture on iOS
+      gestureEnabled: false, // Disable swipe-back gesture
+      fullScreenGestureEnabled: false, // Disable full-screen swipe gesture on iOS
       gestureDirection: "horizontal", // Horizontal swipe direction
       animation: "slide_from_right", // Slide animation for navigation
     },
