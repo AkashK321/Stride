@@ -257,8 +257,7 @@ export default function RegisterContact() {
           },
           keyboardShouldPersistTaps: "handled",
           showsVerticalScrollIndicator: false,
-        },
-        React.createElement(
+        },        React.createElement(
           Text,
           {
             style: {
@@ -267,9 +266,9 @@ export default function RegisterContact() {
               marginBottom: spacing.sm,
             },
             accessibilityRole: "header",
-            accessibilityLabel: "Contact Information",
+            accessibilityLabel: "Create your Stride account",
           },
-          "Contact ",
+          "Create your ",
           React.createElement(
             Text,
             {
@@ -278,8 +277,9 @@ export default function RegisterContact() {
               },
               accessible: false,
             },
-            "Information"
-          )
+            "Stride"
+          ),
+          " account"
         ),
         React.createElement(
           Label,
