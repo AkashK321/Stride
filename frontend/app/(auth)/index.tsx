@@ -9,7 +9,7 @@
  * alongside this screen in the (auth) directory.
  */
 import * as React from "react";
-import { View, Text, Alert, Pressable, Keyboard, TouchableWithoutFeedback, TextInput } from "react-native";
+import { View, Text, Alert, Pressable, Keyboard, TouchableWithoutFeedback, TextInput, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -98,128 +98,140 @@ export default function Landing() {
       {
         style: {
           flex: 1,
-          justifyContent: "flex-start",
-          alignItems: "center",
-          gap: spacing.sm,
-          paddingTop: spacing.xl,
-          padding: spacing.xl,
         },
         edges: ["top", "bottom"],
       },
-    React.createElement(
-      Text,
-      {
-        style: {
-          ...typography.h1,
-          fontSize: 40,
-          marginBottom: spacing.sm,
-        },
-        accessibilityRole: "header",
-        accessibilityLabel: "Welcome back to Stride",
-      },
-      "Welcome back to ",
       React.createElement(
-        Text,
+        ScrollView,
         {
-          style: {
-            color: colors.primary,
+          contentContainerStyle: {
+            flexGrow: 1,
+            justifyContent: "flex-start",
+            alignItems: "center",
+            gap: spacing.sm,
+            paddingTop: spacing.xl,
+            padding: spacing.xl,
           },
-          accessible: false, // Nested text doesn't need separate accessibility
+          keyboardShouldPersistTaps: "handled",
+          showsVerticalScrollIndicator: false,
         },
-        "Stride."
+        React.createElement(
+          Text,
+          {
+            style: {
+              ...typography.h1,
+              fontSize: 40,
+              marginBottom: spacing.sm,
+            },
+            accessibilityRole: "header",
+            accessibilityLabel: "Welcome back to Stride",
+          },
+          "Welcome back to ",
+          React.createElement(
+            Text,
+            {
+              style: {
+                color: colors.primary,
+              },
+              accessible: false, // Nested text doesn't need separate accessibility
+            },
+            "Stride."
+          )
+        ),
+        React.createElement(
+          Label,
+          {
+            variant: "formHeader",
+            style: {
+              paddingTop: spacing.lg,
+              marginBottom: spacing.md,
+              alignSelf: "flex-start",
+              color: colors.textSecondary,
+            },
+            accessibilityLabel: "Sign in to your account",
+          },
+          "Sign in to your account"
+        ),
+        React.createElement(TextField, {
+          ref: usernameRef,
+          value: username,
+          onChangeText: setUsername,
+          error: usernameError,
+          autoCapitalize: "none",
+          autoComplete: "username",
+          returnKeyType: "next",
+          onSubmitEditing: () => {
+            passwordRef.current?.focus();
+          },
+          placeholder: "Username",
+          accessibilityLabel: "Username",
+          accessibilityHint: "Enter your username. Press next to move to password field.",
+          style: {
+            width: "100%",
+            marginBottom: spacing.md,
+          },
+        }),
+        React.createElement(TextField, {
+          ref: passwordRef,
+          value: password,
+          onChangeText: setPassword,
+          error: passwordError,
+          secureTextEntry: !showPassword,
+          autoCapitalize: "none",
+          autoComplete: "password",
+          returnKeyType: "go",
+          onSubmitEditing: handleSignIn,
+          placeholder: "Password",
+          accessibilityLabel: "Password",
+          accessibilityHint: "Enter your password. Press go to sign in.",
+          style: {
+            width: "100%",
+            marginBottom: spacing.md,
+          },
+          rightIcon: React.createElement(
+            Pressable,
+            {
+              onPress: () => setShowPassword(!showPassword),
+              style: {
+                padding: spacing.xs,
+              },
+              accessibilityLabel: showPassword ? "Hide password" : "Show password",
+              accessibilityRole: "button",
+              accessibilityHint: showPassword ? "Tap to hide your password" : "Tap to show your password",
+            },
+            React.createElement(Ionicons, {
+              name: showPassword ? "eye-off-outline" : "eye-outline",
+              size: 20,
+              color: colors.textSecondary,
+              accessible: false, // Icon is decorative, accessibility handled by Pressable
+            }),
+          ),
+        }),
+        React.createElement(Button, {
+          onPress: handleSignIn,
+          title: "Sign in",
+          loading: isLoading,
+          disabled: isLoading,
+          style: {
+            marginTop: spacing.xl,
+          },
+          accessibilityLabel: "Sign in to your account",
+          accessibilityRole: "button",
+          accessibilityHint: isLoading ? "Signing in, please wait" : "Sign in to your account to continue",
+        }),
+        React.createElement(Button, {
+          onPress: () => router.push("/register"),
+          title: "Create an account",
+          variant: "secondary",
+          style: {
+            marginTop: spacing.md,
+          },
+          accessibilityLabel: "Create an account",
+          accessibilityRole: "button",
+          accessibilityHint: "Navigate to the registration screen to create a new account",
+        })
       )
     ),
-    React.createElement(
-      Label,
-      {
-        variant: "formHeader",
-        style: {
-          paddingTop: spacing.lg,
-          marginBottom: spacing.md,
-          alignSelf: "flex-start",
-          color: colors.textSecondary,
-        },
-        accessibilityLabel: "Sign in to your account",
-      },
-      "Sign in to your account"
-    ),
-    React.createElement(TextField, {
-      ref: usernameRef,
-      value: username,
-      onChangeText: setUsername,
-      error: usernameError,
-      autoCapitalize: "none",
-      returnKeyType: "next",
-      onSubmitEditing: () => {
-        passwordRef.current?.focus();
-      },
-      placeholder: "Username",
-      accessibilityLabel: "Username",
-      accessibilityHint: "Enter your username. Press next to move to password field.",
-      style: {
-        width: "100%",
-        marginBottom: spacing.md,
-      },
-    }),
-    React.createElement(TextField, {
-      ref: passwordRef,
-      value: password,
-      onChangeText: setPassword,
-      error: passwordError,
-      secureTextEntry: !showPassword,
-      autoCapitalize: "none",
-      returnKeyType: "go",
-      onSubmitEditing: handleSignIn,
-      placeholder: "Password",
-      accessibilityLabel: "Password",
-      accessibilityHint: "Enter your password. Press go to sign in.",
-      style: {
-        width: "100%",
-        marginBottom: spacing.md,
-      },
-      rightIcon: React.createElement(
-        Pressable,
-        {
-          onPress: () => setShowPassword(!showPassword),
-          style: {
-            padding: spacing.xs,
-          },
-          accessibilityLabel: showPassword ? "Hide password" : "Show password",
-          accessibilityRole: "button",
-          accessibilityHint: showPassword ? "Tap to hide your password" : "Tap to show your password",
-        },
-        React.createElement(Ionicons, {
-          name: showPassword ? "eye-off-outline" : "eye-outline",
-          size: 20,
-          color: colors.textSecondary,
-          accessible: false, // Icon is decorative, accessibility handled by Pressable
-        }),
-      ),
-    }),
-    React.createElement(Button, {
-      onPress: handleSignIn,
-      title: "Sign in",
-      loading: isLoading,
-      disabled: isLoading,
-      style: {
-        marginTop: spacing.xl,
-      },
-      accessibilityLabel: "Sign in to your account",
-      accessibilityRole: "button",
-      accessibilityHint: isLoading ? "Signing in, please wait" : "Sign in to your account to continue",
-    }),
-    React.createElement(Button, {
-      onPress: () => router.push("/register"),
-      title: "Create an account",
-      variant: "secondary",
-      style: {
-        marginTop: spacing.md,
-      },
-      accessibilityLabel: "Create an account",
-      accessibilityRole: "button",
-      accessibilityHint: "Navigate to the registration screen to create a new account",
-    })
-  ),
   );
 }
 
