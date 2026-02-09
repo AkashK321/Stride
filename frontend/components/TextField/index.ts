@@ -6,3 +6,4 @@
  * instead of: import TextField from "../../components/TextField/TextField"
  */
 export { default } from "./TextField";
+export type { TextFieldProps } from "./TextField";
