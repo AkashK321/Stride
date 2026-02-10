@@ -240,7 +240,7 @@ class ObjectDetectionHandler (
             logger.log("Error: Payload is not valid Base64. ${e.message}")
         }
 
-        if (featureFlagsTableClient.getStringItem(itemName = "enable_sagemaker_inference") == "true") {
+        if (featureFlagsTableClient.getStringItem(itemName = "enable_sagemaker_inference") == true) {
             logger.log("SageMaker inference is ENABLED via feature flag.")
             detections = getDetections(validImage, imageBytes, logger)
         } else {

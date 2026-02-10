@@ -55,14 +55,12 @@ class ObjectDetectionHandlerTest {
 
     @Test
     fun `handleRequest should calculate distance and post to api gateway`() {
-        // --- GIVEN ---
-        
-        // 1. Mock DynamoDB Config Load (Person = 1.7m)
-        val ddbItems = listOf(
+        val ddbHeightItems = listOf(
             mapOf("class_name" to "person", "avg_height_meters" to "1.7")
         )
 
-        every { mockHeightDdb.scanAll() } returns ddbItems
+        every { mockHeightDdb.scanAll() } returns ddbHeightItems
+        every { mockFeatureDdb.getStringItem(itemName = "enable_sagemaker_inference") } returns true
 
         // 2. MOCK THE PRIVATE getDetections FUNCTION
         // This bypasses the actual logic (and the TODO/SageMaker call) entirely
