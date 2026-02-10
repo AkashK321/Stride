@@ -60,7 +60,7 @@ class ObjectDetectionHandlerTest {
         )
 
         every { mockHeightDdb.scanAll() } returns ddbHeightItems
-        every { mockFeatureDdb.getStringItem(itemName = "enable_sagemaker_inference") } returns true
+        every { mockFeatureDdb.getStringItem(itemName = "enable_sagemaker_inference", attributeName = "feature_name") } returns true
 
         // 2. MOCK THE PRIVATE getDetections FUNCTION
         // This bypasses the actual logic (and the TODO/SageMaker call) entirely

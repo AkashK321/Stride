@@ -56,9 +56,9 @@ class DynamoDbTableClient(private val tableName: String) {
         return itemsList
     }
 
-    fun getStringItem(itemName: String): Any? {
+    fun getStringItem(itemName: String, attributeName: String = "key"): Any? {
         try {
-            val key = mapOf("item_name" to AttributeValue.builder().s(itemName).build())
+            val key = mapOf(attributeName to AttributeValue.builder().s(itemName).build())
 
             val request = GetItemRequest.builder()
                 .tableName(tableName)
