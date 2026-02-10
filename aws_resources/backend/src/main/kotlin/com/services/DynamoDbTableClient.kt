@@ -14,8 +14,9 @@ import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
  * while sharing the underlying AWS SDK client connection pool.
  *
  * @param tableName The name of the DynamoDB table this client will interact with
+ * @param primaryKeyName The name of the primary key attribute for this table
  */
-class DynamoDbTableClient(private val tableName: String) {
+class DynamoDbTableClient(private val tableName: String, private val primaryKeyName: String = "id") {
 
     companion object {
         // Share the heavyweight SDK client across all TableClient instances to reuse HTTP connections
@@ -56,9 +57,9 @@ class DynamoDbTableClient(private val tableName: String) {
         return itemsList
     }
 
-    fun getStringItem(itemName: String, attributeName: String = "key"): Any? {
+    fun getStringItem(itemName: String): Any? {
         try {
-            val key = mapOf(attributeName to AttributeValue.builder().s(itemName).build())
+            val key = mapOf(primaryKeyName to AttributeValue.builder().s(itemName).build())
 
             val request = GetItemRequest.builder()
                 .tableName(tableName)

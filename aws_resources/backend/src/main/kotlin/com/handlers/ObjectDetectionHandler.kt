@@ -39,11 +39,13 @@ class ObjectDetectionHandler (
         .build(),
 
     private val heightTableClient: DynamoDbTableClient = DynamoDbTableClient(
-        System.getenv("HEIGHT_MAP_TABLE_NAME") ?: "default-height-table"
+        System.getenv("HEIGHT_MAP_TABLE_NAME") ?: "default-height-table",
+        primaryKeyName = "class_id"
     ),
     
     private val featureFlagsTableClient: DynamoDbTableClient = DynamoDbTableClient(
-        System.getenv("FEATURE_FLAGS_TABLE_NAME") ?: "default-flags-table"
+        System.getenv("FEATURE_FLAGS_TABLE_NAME") ?: "default-flags-table",
+        primaryKeyName = "feature_name"
     ),
 
     private val apiGatewayFactory: (String) -> ApiGatewayManagementApiClient = { endpointUrl ->
@@ -240,7 +242,7 @@ class ObjectDetectionHandler (
             logger.log("Error: Payload is not valid Base64. ${e.message}")
         }
 
-        if (featureFlagsTableClient.getStringItem(itemName = "enable_sagemaker_inference", attributeName = "feature_name") == true) {
+        if (featureFlagsTableClient.getStringItem(itemName = "enable_sagemaker_inference") == true) {
             logger.log("SageMaker inference is ENABLED via feature flag.")
             detections = getDetections(validImage, imageBytes, logger)
         } else {
