@@ -37,7 +37,7 @@ class ObjectDetectionHandler (
         .httpClient(UrlConnectionHttpClient.create())
         .build(),
 
-    private val configTableName: String = System.getenv("CONFIG_TABLE_NAME") ?: "default-table",
+    private val heightMapTableName: String = System.getenv("HEIGHT_MAP_TABLE_NAME") ?: "default-table",
 
     private val apiGatewayFactory: (String) -> ApiGatewayManagementApiClient = { endpointUrl ->
         ApiGatewayManagementApiClient.builder()
@@ -62,7 +62,7 @@ class ObjectDetectionHandler (
             return
         }
         
-        val tableName = System.getenv("CONFIG_TABLE_NAME")
+        val tableName = heightMapTableName
         try {
             val request = ScanRequest.builder().tableName(tableName).build()
             val response = ddbClient.scan(request)
