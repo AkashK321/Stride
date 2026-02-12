@@ -339,7 +339,7 @@ class CdkStack(Stack):
         )
 
         coco_config_table.grant_read_data(object_detection_handler)
-        object_detection_handler.add_environment("CONFIG_TABLE_NAME", coco_config_table.table_name)
+        object_detection_handler.add_environment("HEIGHT_MAP_TABLE_NAME", coco_config_table.table_name)
 
         init_coco_config = _lambda.Function(
             self, "ObjDetectionConfigLambda",
@@ -361,6 +361,28 @@ class CdkStack(Stack):
                 "RunOnDeploy": str(time())
             }
         )
+
+        # Setup DynamoDB Table for manual feature flags (e.g. to toggle object detection on/off without redeploying)
+        feature_flags_table = ddb.Table(
+            self, "FeatureFlagsTable",
+            partition_key=ddb.Attribute(
+                name="feature_name",
+                type=ddb.AttributeType.STRING
+            ),
+            # RETAIN = If you delete the stack, this table (and its manual flags) 
+            # will stay in AWS so you don't lose your settings.
+            removal_policy=RemovalPolicy.RETAIN, 
+            billing_mode=ddb.BillingMode.PAY_PER_REQUEST
+        )
+
+        CfnOutput(
+            self, "FeatureFlagsTableName",
+            value=feature_flags_table.table_name,
+            description="Table for manual feature toggles"
+        )
+
+        feature_flags_table.grant_read_data(object_detection_handler)
+        object_detection_handler.add_environment("FEATURE_FLAGS_TABLE_NAME", feature_flags_table.table_name)
 
         CfnOutput(self, "UserPoolId",
             value=user_pool.user_pool_id,

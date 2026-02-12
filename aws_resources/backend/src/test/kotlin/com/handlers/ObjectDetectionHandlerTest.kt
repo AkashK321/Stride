@@ -18,13 +18,15 @@ import software.amazon.awssdk.services.dynamodb.model.ScanResponse
 import software.amazon.awssdk.services.sagemakerruntime.SageMakerRuntimeClient
 import com.models.InferenceResult
 import com.models.BoundingBox
+import com.services.DynamoDbTableClient
 import java.util.Base64
 
 class ObjectDetectionHandlerTest {
 
     // Mocks for dependencies
     private val mockSageMaker = mockk<SageMakerRuntimeClient>()
-    private val mockDdb = mockk<DynamoDbClient>()
+    private val mockHeightDdb = mockk<DynamoDbTableClient>()
+    private val mockFeatureDdb = mockk<DynamoDbTableClient>()
     private val mockApiGateway = mockk<ApiGatewayManagementApiClient>(relaxed = true)
     private val mockContext = mockk<Context>()
     private val mockLogger = mockk<LambdaLogger>(relaxed = true)
@@ -41,7 +43,8 @@ class ObjectDetectionHandlerTest {
 
         // 2. Create the real handler instance with mocked dependencies
         val realHandler = ObjectDetectionHandler(
-            ddbClient = mockDdb,
+            heightTableClient = mockHeightDdb,
+            featureFlagsTableClient = mockFeatureDdb,
             sagemakerClient = mockSageMaker,
             apiGatewayFactory = { _ -> mockApiGateway }
         )
@@ -52,15 +55,12 @@ class ObjectDetectionHandlerTest {
 
     @Test
     fun `handleRequest should calculate distance and post to api gateway`() {
-        // --- GIVEN ---
-        
-        // 1. Mock DynamoDB Config Load (Person = 1.7m)
-        val ddbItem = mapOf(
-            "class_id" to AttributeValue.builder().n("0").build(),
-            "avg_height_meters" to AttributeValue.builder().s("1.7").build()
+        val ddbHeightItems = listOf(
+            mapOf("class_name" to "person", "avg_height_meters" to "1.7")
         )
-        val scanResponse = ScanResponse.builder().items(ddbItem).build()
-        every { mockDdb.scan(any<ScanRequest>()) } returns scanResponse
+
+        every { mockHeightDdb.scanAll() } returns ddbHeightItems
+        every { mockFeatureDdb.getStringItem(itemName = "enable_sagemaker_inference") } returns true
 
         // 2. MOCK THE PRIVATE getDetections FUNCTION
         // This bypasses the actual logic (and the TODO/SageMaker call) entirely
