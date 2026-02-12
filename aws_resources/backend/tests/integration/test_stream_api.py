@@ -27,7 +27,7 @@ def api_base_url():
 @pytest.fixture
 def ddb_feature_flag_table():
     """Fixture to access the DynamoDB table for feature flags."""
-    ddb = boto3.resource("dynamodb")
+    ddb = boto3.resource("dynamodb", region_name="us-east-1")
     table_name = os.getenv("FEATURE_FLAG_TABLE_NAME", "FeatureFlags")
     return ddb.Table(table_name)
 
