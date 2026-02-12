@@ -95,6 +95,7 @@ jobs:
     outputs:
       api_endpoint: ${{ steps.stack-outputs.outputs.api_endpoint }}
       ws_api_endpoint: ${{ steps.stack-outputs.outputs.ws_api_endpoint }}
+      feature_flag_table: ${{ steps.stack-outputs.outputs.feature_flag_table }}
     
     steps:
       # Step 1: Checkout the repository code
@@ -233,8 +234,14 @@ jobs:
 
           # Extract WebSocket from the outputs
           WS_API_ENDPOINT=$(jq -r ".\"$STACK_KEY\".WebSocketURL // empty" cdk-outputs.json 2>/dev/null || echo "")
-          if [ -z "$API_ENDPOINT" ] || [ "$API_ENDPOINT" == "null" ]; then
+          if [ -z "$WS_API_ENDPOINT" ] || [ "$WS_API_ENDPOINT" == "null" ]; then
             echo "Warning: Could not extract WebSocketURL from cdk-outputs.json"
+          fi
+
+          # Extract other outputs as needed (e.g., DynamoDB table names, S3 bucket names, etc.)
+          FEATURE_FLAG_TABLE=$(jq -r ".\"$STACK_KEY\".FeatureFlagsTableName // empty" cdk-outputs.json 2>/dev/null || echo "")
+          if [ -z "$FEATURE_FLAG_TABLE" ] || [ "$FEATURE_FLAG_TABLE" == "null" ]; then
+            echo "Warning: Could not extract FeatureFlagsTableName from cdk-outputs.json"
           fi
 
           echo "stack_name=$STACK_NAME" >> $GITHUB_OUTPUT
@@ -250,6 +257,11 @@ jobs:
           if [ -n "$WS_API_ENDPOINT" ]; then
             echo "ws_api_endpoint=$WS_API_ENDPOINT" >> $GITHUB_OUTPUT
             echo "✅ WebSocket API Endpoint: $WS_API_ENDPOINT"
+          fi
+
+          if [ -n "$FEATURE_FLAG_TABLE" ]; then
+            echo "feature_flag_table=$FEATURE_FLAG_TABLE" >> $GITHUB_OUTPUT
+            echo "✅ Feature Flag Table: $FEATURE_FLAG_TABLE"
           fi
           
           # Create job summary with formatted markdown (shows up in Actions UI summary tab)
@@ -297,4 +309,5 @@ jobs:
     with:
       api_endpoint: ${{ needs.deploy.outputs.api_endpoint }}
       ws_api_endpoint: ${{ needs.deploy.outputs.ws_api_endpoint }}
+      feature_flag_table: ${{ needs.deploy.outputs.feature_flag_table }}
     secrets: inherit

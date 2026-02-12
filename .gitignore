@@ -86,3 +86,4 @@ aws_resources/test_results/*.json
 !aws_resources/test_results/README.md
 
 aws_resources/backend/build/*
+aws_resources/.env
