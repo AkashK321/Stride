@@ -15,6 +15,7 @@ from aws_cdk import (
     aws_rds as rds,
     aws_dynamodb as ddb,
     RemovalPolicy,
+    aws_cognito as cognito,
     custom_resources as cr,
     BundlingOptions,
     aws_iam as iam,
@@ -48,7 +49,7 @@ class CdkStack(Stack):
         # Only attempt local build if the wrapper exists
         if os.path.exists(script_path):
             print(f"⚡ Attempting local build with {gradle_script}...")
-            
+
             # Fix permissions on Mac/Linux
             if not is_windows:
                 try:
@@ -59,7 +60,7 @@ class CdkStack(Stack):
             try:
                 # Run the build
                 subprocess.run(
-                    [script_path, "shadowJar", "--no-daemon"], 
+                    [script_path, "shadowJar", "--no-daemon"],
                     cwd=backend_dir,
                     check=True,
                     shell=is_windows
@@ -83,7 +84,7 @@ class CdkStack(Stack):
                     image=_lambda.Runtime.JAVA_21.bundling_image,
                     user="root",
                     command=[
-                        "/bin/sh", "-c", 
+                        "/bin/sh", "-c",
                         f"chmod +x gradlew && ./gradlew shadowJar && cp build/libs/{jar_name} /asset-output/"
                     ]
                 )
@@ -93,9 +94,9 @@ class CdkStack(Stack):
         auth_handler = _lambda.Function(
             self, "AuthHandler",
             runtime=_lambda.Runtime.JAVA_21,
-            handler="com.handlers.AuthHandler", 
+            handler="com.handlers.AuthHandler",
             code=code_asset,  # Uses either the local JAR or the Docker builder
-            memory_size=1024, 
+            memory_size=1024,
             timeout=Duration.seconds(15),
             snap_start=_lambda.SnapStartConf.ON_PUBLISHED_VERSIONS,
         )
@@ -111,22 +112,67 @@ class CdkStack(Stack):
             snap_start=_lambda.SnapStartConf.ON_PUBLISHED_VERSIONS,
         )
 
+        # Define Cognito User Pool
+        user_pool = cognito.UserPool(
+            self, "StrideUserPool",
+            user_pool_name="stride-users",
+            sign_in_aliases=cognito.SignInAliases(
+                username=True,
+                email=True,
+            ),
+            auto_verify=cognito.AutoVerifiedAttrs(email=True),
+            password_policy=cognito.PasswordPolicy(
+                min_length=8,
+                require_lowercase=True,
+                require_uppercase=True,
+                require_digits=True,
+                require_symbols=True
+            ),
+            removal_policy=RemovalPolicy.DESTROY,  # For dev/testing only
+        )
+
+        # Define Cognito User Pool Client (for app authentication)
+        user_pool_client = user_pool.add_client(
+            "StrideUserPoolClient",
+            user_pool_client_name="stride-app-client",
+            generate_secret=False,  # Set to True if you need a client secret
+            auth_flows=cognito.AuthFlow(
+                user_password=True,
+                user_srp=True
+            )
+        )
+
+        # Grant Lambda permissions to interact with Cognito
+        user_pool.grant(
+            auth_handler,
+            "cognito-idp:AdminInitiateAuth",
+            "cognito-idp:AdminGetUser",
+            "cognito-idp:AdminCreateUser",
+            "cognito-idp:AdminSetUserPassword",
+            "cognito-idp:AdminDeleteUser",  # For cleanup on registration failure
+            "cognito-idp:ListUsers"  # For checking duplicate email/phone
+        )
+
+        # Add Cognito configuration to Lambda environment
+        auth_handler.add_environment("USER_POOL_ID", user_pool.user_pool_id)
+        auth_handler.add_environment("USER_POOL_CLIENT_ID", user_pool_client.user_pool_client_id)
+
         # ========================================
         # SageMaker Resources for YOLOv11
         # ========================================
-        
+
         # ECR Repository for YOLOv11 inference container
         # The ECR repository is created separately by GitHub Actions workflow (build-sagemaker-image.yaml)
         # Here we just reference it by name
         ecr_repo_name = "stride-yolov11-inference"
-        
+
         # Reference the ECR repository by name (created by GitHub Actions or manually)
         # This avoids CloudFormation trying to create/manage the repository
         ecr_repo = ecr.Repository.from_repository_name(
             self, "YoloV11InferenceRepo",
             repository_name=ecr_repo_name
         )
-        
+
         # Note: The ECR repository must exist before deploying this stack
         # Run the "Build and Push SageMaker Docker Image" GitHub Action first
 
@@ -145,7 +191,7 @@ class CdkStack(Stack):
         # Get AWS account and region for ECR image URI
         account = Stack.of(self).account
         region = Stack.of(self).region
-        
+
         # Construct ECR image URI (will be populated after docker build/push)
         ecr_image_uri = f"{account}.dkr.ecr.{region}.amazonaws.com/{ecr_repo.repository_name}:latest"
 
@@ -198,11 +244,11 @@ class CdkStack(Stack):
 
         # Add environment variables to Lambda for SageMaker endpoint
         object_detection_handler.add_environment(
-            "SAGEMAKER_ENDPOINT_NAME", 
+            "SAGEMAKER_ENDPOINT_NAME",
             sagemaker_endpoint.endpoint_name
         )
         object_detection_handler.add_environment(
-            "AWS_REGION_SAGEMAKER", 
+            "AWS_REGION_SAGEMAKER",
             region
         )
 
@@ -210,11 +256,17 @@ class CdkStack(Stack):
         api = apigw.LambdaRestApi(
             self, "BusinessApi",
             handler=auth_handler,
-            proxy=False 
+            proxy=False
         )
 
         items = api.root.add_resource("items")
         items.add_method("GET")
+
+        login = api.root.add_resource("login")
+        login.add_method("POST", integration=apigw.LambdaIntegration(auth_handler))
+
+        register = api.root.add_resource("register")
+        register.add_method("POST", integration=apigw.LambdaIntegration(auth_handler))
 
         # Define the API Gateway WebSocket API
         ws_api = apigw_v2.WebSocketApi(self, "StreamAPI")
@@ -228,12 +280,12 @@ class CdkStack(Stack):
         # $connect and $disconnect are special AWS routes
         # TODO: uncomment below route definition with auth is ready
         # ws_api.add_route(
-        #     route_key="$connect", 
+        #     route_key="$connect",
         #     integration=integrations.WebSocketLambdaIntegration("ConnectIntegration", auth_handler)
         # )
         # "frame" is the custom route for sending video frames
         ws_api.add_route(
-            route_key="frame", 
+            route_key="frame",
             integration=integrations.WebSocketLambdaIntegration("FrameIntegration", object_detection_handler)
         )
         # Add $default route to catch unmatched messages (for debugging)
@@ -306,7 +358,7 @@ class CdkStack(Stack):
             self, "TriggerCOCOConfigInit",
             service_token=init_coco_config.function_arn,
             properties={
-                "RunOnDeploy": str(time()) 
+                "RunOnDeploy": str(time())
             }
         )
 
@@ -331,6 +383,16 @@ class CdkStack(Stack):
 
         feature_flags_table.grant_read_data(object_detection_handler)
         object_detection_handler.add_environment("FEATURE_FLAGS_TABLE_NAME", feature_flags_table.table_name)
+
+        CfnOutput(self, "UserPoolId",
+            value=user_pool.user_pool_id,
+            description="Cognito User Pool ID"
+        )
+
+        CfnOutput(self, "UserPoolClientId",
+            value=user_pool_client.user_pool_client_id,
+            description="Cognito User Pool Client ID"
+        )
 
         # TODO: RDS setup disabled for now - to be re-enabled when ready
         # Define RDS Resource
@@ -364,7 +426,7 @@ class CdkStack(Stack):
         #         # Retrieve connection details from the secret
         #         "DB_SECRET_ARN": db_instance.secret.secret_arn
         #     }
-        # )  
+        # )
         # db_instance.secret.grant_read(schema_lambda)
 
         # # Trigger the schema initialization during deployment

@@ -1,0 +1,256 @@
+{
+	"info": {
+		"_postman_id": "stride-api-collection",
+		"name": "Stride API",
+		"description": "REST API for the Stride application. Provides authentication endpoints for user login and registration using AWS Cognito.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "stride-api"
+	},
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const jsonData = pm.response.json();",
+									"    pm.environment.set('accessToken', jsonData.accessToken);",
+									"    pm.environment.set('idToken', jsonData.idToken);",
+									"    pm.environment.set('refreshToken', jsonData.refreshToken);",
+									"    ",
+									"    pm.test('Status code is 200', function () {",
+									"        pm.response.to.have.status(200);",
+									"    });",
+									"    ",
+									"    pm.test('Response has accessToken', function () {",
+									"        pm.expect(jsonData).to.have.property('accessToken');",
+									"    });",
+									"    ",
+									"    pm.test('Response has idToken', function () {",
+									"        pm.expect(jsonData).to.have.property('idToken');",
+									"    });",
+									"    ",
+									"    pm.test('Response has refreshToken', function () {",
+									"        pm.expect(jsonData).to.have.property('refreshToken');",
+									"    });",
+									"    ",
+									"    pm.test('Response has expiresIn', function () {",
+									"        pm.expect(jsonData).to.have.property('expiresIn');",
+									"    });",
+									"    ",
+									"    pm.test('Response has tokenType', function () {",
+									"        pm.expect(jsonData).to.have.property('tokenType');",
+									"        pm.expect(jsonData.tokenType).to.eql('Bearer');",
+									"    });",
+									"} else {",
+									"    pm.test('Error response has error field', function () {",
+									"        const jsonData = pm.response.json();",
+									"        pm.expect(jsonData).to.have.property('error');",
+									"    });",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"johndoe\",\n    \"password\": \"SecurePass123!\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"login"
+							]
+						},
+						"description": "Authenticates a user with username and password using AWS Cognito. Returns JWT tokens (access token, ID token, and refresh token) upon successful authentication.\n\n**Input Normalization:**\n- Username and password are trimmed of leading/trailing whitespace\n- Cognito handles all format validation\n\n**Error Handling:**\n- Invalid credentials return 401\n- Missing fields return 400\n- Server errors return 500"
+					},
+					"response": []
+				},
+				{
+					"name": "Register",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    pm.test('Status code is 201', function () {",
+									"        pm.response.to.have.status(201);",
+									"    });",
+									"    ",
+									"    pm.test('Response has success message', function () {",
+									"        const jsonData = pm.response.json();",
+									"        pm.expect(jsonData).to.have.property('message');",
+									"        pm.expect(jsonData.message).to.include('registered successfully');",
+									"    });",
+									"} else {",
+									"    pm.test('Error response has error field', function () {",
+									"        const jsonData = pm.response.json();",
+									"        pm.expect(jsonData).to.have.property('error');",
+									"    });",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"johndoe\",\n    \"password\": \"SecurePass123!\",\n    \"passwordConfirm\": \"SecurePass123!\",\n    \"email\": \"john.doe@example.com\",\n    \"phoneNumber\": \"+1234567890\",\n    \"firstName\": \"John\",\n    \"lastName\": \"Doe\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/register",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"register"
+							]
+						},
+						"description": "Registers a new user in AWS Cognito with username, password, email, phone number, first name, and last name. All fields are required. The user is created with a permanent password and can immediately log in.\n\n**Input Normalization:**\n- Username is trimmed of leading/trailing whitespace\n- Email is trimmed and converted to lowercase\n- Phone number is trimmed and formatting characters are removed\n- First name and last name are trimmed\n- Password is trimmed\n- Cognito handles all format validation\n\n**Error Handling:**\n- Duplicate username or alias returns 409\n- Invalid password format returns 400\n- Missing required fields return 400\n- Server errors return 500"
+					},
+					"response": []
+				},
+				{
+					"name": "Register (Minimal)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    pm.test('Status code is 201', function () {",
+									"        pm.response.to.have.status(201);",
+									"    });",
+									"} else {",
+									"    pm.test('Error response has error field', function () {",
+									"        const jsonData = pm.response.json();",
+									"        pm.expect(jsonData).to.have.property('error');",
+									"    });",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"johndoe\",\n    \"password\": \"SecurePass123!\",\n    \"passwordConfirm\": \"SecurePass123!\",\n    \"email\": \"john.doe@example.com\",\n    \"phoneNumber\": \"+1234567890\",\n    \"firstName\": \"John\",\n    \"lastName\": \"Doe\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/register",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"register"
+							]
+						},
+						"description": "Registration with all required fields."
+					},
+					"response": []
+				}
+			],
+			"description": "User authentication and registration endpoints"
+		},
+		{
+			"name": "Items",
+			"item": [
+				{
+					"name": "Get Items",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    pm.test('Status code is 200', function () {",
+									"        pm.response.to.have.status(200);",
+									"    });",
+									"} else if (pm.response.code === 404) {",
+									"    pm.test('Endpoint not implemented (404)', function () {",
+									"        pm.response.to.have.status(404);",
+									"    });",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/items",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"items"
+							]
+						},
+						"description": "Placeholder endpoint for retrieving items. Implementation status may vary. Returns 404 if not implemented."
+					},
+					"response": []
+				}
+			],
+			"description": "Items endpoint (placeholder)"
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "https://{apiId}.execute-api.{region}.amazonaws.com/prod",
+			"type": "string",
+			"description": "API Gateway base URL. Replace {apiId} and {region} with your actual values."
+		}
+	]
+}
