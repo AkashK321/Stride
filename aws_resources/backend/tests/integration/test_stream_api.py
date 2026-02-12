@@ -8,12 +8,14 @@ from pathlib import Path
 # # CONFIGURATION
 SCRIPT_DIR = Path(__file__).parent.absolute()
 # This builds the path: .../backend/tests/integration/test.jpg
-IMAGE_PATH = SCRIPT_DIR / "test.jpg"
+IMAGE_PATH = SCRIPT_DIR / "resized/IMG_2828.jpg"
+URL = "wss://lr7kzee6al.execute-api.us-east-1.amazonaws.com"
 
 @pytest.fixture
 def api_base_url():
     """Get the API base URL from environment variable."""
-    url = os.getenv("WS_API_URL") + "/prod"
+    # url = os.getenv("WS_API_URL") + "/prod"
+    url = URL + "/prod"
     if not url:
         pytest.skip("WS_API_URL environment variable not set")
     # Remove trailing slash if present
