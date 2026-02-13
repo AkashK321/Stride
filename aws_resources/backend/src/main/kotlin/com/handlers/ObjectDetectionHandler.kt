@@ -60,7 +60,6 @@ class ObjectDetectionHandler (
 ) : RequestHandler<APIGatewayV2WebSocketEvent, APIGatewayV2WebSocketResponse> {
 
     private val mapper = jacksonObjectMapper()
-    var detections: List<BoundingBox> = emptyList()
     
     companion object {
         internal val classHeightMap = mutableMapOf<String, Float>()
@@ -163,6 +162,7 @@ class ObjectDetectionHandler (
         val routeKey = input.requestContext.routeKey ?: "unknown"
         val rawData = input.body ?: "{}"
         var imageBytes: ByteArray = ByteArray(0)
+        var detections: List<BoundingBox> = emptyList()
 
         
         val domainName = input.requestContext.domainName
