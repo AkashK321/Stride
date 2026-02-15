@@ -4,8 +4,9 @@
 
 This project uses **separate, independent workflows** for different deployment concerns:
 
-1. **Backend + Infrastructure** (existing) - Runs on every push
-2. **SageMaker Docker Image** (new) - Runs only when inference code changes
+1. **Backend + Branch Infrastructure** - Runs on every push
+2. **SageMaker Docker Image** - Runs only when inference code changes
+3. **Shared Persistent Infrastructure** - Deployed manually when SageMaker/RDS changes
 
 ---
 
@@ -22,7 +23,7 @@ This project uses **separate, independent workflows** for different deployment c
 
 ## Workflow Details
 
-### 1. Backend Build & Infrastructure Deploy (Existing)
+### 1. Backend Build & Branch Infrastructure Deploy
 
 **Files:**
 - `.github/workflows/backend-build.yaml`
@@ -40,14 +41,14 @@ backend-build.yaml
     └─ Calls infrastructure-deploy.yaml
         ↓
 infrastructure-deploy.yaml
-    ├─ Deploys CDK stack
+    ├─ Deploys branch CDK stack only
     ├─ Creates/updates Lambda
     ├─ Creates/updates API Gateway
     ├─ Creates/updates WebSocket API
-    └─ Creates/updates SageMaker Endpoint (references Docker image)
+    └─ Uses shared SageMaker endpoint via env/IAM references
 ```
 
-**Key Point:** This workflow does NOT build the Docker image. It only references the image that already exists in ECR.
+**Key Point:** This workflow does NOT build Docker images and does NOT deploy the shared SageMaker stack.
 
 ---
 
@@ -71,6 +72,25 @@ build-sagemaker-image.yaml
 ```
 
 **Key Point:** This workflow ONLY builds and pushes the Docker image. It does NOT deploy anything.
+
+---
+
+### 3. Shared Persistent Stack (Manual Only)
+
+Shared singleton resources are defined in `StrideSharedStack` and are **not** deployed by CI.
+
+```bash
+cd aws_resources
+
+# First-time deployment
+cdk deploy StrideSharedStack --require-approval never
+
+# Future updates
+cdk diff StrideSharedStack
+cdk deploy StrideSharedStack --require-approval never
+```
+
+Never run `cdk destroy StrideSharedStack` from automation.
 
 ---
 
@@ -128,17 +148,16 @@ git push
 If you update the inference code and push a new Docker image:
 
 1. **New image pushed to ECR** ✅ (automatic)
-2. **SageMaker endpoint still uses OLD image** ⚠️
+2. **Shared SageMaker endpoint still uses OLD image** ⚠️
 
 **Why?** SageMaker endpoint doesn't automatically update when ECR image changes.
 
-**Solution:** Update the endpoint:
+**Solution:** Update shared stack resources:
 
-**Option A: Redeploy CDK (Recommended)**
+**Option A: Redeploy shared stack (Recommended)**
 ```bash
-# After Docker build completes, trigger CDK deploy
-git commit --allow-empty -m "Trigger CDK redeploy for new Docker image"
-git push
+cd aws_resources
+cdk deploy StrideSharedStack --require-approval never
 ```
 
 **Option B: Update Endpoint Manually**
@@ -214,12 +233,12 @@ git push
 **A:** Perfect! Just update files in `sagemaker/` and push. The build workflow runs independently.
 
 ### Q: Can I test Docker changes without affecting production?
-**A:** Yes! Use feature branches:
+**A:** Not with the shared endpoint as currently configured. Feature branches share the same SageMaker endpoint name. Use non-production image tags/endpoint names in shared stack updates if you need isolated testing.
 ```bash
 git checkout -b feature/better-inference
 # Edit sagemaker/inference.py
 git push
-# Creates separate test stack with new Docker image
+# Builds new image in ECR, but endpoint update is shared
 ```
 
 ### Q: What if Docker build fails?

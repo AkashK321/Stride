@@ -185,14 +185,43 @@ jobs:
         run: |
           cdk bootstrap aws://${{ secrets.AWS_ACCOUNT_ID }}/us-east-1
       
-      # Step 11: Deploy CDK
+      # Step 11: Calculate branch stack name
+      - name: Get stack name
+        id: get-stack-name
+        working-directory: aws_resources
+        run: |
+          BRANCH_NAME="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          if [ -z "$BRANCH_NAME" ]; then
+            echo "ERROR: Could not determine branch name from GitHub context"
+            exit 1
+          fi
+
+          STACK_NAME=$(BRANCH_NAME="$BRANCH_NAME" python3 -c "
+          import os
+          from app import sanitize_branch_name
+
+          print(sanitize_branch_name(os.environ['BRANCH_NAME']))
+          ")
+
+          if [ -z "$STACK_NAME" ]; then
+            echo "ERROR: Failed to calculate stack name"
+            exit 1
+          fi
+
+          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "stack_name=$STACK_NAME" >> $GITHUB_OUTPUT
+          echo "Branch name: $BRANCH_NAME"
+          echo "Stack name: $STACK_NAME"
+
+      # Step 12: Deploy CDK
       - name: Deploy CDK stack
         id: deploy
         working-directory: aws_resources
         env:
           CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
+          BRANCH_NAME: ${{ steps.get-stack-name.outputs.branch_name }}
         run: |
-          if cdk deploy --require-approval never --all --outputs-file cdk-outputs.json; then
+          if cdk deploy "${{ steps.get-stack-name.outputs.stack_name }}" --require-approval never --outputs-file cdk-outputs.json; then
             echo "✅ Deployment successful!"
             echo "deployment_status=success" >> $GITHUB_OUTPUT
           else
@@ -201,7 +230,7 @@ jobs:
             exit 1
           fi
       
-      # Step 12: Get stack outputs and display in Actions UI
+      # Step 13: Get stack outputs and display in Actions UI
       - name: Get stack outputs
         id: stack-outputs
         working-directory: aws_resources
