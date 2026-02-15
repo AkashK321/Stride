@@ -103,7 +103,7 @@ FLOOR2_DATA = {
             
                 # vending machine south corner 
             {
-                'id': 'vend_south corner',
+                'id': 'vend_south_corner',
                         'x_feet': -88, 
                         'y_feet': 56,
                         'type': 'Intersection'
@@ -112,7 +112,7 @@ FLOOR2_DATA = {
                 # Room 212 TO DO
             {
                 'id': 'r212_door',
-                        'x_feet': 90, # TO DO
+                        'x_feet': -88, 
                         'y_feet': 56, 
                         'type': 'Door'
             },
@@ -235,7 +235,7 @@ FLOOR2_DATA = {
             {
                 'id': 'r241_door',
                         'x_feet': 77.6, 
-                        'y_feet': 22.6, 
+                        'y_feet': 20.6, 
                         'type': 'Door'
             },
             
@@ -243,7 +243,7 @@ FLOOR2_DATA = {
             {
                 'id': 'r241a_door',
                         'x_feet': 77.6, 
-                        'y_feet': 36.2, 
+                        'y_feet': 34.2, 
                         'type': 'Door'
             },
             
