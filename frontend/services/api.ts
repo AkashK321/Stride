@@ -5,11 +5,26 @@
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
 if (!API_BASE_URL) {
-  throw new Error(
-    "EXPO_PUBLIC_API_BASE_URL environment variable is not set. " +
-    "Please create a .env file in the frontend directory with EXPO_PUBLIC_API_BASE_URL set to your API Gateway URL. " +
-    "See README.md for instructions."
+  console.warn(
+    "EXPO_PUBLIC_API_BASE_URL is not set. API calls will fail. " +
+    "If you are using Developer Bypass mode this is expected. " +
+    "Otherwise, create a .env file with EXPO_PUBLIC_API_BASE_URL set to your API Gateway URL. " +
+    "See docs/FRONTEND.md for instructions."
   );
+}
+
+/**
+ * Guard that throws if the API URL is not configured.
+ * Called at the start of each API function so the app can still
+ * load and render (e.g. for Developer Bypass) even without a backend URL.
+ */
+function requireApiUrl(): string {
+  if (!API_BASE_URL) {
+    throw new Error(
+      "No backend URL configured. Set EXPO_PUBLIC_API_BASE_URL in your .env file to use live endpoints."
+    );
+  }
+  return API_BASE_URL;
 }
 
 export interface LoginRequest {
@@ -60,7 +75,8 @@ export interface RegisterResponse {
  * Makes a POST request to the login endpoint.
  */
 export async function login(credentials: LoginRequest): Promise<LoginResponse> {
-  const response = await fetch(`${API_BASE_URL}/login`, {
+  const url = requireApiUrl();
+  const response = await fetch(`${url}/login`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -87,7 +103,8 @@ export async function login(credentials: LoginRequest): Promise<LoginResponse> {
  * @throws Error if the refresh endpoint is not available (404) or if refresh fails
  */
 export async function refreshToken(refreshToken: string): Promise<RefreshTokenResponse> {
-  const response = await fetch(`${API_BASE_URL}/refresh`, {
+  const url = requireApiUrl();
+  const response = await fetch(`${url}/refresh`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -114,7 +131,8 @@ export async function refreshToken(refreshToken: string): Promise<RefreshTokenRe
  * Makes a POST request to the register endpoint.
  */
 export async function register(userData: RegisterRequest): Promise<RegisterResponse> {
-  const url = `${API_BASE_URL}/register`;
+  const base = requireApiUrl();
+  const url = `${base}/register`;
   
   try {
     const response = await fetch(url, {
