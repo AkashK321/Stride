@@ -32,7 +32,7 @@ class CdkStack(Stack):
 
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
-        # default_vpc = ec2.Vpc.from_lookup(self, "DefaultVPC", is_default=True)
+        default_vpc = ec2.Vpc.from_lookup(self, "DefaultVPC", is_default=True)
 
         # Path to the Kotlin backend project
         this_dir = os.path.dirname(__file__)
@@ -157,296 +157,296 @@ class CdkStack(Stack):
         auth_handler.add_environment("USER_POOL_ID", user_pool.user_pool_id)
         auth_handler.add_environment("USER_POOL_CLIENT_ID", user_pool_client.user_pool_client_id)
 
-        # ========================================
-        # SageMaker Resources for YOLOv11
-        # ========================================
+        # # ========================================
+        # # SageMaker Resources for YOLOv11
+        # # ========================================
 
-        # ECR Repository for YOLOv11 inference container
-        # The ECR repository is created separately by GitHub Actions workflow (build-sagemaker-image.yaml)
-        # Here we just reference it by name
-        ecr_repo_name = "stride-yolov11-inference"
+        # # ECR Repository for YOLOv11 inference container
+        # # The ECR repository is created separately by GitHub Actions workflow (build-sagemaker-image.yaml)
+        # # Here we just reference it by name
+        # ecr_repo_name = "stride-yolov11-inference"
 
-        # Reference the ECR repository by name (created by GitHub Actions or manually)
-        # This avoids CloudFormation trying to create/manage the repository
-        ecr_repo = ecr.Repository.from_repository_name(
-            self, "YoloV11InferenceRepo",
-            repository_name=ecr_repo_name
-        )
+        # # Reference the ECR repository by name (created by GitHub Actions or manually)
+        # # This avoids CloudFormation trying to create/manage the repository
+        # ecr_repo = ecr.Repository.from_repository_name(
+        #     self, "YoloV11InferenceRepo",
+        #     repository_name=ecr_repo_name
+        # )
 
-        # Note: The ECR repository must exist before deploying this stack
-        # Run the "Build and Push SageMaker Docker Image" GitHub Action first
+        # # Note: The ECR repository must exist before deploying this stack
+        # # Run the "Build and Push SageMaker Docker Image" GitHub Action first
 
-        # Create IAM Role for SageMaker Endpoint
-        sagemaker_role = iam.Role(
-            self, "SageMakerExecutionRole",
-            assumed_by=iam.ServicePrincipal("sagemaker.amazonaws.com"),
-            managed_policies=[
-                iam.ManagedPolicy.from_aws_managed_policy_name("AmazonSageMakerFullAccess")
-            ]
-        )
+        # # Create IAM Role for SageMaker Endpoint
+        # sagemaker_role = iam.Role(
+        #     self, "SageMakerExecutionRole",
+        #     assumed_by=iam.ServicePrincipal("sagemaker.amazonaws.com"),
+        #     managed_policies=[
+        #         iam.ManagedPolicy.from_aws_managed_policy_name("AmazonSageMakerFullAccess")
+        #     ]
+        # )
 
-        # Grant SageMaker role permission to pull from ECR
-        ecr_repo.grant_pull(sagemaker_role)
+        # # Grant SageMaker role permission to pull from ECR
+        # ecr_repo.grant_pull(sagemaker_role)
 
-        # Get AWS account and region for ECR image URI
-        account = Stack.of(self).account
-        region = Stack.of(self).region
+        # # Get AWS account and region for ECR image URI
+        # account = Stack.of(self).account
+        # region = Stack.of(self).region
 
-        # Construct ECR image URI (will be populated after docker build/push)
-        ecr_image_uri = f"{account}.dkr.ecr.{region}.amazonaws.com/{ecr_repo.repository_name}:latest"
+        # # Construct ECR image URI (will be populated after docker build/push)
+        # ecr_image_uri = f"{account}.dkr.ecr.{region}.amazonaws.com/{ecr_repo.repository_name}:latest"
 
-        # Create SageMaker Model
-        sagemaker_model = sagemaker.CfnModel(
-            self, "YoloV11Model",
-            execution_role_arn=sagemaker_role.role_arn,
-            model_name="stride-yolov11-nano-model",
-            primary_container=sagemaker.CfnModel.ContainerDefinitionProperty(
-                image=ecr_image_uri,
-                mode="SingleModel"
-                # Note: No ModelDataUrl needed - model weights are baked into the container
-            )
-        )
+        # # Create SageMaker Model
+        # sagemaker_model = sagemaker.CfnModel(
+        #     self, "YoloV11Model",
+        #     execution_role_arn=sagemaker_role.role_arn,
+        #     model_name="stride-yolov11-nano-model",
+        #     primary_container=sagemaker.CfnModel.ContainerDefinitionProperty(
+        #         image=ecr_image_uri,
+        #         mode="SingleModel"
+        #         # Note: No ModelDataUrl needed - model weights are baked into the container
+        #     )
+        # )
 
-        # Create SageMaker Endpoint Configuration
-        endpoint_config = sagemaker.CfnEndpointConfig(
-            self, "YoloV11EndpointConfig",
-            endpoint_config_name="stride-yolov11-nano-config",
-            production_variants=[
-                sagemaker.CfnEndpointConfig.ProductionVariantProperty(
-                    variant_name="AllTraffic",
-                    model_name=sagemaker_model.model_name,
-                    initial_instance_count=1,
-                    instance_type="ml.g4dn.xlarge",  # GPU instance
-                    initial_variant_weight=1.0
-                )
-            ]
-        )
-        endpoint_config.add_dependency(sagemaker_model)
+        # # Create SageMaker Endpoint Configuration
+        # endpoint_config = sagemaker.CfnEndpointConfig(
+        #     self, "YoloV11EndpointConfig",
+        #     endpoint_config_name="stride-yolov11-nano-config",
+        #     production_variants=[
+        #         sagemaker.CfnEndpointConfig.ProductionVariantProperty(
+        #             variant_name="AllTraffic",
+        #             model_name=sagemaker_model.model_name,
+        #             initial_instance_count=1,
+        #             instance_type="ml.g4dn.xlarge",  # GPU instance
+        #             initial_variant_weight=1.0
+        #         )
+        #     ]
+        # )
+        # endpoint_config.add_dependency(sagemaker_model)
 
-        # Create SageMaker Endpoint
-        sagemaker_endpoint = sagemaker.CfnEndpoint(
-            self, "YoloV11Endpoint",
-            endpoint_name="stride-yolov11-nano-endpoint",
-            endpoint_config_name=endpoint_config.endpoint_config_name
-        )
-        sagemaker_endpoint.add_dependency(endpoint_config)
+        # # Create SageMaker Endpoint
+        # sagemaker_endpoint = sagemaker.CfnEndpoint(
+        #     self, "YoloV11Endpoint",
+        #     endpoint_name="stride-yolov11-nano-endpoint",
+        #     endpoint_config_name=endpoint_config.endpoint_config_name
+        # )
+        # sagemaker_endpoint.add_dependency(endpoint_config)
 
-        # Grant Lambda permission to invoke SageMaker endpoint
-        object_detection_handler.add_to_role_policy(
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=["sagemaker:InvokeEndpoint"],
-                resources=[
-                    f"arn:aws:sagemaker:{region}:{account}:endpoint/{sagemaker_endpoint.endpoint_name}"
-                ]
-            )
-        )
+        # # Grant Lambda permission to invoke SageMaker endpoint
+        # object_detection_handler.add_to_role_policy(
+        #     iam.PolicyStatement(
+        #         effect=iam.Effect.ALLOW,
+        #         actions=["sagemaker:InvokeEndpoint"],
+        #         resources=[
+        #             f"arn:aws:sagemaker:{region}:{account}:endpoint/{sagemaker_endpoint.endpoint_name}"
+        #         ]
+        #     )
+        # )
 
-        # Add environment variables to Lambda for SageMaker endpoint
-        object_detection_handler.add_environment(
-            "SAGEMAKER_ENDPOINT_NAME",
-            sagemaker_endpoint.endpoint_name
-        )
-        object_detection_handler.add_environment(
-            "AWS_REGION_SAGEMAKER",
-            region
-        )
+        # # Add environment variables to Lambda for SageMaker endpoint
+        # object_detection_handler.add_environment(
+        #     "SAGEMAKER_ENDPOINT_NAME",
+        #     sagemaker_endpoint.endpoint_name
+        # )
+        # object_detection_handler.add_environment(
+        #     "AWS_REGION_SAGEMAKER",
+        #     region
+        # )
 
-        # Define the API Gateway REST API
-        api = apigw.LambdaRestApi(
-            self, "BusinessApi",
-            handler=auth_handler,
-            proxy=False
-        )
+        # # Define the API Gateway REST API
+        # api = apigw.LambdaRestApi(
+        #     self, "BusinessApi",
+        #     handler=auth_handler,
+        #     proxy=False
+        # )
 
-        items = api.root.add_resource("items")
-        items.add_method("GET")
+        # items = api.root.add_resource("items")
+        # items.add_method("GET")
 
-        login = api.root.add_resource("login")
-        login.add_method("POST", integration=apigw.LambdaIntegration(auth_handler))
+        # login = api.root.add_resource("login")
+        # login.add_method("POST", integration=apigw.LambdaIntegration(auth_handler))
 
-        register = api.root.add_resource("register")
-        register.add_method("POST", integration=apigw.LambdaIntegration(auth_handler))
+        # register = api.root.add_resource("register")
+        # register.add_method("POST", integration=apigw.LambdaIntegration(auth_handler))
 
-        # Define the API Gateway WebSocket API
-        ws_api = apigw_v2.WebSocketApi(self, "StreamAPI")
-        # Create a Stage (required for WebSockets)
-        apigw_v2.WebSocketStage(self, "ProdStage",
-            web_socket_api=ws_api,
-            stage_name="prod",
-            auto_deploy=True
-        )
-        # Add Routes
-        # $connect and $disconnect are special AWS routes
-        # TODO: uncomment below route definition with auth is ready
+        # # Define the API Gateway WebSocket API
+        # ws_api = apigw_v2.WebSocketApi(self, "StreamAPI")
+        # # Create a Stage (required for WebSockets)
+        # apigw_v2.WebSocketStage(self, "ProdStage",
+        #     web_socket_api=ws_api,
+        #     stage_name="prod",
+        #     auto_deploy=True
+        # )
+        # # Add Routes
+        # # $connect and $disconnect are special AWS routes
+        # # TODO: uncomment below route definition with auth is ready
+        # # ws_api.add_route(
+        # #     route_key="$connect",
+        # #     integration=integrations.WebSocketLambdaIntegration("ConnectIntegration", auth_handler)
+        # # )
+        # # "frame" is the custom route for sending video frames
         # ws_api.add_route(
-        #     route_key="$connect",
-        #     integration=integrations.WebSocketLambdaIntegration("ConnectIntegration", auth_handler)
+        #     route_key="frame",
+        #     integration=integrations.WebSocketLambdaIntegration("FrameIntegration", object_detection_handler)
         # )
-        # "frame" is the custom route for sending video frames
-        ws_api.add_route(
-            route_key="frame",
-            integration=integrations.WebSocketLambdaIntegration("FrameIntegration", object_detection_handler)
-        )
-        # Add $default route to catch unmatched messages (for debugging)
-        ws_api.add_route(
-            route_key="$default",
-            integration=integrations.WebSocketLambdaIntegration("DefaultIntegration", object_detection_handler)
-        )
-        ws_api.grant_manage_connections(object_detection_handler)
+        # # Add $default route to catch unmatched messages (for debugging)
+        # ws_api.add_route(
+        #     route_key="$default",
+        #     integration=integrations.WebSocketLambdaIntegration("DefaultIntegration", object_detection_handler)
+        # )
+        # ws_api.grant_manage_connections(object_detection_handler)
 
-        # Add stack outputs for reporting to CICD
-        CfnOutput(self, "RestAPIEndpointURL",
-            value=api.url,
-            description="API Gateway endpoint URL"
-        )
-
-        CfnOutput(self, "WebSocketURL",
-            value=ws_api.api_endpoint,
-            description="The WSS URL for Object Detection"
-        )
-
-        CfnOutput(self, "StackName",
-            value=self.stack_name,
-            description="Stack name used for this deployment"
-        )
-
-        # SageMaker Outputs
-        CfnOutput(self, "ECRRepositoryURI",
-            value=ecr_repo.repository_uri,
-            description="ECR repository URI for YOLOv11 inference container"
-        )
-
-        CfnOutput(self, "SageMakerEndpointName",
-            value=sagemaker_endpoint.endpoint_name,
-            description="SageMaker endpoint name for YOLOv11 inference"
-        )
-
-        CfnOutput(self, "SageMakerEndpointArn",
-            value=f"arn:aws:sagemaker:{region}:{account}:endpoint/{sagemaker_endpoint.endpoint_name}",
-            description="SageMaker endpoint ARN"
-        )
-
-        # Setup DynamoDB Table to map Object Avg Heights for distance estimation
-        coco_config_table = ddb.Table(
-            self, "CocoConfigTable",
-            partition_key=ddb.Attribute(
-                name="class_id",
-                type=ddb.AttributeType.NUMBER
-            ),
-            removal_policy=RemovalPolicy.DESTROY, # For dev/testing
-            billing_mode=ddb.BillingMode.PAY_PER_REQUEST
-        )
-
-        coco_config_table.grant_read_data(object_detection_handler)
-        object_detection_handler.add_environment("HEIGHT_MAP_TABLE_NAME", coco_config_table.table_name)
-
-        init_coco_config = _lambda.Function(
-            self, "ObjDetectionConfigLambda",
-            runtime=_lambda.Runtime.PYTHON_3_10,
-            handler="populate_obj_ddb.handler",
-            code=_lambda.Code.from_asset("schema_initializer"),
-            timeout=Duration.seconds(30),
-            environment={
-                "TABLE_NAME": coco_config_table.table_name
-            }
-        )
-
-        coco_config_table.grant_write_data(init_coco_config)
-
-        CustomResource(
-            self, "TriggerCOCOConfigInit",
-            service_token=init_coco_config.function_arn,
-            properties={
-                "RunOnDeploy": str(time())
-            }
-        )
-
-        # Setup DynamoDB Table for manual feature flags (e.g. to toggle object detection on/off without redeploying)
-        feature_flags_table = ddb.Table(
-            self, "FeatureFlagsTable",
-            partition_key=ddb.Attribute(
-                name="feature_name",
-                type=ddb.AttributeType.STRING
-            ),
-            # RETAIN = If you delete the stack, this table (and its manual flags) 
-            # will stay in AWS so you don't lose your settings.
-            removal_policy=RemovalPolicy.RETAIN, 
-            billing_mode=ddb.BillingMode.PAY_PER_REQUEST
-        )
-
-        CfnOutput(
-            self, "FeatureFlagsTableName",
-            value=feature_flags_table.table_name,
-            description="Table for manual feature toggles"
-        )
-
-        feature_flags_table.grant_read_data(object_detection_handler)
-        object_detection_handler.add_environment("FEATURE_FLAGS_TABLE_NAME", feature_flags_table.table_name)
-
-        CfnOutput(self, "UserPoolId",
-            value=user_pool.user_pool_id,
-            description="Cognito User Pool ID"
-        )
-
-        CfnOutput(self, "UserPoolClientId",
-            value=user_pool_client.user_pool_client_id,
-            description="Cognito User Pool Client ID"
-        )
-
-        # TODO: RDS setup disabled for now - to be re-enabled when ready
-        # Define RDS Resource
-        # db_instance = rds.DatabaseInstance(
-        #     self, "StrideDB",
-        #     engine=rds.DatabaseInstanceEngine.postgres(
-        #         version=rds.PostgresEngineVersion.VER_16_3
-        #     ),
-        #     vpc=default_vpc,  # Mandatory, but now using the free default one
-        #     vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
-        #     instance_type=ec2.InstanceType.of(
-        #         ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.MICRO
-        #     ),
-        #     allocated_storage=20,
-        #     max_allocated_storage=50, # Autoscaling storage
-        #     database_name="StrideCore",
-        #     publicly_accessible=True, # Allows Lambda to connect via standard internet
-        #     removal_policy=RemovalPolicy.DESTROY, # For dev/testing only
+        # # Add stack outputs for reporting to CICD
+        # CfnOutput(self, "RestAPIEndpointURL",
+        #     value=api.url,
+        #     description="API Gateway endpoint URL"
         # )
 
-        # db_instance.connections.allow_from_any_ipv4(ec2.Port.tcp(5432), "Allow public access for Lambda")
+        # CfnOutput(self, "WebSocketURL",
+        #     value=ws_api.api_endpoint,
+        #     description="The WSS URL for Object Detection"
+        # )
 
-        # # Define the lambda to initialize the DB schema
-        # schema_lambda = _lambda.Function(
-        #     self, "SchemaInitializer",
-        #     runtime=_lambda.Runtime.PYTHON_3_9,
-        #     handler="populate_rds.handler",
+        # CfnOutput(self, "StackName",
+        #     value=self.stack_name,
+        #     description="Stack name used for this deployment"
+        # )
+
+        # # SageMaker Outputs
+        # CfnOutput(self, "ECRRepositoryURI",
+        #     value=ecr_repo.repository_uri,
+        #     description="ECR repository URI for YOLOv11 inference container"
+        # )
+
+        # CfnOutput(self, "SageMakerEndpointName",
+        #     value=sagemaker_endpoint.endpoint_name,
+        #     description="SageMaker endpoint name for YOLOv11 inference"
+        # )
+
+        # CfnOutput(self, "SageMakerEndpointArn",
+        #     value=f"arn:aws:sagemaker:{region}:{account}:endpoint/{sagemaker_endpoint.endpoint_name}",
+        #     description="SageMaker endpoint ARN"
+        # )
+
+        # # Setup DynamoDB Table to map Object Avg Heights for distance estimation
+        # coco_config_table = ddb.Table(
+        #     self, "CocoConfigTable",
+        #     partition_key=ddb.Attribute(
+        #         name="class_id",
+        #         type=ddb.AttributeType.NUMBER
+        #     ),
+        #     removal_policy=RemovalPolicy.DESTROY, # For dev/testing
+        #     billing_mode=ddb.BillingMode.PAY_PER_REQUEST
+        # )
+
+        # coco_config_table.grant_read_data(object_detection_handler)
+        # object_detection_handler.add_environment("HEIGHT_MAP_TABLE_NAME", coco_config_table.table_name)
+
+        # init_coco_config = _lambda.Function(
+        #     self, "ObjDetectionConfigLambda",
+        #     runtime=_lambda.Runtime.PYTHON_3_10,
+        #     handler="populate_obj_ddb.handler",
         #     code=_lambda.Code.from_asset("schema_initializer"),
         #     timeout=Duration.seconds(30),
         #     environment={
-        #         # Retrieve connection details from the secret
-        #         "DB_SECRET_ARN": db_instance.secret.secret_arn
+        #         "TABLE_NAME": coco_config_table.table_name
         #     }
         # )
-        # db_instance.secret.grant_read(schema_lambda)
 
-        # # Trigger the schema initialization during deployment
-        # invoke_schema_lambda = cr.AwsSdkCall(
-        #     service="Lambda",
-        #     action="invoke",
-        #     parameters={
-        #         "FunctionName": schema_lambda.function_name
-        #     },
-        #     physical_resource_id=cr.PhysicalResourceId.of("SchemaInit_Update")
+        # coco_config_table.grant_write_data(init_coco_config)
+
+        # CustomResource(
+        #     self, "TriggerCOCOConfigInit",
+        #     service_token=init_coco_config.function_arn,
+        #     properties={
+        #         "RunOnDeploy": str(time())
+        #     }
         # )
-        # cr.AwsCustomResource(
-        #     self, "InitDBSchema",
-        #     on_create=invoke_schema_lambda,
-        #     on_update=invoke_schema_lambda,
-        #     policy=cr.AwsCustomResourcePolicy.from_statements([
-        #         iam.PolicyStatement(
-        #             actions=["lambda:InvokeFunction"],
-        #             resources=[schema_lambda.function_arn]
-        #         )
-        #     ])
+
+        # # Setup DynamoDB Table for manual feature flags (e.g. to toggle object detection on/off without redeploying)
+        # feature_flags_table = ddb.Table(
+        #     self, "FeatureFlagsTable",
+        #     partition_key=ddb.Attribute(
+        #         name="feature_name",
+        #         type=ddb.AttributeType.STRING
+        #     ),
+        #     # RETAIN = If you delete the stack, this table (and its manual flags) 
+        #     # will stay in AWS so you don't lose your settings.
+        #     removal_policy=RemovalPolicy.RETAIN, 
+        #     billing_mode=ddb.BillingMode.PAY_PER_REQUEST
         # )
+
+        # CfnOutput(
+        #     self, "FeatureFlagsTableName",
+        #     value=feature_flags_table.table_name,
+        #     description="Table for manual feature toggles"
+        # )
+
+        # feature_flags_table.grant_read_data(object_detection_handler)
+        # object_detection_handler.add_environment("FEATURE_FLAGS_TABLE_NAME", feature_flags_table.table_name)
+
+        # CfnOutput(self, "UserPoolId",
+        #     value=user_pool.user_pool_id,
+        #     description="Cognito User Pool ID"
+        # )
+
+        # CfnOutput(self, "UserPoolClientId",
+        #     value=user_pool_client.user_pool_client_id,
+        #     description="Cognito User Pool Client ID"
+        # )
+
+        # TODO: RDS setup disabled for now - to be re-enabled when ready
+        # Define RDS Resource
+        db_instance = rds.DatabaseInstance(
+            self, "StrideDB",
+            engine=rds.DatabaseInstanceEngine.postgres(
+                version=rds.PostgresEngineVersion.VER_16_3
+            ),
+            vpc=default_vpc,  # Mandatory, but now using the free default one
+            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
+            instance_type=ec2.InstanceType.of(
+                ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.MICRO
+            ),
+            allocated_storage=20,
+            max_allocated_storage=50, # Autoscaling storage
+            database_name="StrideCore",
+            publicly_accessible=True, # Allows Lambda to connect via standard internet
+            removal_policy=RemovalPolicy.DESTROY, # For dev/testing only
+        )
+
+        db_instance.connections.allow_from_any_ipv4(ec2.Port.tcp(5432), "Allow public access for Lambda")
+
+        # Define the lambda to initialize the DB schema
+        schema_lambda = _lambda.Function(
+            self, "SchemaInitializer",
+            runtime=_lambda.Runtime.PYTHON_3_9,
+            handler="populate_rds.handler",
+            code=_lambda.Code.from_asset("schema_initializer"),
+            timeout=Duration.seconds(30),
+            environment={
+                # Retrieve connection details from the secret
+                "DB_SECRET_ARN": db_instance.secret.secret_arn
+            }
+        )
+        db_instance.secret.grant_read(schema_lambda)
+
+        # Trigger the schema initialization during deployment
+        invoke_schema_lambda = cr.AwsSdkCall(
+            service="Lambda",
+            action="invoke",
+            parameters={
+                "FunctionName": schema_lambda.function_name
+            },
+            physical_resource_id=cr.PhysicalResourceId.of("SchemaInit_Update")
+        )
+        cr.AwsCustomResource(
+            self, "InitDBSchema",
+            on_create=invoke_schema_lambda,
+            on_update=invoke_schema_lambda,
+            policy=cr.AwsCustomResourcePolicy.from_statements([
+                iam.PolicyStatement(
+                    actions=["lambda:InvokeFunction"],
+                    resources=[schema_lambda.function_arn]
+                )
+            ])
+        )
 
