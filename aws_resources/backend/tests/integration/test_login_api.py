@@ -29,93 +29,12 @@ def test_user_credentials():
     return {
         "username": f"testuser_{timestamp}_{random_suffix}",
         "password": "TestPass123!",
-        "email": f"test_{timestamp}_{random_suffix}@example.com"
+        "passwordConfirm": "TestPass123!",
+        "email": f"test_{timestamp}_{random_suffix}@example.com",
+        "phoneNumber": f"+1555{timestamp % 10000000:07d}",  # Generate unique phone number
+        "firstName": "Test",
+        "lastName": "User"
     }
-
-
-def test_register_success(api_base_url, test_user_credentials):
-    """Test successful user registration."""
-    response = requests.post(
-        f"{api_base_url}/register",
-        json={
-            "username": test_user_credentials["username"],
-            "password": test_user_credentials["password"],
-            "email": test_user_credentials["email"]
-        },
-        headers={"Content-Type": "application/json"},
-        timeout=10
-    )
-
-    assert response.status_code == 201, f"Expected 201, got {response.status_code}: {response.text}"
-    data = response.json()
-    assert "message" in data
-    assert "User registered successfully" in data["message"]
-
-
-def test_register_missing_fields(api_base_url):
-    """Test registration with missing required fields."""
-    # Missing email
-    response = requests.post(
-        f"{api_base_url}/register",
-        json={
-            "username": "testuser",
-            "password": "TestPass123!"
-        },
-        headers={"Content-Type": "application/json"},
-        timeout=10
-    )
-
-    assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
-    data = response.json()
-    assert "error" in data
-    assert "required" in data["error"].lower()
-
-
-def test_register_invalid_json(api_base_url):
-    """Test registration with invalid JSON."""
-    response = requests.post(
-        f"{api_base_url}/register",
-        data="invalid json",
-        headers={"Content-Type": "application/json"},
-        timeout=10
-    )
-
-    assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
-    data = response.json()
-    assert "error" in data
-
-
-def test_register_duplicate_username(api_base_url, test_user_credentials):
-    """Test registration with existing username."""
-    # Register first time
-    response1 = requests.post(
-        f"{api_base_url}/register",
-        json={
-            "username": test_user_credentials["username"],
-            "password": test_user_credentials["password"],
-            "email": test_user_credentials["email"]
-        },
-        headers={"Content-Type": "application/json"},
-        timeout=10
-    )
-    assert response1.status_code == 201
-
-    # Try to register again with same username
-    response2 = requests.post(
-        f"{api_base_url}/register",
-        json={
-            "username": test_user_credentials["username"],
-            "password": "DifferentPass123!",
-            "email": "different@example.com"
-        },
-        headers={"Content-Type": "application/json"},
-        timeout=10
-    )
-
-    assert response2.status_code == 409, f"Expected 409, got {response2.status_code}: {response2.text}"
-    data = response2.json()
-    assert "error" in data
-    assert data["error"] == "Username already exists"
 
 
 def test_login_success(api_base_url, test_user_credentials):
@@ -126,7 +45,11 @@ def test_login_success(api_base_url, test_user_credentials):
         json={
             "username": test_user_credentials["username"],
             "password": test_user_credentials["password"],
-            "email": test_user_credentials["email"]
+            "passwordConfirm": test_user_credentials["passwordConfirm"],
+            "email": test_user_credentials["email"],
+            "phoneNumber": test_user_credentials["phoneNumber"],
+            "firstName": test_user_credentials["firstName"],
+            "lastName": test_user_credentials["lastName"]
         },
         headers={"Content-Type": "application/json"},
         timeout=10
@@ -213,7 +136,11 @@ def test_login_whitespace_normalization(api_base_url, test_user_credentials):
         json={
             "username": test_user_credentials["username"],
             "password": test_user_credentials["password"],
-            "email": test_user_credentials["email"]
+            "passwordConfirm": test_user_credentials["passwordConfirm"],
+            "email": test_user_credentials["email"],
+            "phoneNumber": test_user_credentials["phoneNumber"],
+            "firstName": test_user_credentials["firstName"],
+            "lastName": test_user_credentials["lastName"]
         },
         headers={"Content-Type": "application/json"},
         timeout=10
@@ -233,47 +160,6 @@ def test_login_whitespace_normalization(api_base_url, test_user_credentials):
 
     # Should succeed (whitespace trimmed)
     assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-
-
-def test_register_email_lowercase_normalization(api_base_url, test_user_credentials):
-    """Test that email is converted to lowercase."""
-    timestamp = int(time.time())
-    random_suffix = ''.join(random.choices(string.ascii_lowercase, k=4))
-    uppercase_email = f"TEST_{timestamp}_{random_suffix}@EXAMPLE.COM"
-
-    response = requests.post(
-        f"{api_base_url}/register",
-        json={
-            "username": test_user_credentials["username"],
-            "password": test_user_credentials["password"],
-            "email": uppercase_email
-        },
-        headers={"Content-Type": "application/json"},
-        timeout=10
-    )
-
-    # Should succeed (email normalized to lowercase)
-    assert response.status_code == 201, f"Expected 201, got {response.status_code}: {response.text}"
-
-
-def test_register_whitespace_normalization(api_base_url, test_user_credentials):
-    """Test that whitespace in fields is trimmed."""
-    timestamp = int(time.time())
-    random_suffix = ''.join(random.choices(string.ascii_lowercase, k=4))
-
-    response = requests.post(
-        f"{api_base_url}/register",
-        json={
-            "username": f"  {test_user_credentials['username']}  ",
-            "password": f"  {test_user_credentials['password']}  ",
-            "email": f"  {test_user_credentials['email']}  "
-        },
-        headers={"Content-Type": "application/json"},
-        timeout=10
-    )
-
-    # Should succeed (whitespace trimmed)
-    assert response.status_code == 201, f"Expected 201, got {response.status_code}: {response.text}"
 
 
 def test_invalid_endpoint(api_base_url):

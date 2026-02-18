@@ -148,14 +148,15 @@ paths:
         - Authentication
       summary: User registration
       description: |
-        Registers a new user in AWS Cognito with username, password, and email.
-        Phone number is optional. The user is created with a permanent password
-        and can immediately log in.
+        Registers a new user in AWS Cognito with username, password, email, phone number,
+        first name, and last name. All fields are required. The user is created with a permanent
+        password and can immediately log in.
         
         **Input Normalization:**
         - Username is trimmed of leading/trailing whitespace
         - Email is trimmed and converted to lowercase
         - Phone number is trimmed and formatting characters are removed
+        - First name and last name are trimmed
         - Password is trimmed
         - Cognito handles all format validation
         
@@ -178,18 +179,15 @@ paths:
               $ref: '#/components/schemas/RegisterRequest'
             examples:
               validRegistration:
-                summary: Valid registration with all fields
+                summary: Valid registration with all required fields
                 value:
                   username: "johndoe"
                   password: "SecurePass123!"
+                  passwordConfirm: "SecurePass123!"
                   email: "john.doe@example.com"
                   phoneNumber: "+1234567890"
-              minimalRegistration:
-                summary: Registration without phone number
-                value:
-                  username: "johndoe"
-                  password: "SecurePass123!"
-                  email: "john.doe@example.com"
+                  firstName: "John"
+                  lastName: "Doe"
       responses:
         '201':
           description: User successfully registered
@@ -212,11 +210,19 @@ paths:
                 missingFields:
                   summary: Missing required fields
                   value:
-                    error: "Username, password, and email are required"
+                    error: "Username, password, passwordConfirm, email, phoneNumber, firstName, and lastName are required"
                 invalidFormat:
                   summary: Invalid JSON format
                   value:
-                    error: "Invalid request format. Expected JSON with username, password, and email"
+                    error: "Invalid request format. Expected JSON with username, password, passwordConfirm, email, phoneNumber, firstName, and lastName"
+                passwordMismatch:
+                  summary: Passwords do not match
+                  value:
+                    error: "Passwords do not match"
+                usernameTooLong:
+                  summary: Username exceeds maximum length
+                  value:
+                    error: "Username must be 64 characters or less"
                 invalidPassword:
                   summary: Password doesn't meet requirements
                   value:
@@ -267,6 +273,633 @@ paths:
                   value:
                     error: "Internal server error"
 
+  /register/verify-email:
+    post:
+      tags:
+        - Authentication
+      summary: Verify email address
+      description: |
+        **⚠️ NOT IMPLEMENTED YET**
+        
+        Verifies a user's email address using a verification code sent during registration.
+        Uses Cognito's `ConfirmSignUp` or `VerifyUserAttribute` API.
+      operationId: verifyEmail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - code
+              properties:
+                username:
+                  type: string
+                  description: Username of the user to verify
+                  example: "johndoe"
+                code:
+                  type: string
+                  description: Verification code sent to the email
+                  example: "123456"
+      responses:
+        '200':
+          description: Email successfully verified
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Email verified successfully"
+        '400':
+          description: Bad request - invalid code or missing fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /register/verify-phone:
+    post:
+      tags:
+        - Authentication
+      summary: Verify phone number
+      description: |
+        **⚠️ NOT IMPLEMENTED YET**
+        
+        Verifies a user's phone number using a verification code sent via SMS.
+        Uses Cognito's `VerifyUserAttribute` API.
+      operationId: verifyPhone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - code
+              properties:
+                username:
+                  type: string
+                  description: Username of the user to verify
+                  example: "johndoe"
+                code:
+                  type: string
+                  description: Verification code sent to the phone number
+                  example: "123456"
+      responses:
+        '200':
+          description: Phone number successfully verified
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Phone number verified successfully"
+        '400':
+          description: Bad request - invalid code or missing fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /register/resend-code:
+    post:
+      tags:
+        - Authentication
+      summary: Resend verification code
+      description: |
+        **⚠️ NOT IMPLEMENTED YET**
+        
+        Resends a verification code to the user's email or phone number.
+        Uses Cognito's `ResendConfirmationCode` API.
+      operationId: resendVerificationCode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - type
+              properties:
+                username:
+                  type: string
+                  description: Username of the user
+                  example: "johndoe"
+                type:
+                  type: string
+                  description: Type of verification code to resend
+                  enum:
+                    - email
+                    - phone
+                  example: "email"
+      responses:
+        '200':
+          description: Verification code resent successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Verification code sent successfully"
+        '400':
+          description: Bad request - invalid type or missing fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Too many requests - rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /register/check-username:
+    get:
+      tags:
+        - Authentication
+      summary: Check username availability
+      description: |
+        **⚠️ NOT IMPLEMENTED YET**
+        
+        Checks if a username is available for registration.
+        Uses Cognito's `AdminGetUser` API to check if the username exists.
+      operationId: checkUsernameAvailability
+      parameters:
+        - name: username
+          in: query
+          required: true
+          description: Username to check
+          schema:
+            type: string
+            example: "johndoe"
+      responses:
+        '200':
+          description: Username availability check result
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - available
+                properties:
+                  available:
+                    type: boolean
+                    description: Whether the username is available
+                    example: true
+                  username:
+                    type: string
+                    description: The username that was checked
+                    example: "johndoe"
+        '400':
+          description: Bad request - missing username parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /register/check-email:
+    get:
+      tags:
+        - Authentication
+      summary: Check email uniqueness
+      description: |
+        **⚠️ NOT IMPLEMENTED YET**
+        
+        Checks if an email address is already registered.
+        Uses Cognito's `ListUsers` API with email filter to check for existing users.
+      operationId: checkEmailUniqueness
+      parameters:
+        - name: email
+          in: query
+          required: true
+          description: Email address to check
+          schema:
+            type: string
+            format: email
+            example: "john.doe@example.com"
+      responses:
+        '200':
+          description: Email uniqueness check result
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - available
+                properties:
+                  available:
+                    type: boolean
+                    description: Whether the email is available (not already registered)
+                    example: true
+                  email:
+                    type: string
+                    description: The email address that was checked
+                    example: "john.doe@example.com"
+        '400':
+          description: Bad request - missing email parameter or invalid format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /register/check-phone:
+    get:
+      tags:
+        - Authentication
+      summary: Check phone number uniqueness
+      description: |
+        **⚠️ NOT IMPLEMENTED YET**
+        
+        Checks if a phone number is already registered.
+        Uses Cognito's `ListUsers` API with phone number filter to check for existing users.
+      operationId: checkPhoneUniqueness
+      parameters:
+        - name: phoneNumber
+          in: query
+          required: true
+          description: Phone number in E.164 format to check
+          schema:
+            type: string
+            pattern: '^\+?[1-9]\d{1,14}$'
+            example: "+1234567890"
+      responses:
+        '200':
+          description: Phone number uniqueness check result
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - available
+                properties:
+                  available:
+                    type: boolean
+                    description: Whether the phone number is available (not already registered)
+                    example: true
+                  phoneNumber:
+                    type: string
+                    description: The phone number that was checked
+                    example: "+1234567890"
+        '400':
+          description: Bad request - missing phoneNumber parameter or invalid format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /refresh:
+    post:
+      tags:
+        - Authentication
+      summary: Refresh access and ID tokens
+      description: |
+        **⚠️ NOT IMPLEMENTED YET**
+        
+        Refreshes the access token and ID token using a valid refresh token.
+        Uses Cognito's `InitiateAuth` API with `REFRESH_TOKEN_AUTH` flow.
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refreshToken
+              properties:
+                refreshToken:
+                  type: string
+                  description: Refresh token obtained from login
+                  example: "eyJjdHkiOiJKV1QiLCJlbmMiOiJBMjU2R0NNIn0..."
+      responses:
+        '200':
+          description: Tokens refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+              examples:
+                success:
+                  summary: Successful token refresh
+                  value:
+                    accessToken: "eyJraWQiOiJcL3Z..."
+                    idToken: "eyJraWQiOiJcL3Z..."
+                    refreshToken: "eyJjdHkiOiJKV1QiLCJlbmMiOiJBMjU2R0NNIn0..."
+                    expiresIn: 3600
+                    tokenType: "Bearer"
+        '400':
+          description: Bad request - missing refresh token or invalid format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized - invalid or expired refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /password/forgot:
+    post:
+      tags:
+        - Authentication
+      summary: Initiate password reset
+      description: |
+        **⚠️ NOT IMPLEMENTED YET**
+        
+        Initiates a password reset flow by sending a verification code to the user's
+        registered email or phone number. Uses Cognito's `ForgotPassword` API.
+      operationId: forgotPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+              properties:
+                username:
+                  type: string
+                  description: Username or email address of the user
+                  example: "johndoe"
+      responses:
+        '200':
+          description: Password reset code sent successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Password reset code sent to your registered email or phone"
+        '400':
+          description: Bad request - missing username or invalid format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Too many requests - rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /password/reset:
+    post:
+      tags:
+        - Authentication
+      summary: Reset password with verification code
+      description: |
+        **⚠️ NOT IMPLEMENTED YET**
+        
+        Resets the user's password using a verification code sent via email or SMS.
+        Uses Cognito's `ConfirmForgotPassword` API.
+      operationId: resetPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - code
+                - newPassword
+                - newPasswordConfirm
+              properties:
+                username:
+                  type: string
+                  description: Username or email address of the user
+                  example: "johndoe"
+                code:
+                  type: string
+                  description: Verification code sent to email or phone
+                  example: "123456"
+                newPassword:
+                  type: string
+                  description: New password (must meet Cognito password policy)
+                  format: password
+                  example: "NewSecurePass123!"
+                newPasswordConfirm:
+                  type: string
+                  description: Password confirmation (must match newPassword)
+                  format: password
+                  example: "NewSecurePass123!"
+      responses:
+        '200':
+          description: Password reset successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Password reset successfully"
+        '400':
+          description: Bad request - invalid code, password mismatch, or missing fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                passwordMismatch:
+                  summary: Passwords do not match
+                  value:
+                    error: "Passwords do not match"
+                invalidCode:
+                  summary: Invalid verification code
+                  value:
+                    error: "Invalid verification code"
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Too many requests - rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /password/change:
+    post:
+      tags:
+        - Authentication
+      summary: Change password (authenticated)
+      description: |
+        **⚠️ NOT IMPLEMENTED YET**
+        
+        Changes the authenticated user's password. Requires a valid access token.
+        Uses Cognito's `ChangePassword` API.
+      operationId: changePassword
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - currentPassword
+                - newPassword
+                - newPasswordConfirm
+              properties:
+                currentPassword:
+                  type: string
+                  description: User's current password
+                  format: password
+                  example: "OldSecurePass123!"
+                newPassword:
+                  type: string
+                  description: New password (must meet Cognito password policy)
+                  format: password
+                  example: "NewSecurePass123!"
+                newPasswordConfirm:
+                  type: string
+                  description: Password confirmation (must match newPassword)
+                  format: password
+                  example: "NewSecurePass123!"
+      responses:
+        '200':
+          description: Password changed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Password changed successfully"
+        '400':
+          description: Bad request - password mismatch, invalid current password, or missing fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                passwordMismatch:
+                  summary: Passwords do not match
+                  value:
+                    error: "Passwords do not match"
+                invalidCurrentPassword:
+                  summary: Invalid current password
+                  value:
+                    error: "Current password is incorrect"
+        '401':
+          description: Unauthorized - invalid or missing access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Too many requests - rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /items:
     get:
       tags:
@@ -298,6 +931,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token obtained from login endpoint
   schemas:
     LoginRequest:
       type: object
@@ -354,16 +993,27 @@ components:
       required:
         - username
         - password
+        - passwordConfirm
         - email
+        - phoneNumber
+        - firstName
+        - lastName
       properties:
         username:
           type: string
-          description: Desired username (will be trimmed, must be unique)
+          description: Desired username (will be trimmed, must be unique, max 64 characters)
           example: "johndoe"
           minLength: 1
+          maxLength: 64
         password:
           type: string
           description: User's password (will be trimmed, must meet Cognito password policy)
+          example: "SecurePass123!"
+          format: password
+          minLength: 1
+        passwordConfirm:
+          type: string
+          description: Password confirmation (must match password)
           example: "SecurePass123!"
           format: password
           minLength: 1
@@ -375,10 +1025,21 @@ components:
         phoneNumber:
           type: string
           description: |
-            Optional phone number in E.164 format (e.g., +1234567890).
+            Phone number in E.164 format (e.g., +1234567890).
             Formatting characters will be removed automatically.
           example: "+1234567890"
           pattern: '^\+?[1-9]\d{1,14}$'
+          minLength: 1
+        firstName:
+          type: string
+          description: User's first name (will be trimmed)
+          example: "John"
+          minLength: 1
+        lastName:
+          type: string
+          description: User's last name (will be trimmed)
+          example: "Doe"
+          minLength: 1
 
     RegisterResponse:
       type: object

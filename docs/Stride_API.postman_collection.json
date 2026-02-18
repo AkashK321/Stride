@@ -126,7 +126,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"username\": \"johndoe\",\n    \"password\": \"SecurePass123!\",\n    \"email\": \"john.doe@example.com\",\n    \"phoneNumber\": \"+1234567890\"\n}",
+							"raw": "{\n    \"username\": \"johndoe\",\n    \"password\": \"SecurePass123!\",\n    \"passwordConfirm\": \"SecurePass123!\",\n    \"email\": \"john.doe@example.com\",\n    \"phoneNumber\": \"+1234567890\",\n    \"firstName\": \"John\",\n    \"lastName\": \"Doe\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -142,7 +142,7 @@
 								"register"
 							]
 						},
-						"description": "Registers a new user in AWS Cognito with username, password, and email. Phone number is optional. The user is created with a permanent password and can immediately log in.\n\n**Input Normalization:**\n- Username is trimmed of leading/trailing whitespace\n- Email is trimmed and converted to lowercase\n- Phone number is trimmed and formatting characters are removed\n- Password is trimmed\n- Cognito handles all format validation\n\n**Error Handling:**\n- Duplicate username returns 409\n- Invalid password format returns 400\n- Missing required fields return 400\n- Server errors return 500"
+						"description": "Registers a new user in AWS Cognito with username, password, email, phone number, first name, and last name. All fields are required. The user is created with a permanent password and can immediately log in.\n\n**Input Normalization:**\n- Username is trimmed of leading/trailing whitespace\n- Email is trimmed and converted to lowercase\n- Phone number is trimmed and formatting characters are removed\n- First name and last name are trimmed\n- Password is trimmed\n- Cognito handles all format validation\n\n**Error Handling:**\n- Duplicate username or alias returns 409\n- Invalid password format returns 400\n- Missing required fields return 400\n- Server errors return 500"
 					},
 					"response": []
 				},
@@ -178,7 +178,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"username\": \"johndoe\",\n    \"password\": \"SecurePass123!\",\n    \"email\": \"john.doe@example.com\"\n}",
+							"raw": "{\n    \"username\": \"johndoe\",\n    \"password\": \"SecurePass123!\",\n    \"passwordConfirm\": \"SecurePass123!\",\n    \"email\": \"john.doe@example.com\",\n    \"phoneNumber\": \"+1234567890\",\n    \"firstName\": \"John\",\n    \"lastName\": \"Doe\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -194,7 +194,7 @@
 								"register"
 							]
 						},
-						"description": "Registration without phone number (minimal required fields)."
+						"description": "Registration with all required fields."
 					},
 					"response": []
 				}
