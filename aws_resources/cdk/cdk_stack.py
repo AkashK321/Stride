@@ -107,6 +107,17 @@ class CdkStack(Stack):
             snap_start=_lambda.SnapStartConf.ON_PUBLISHED_VERSIONS,
         )
 
+        # Define the Static Navigation Lambda function
+        static_navigation_handler = _lambda.Function(
+            self, "StaticNavigationHandler",
+            runtime=_lambda.Runtime.JAVA_21,
+            handler="com.handlers.StaticNavigationHandler",
+            code=code_asset,  # Uses either the local JAR or the Docker builder
+            memory_size=3008,
+            timeout=Duration.seconds(29),  # Match API Gateway WebSocket timeout (29s max)
+            snap_start=_lambda.SnapStartConf.ON_PUBLISHED_VERSIONS,
+        )
+
         # Define Cognito User Pool
         user_pool = cognito.UserPool(
             self, "StrideUserPool",
@@ -192,6 +203,13 @@ class CdkStack(Stack):
 
         register = api.root.add_resource("register")
         register.add_method("POST", integration=apigw.LambdaIntegration(auth_handler))
+
+        search = api.root.add_resource("search")
+        search.add_method("GET", integration=apigw.LambdaIntegration(static_navigation_handler))
+
+        navigation = api.root.add_resource("navigation")
+        start = navigation.add_resource("start")
+        start.add_method("POST", integration=apigw.LambdaIntegration(static_navigation_handler))
 
         # Define the API Gateway WebSocket API
         ws_api = apigw_v2.WebSocketApi(self, "StreamAPI")
