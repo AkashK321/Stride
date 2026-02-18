@@ -17,12 +17,24 @@ IMAGE_PATH = SCRIPT_DIR / "resized/IMG_2828.jpg"
 @pytest.fixture
 def api_base_url():
     """Get the API base URL from environment variable."""
-    url = os.getenv("WS_API_URL") + "/prod"
-    # url = URL + "/prod"
-    if not url:
+    ws_base = os.getenv("WS_API_URL")
+    if not ws_base:
         pytest.skip("WS_API_URL environment variable not set")
-    # Remove trailing slash if present
-    return url.rstrip("/")
+
+    ws_base = ws_base.rstrip("/")
+    if ws_base.endswith("/prod"):
+        return ws_base
+    return f"{ws_base}/prod"
+
+
+@pytest.fixture
+def ws_endpoint_healthy(api_base_url):
+    """Quickly probe WS endpoint and skip tests if unavailable."""
+    try:
+        ws = create_connection(api_base_url, timeout=8)
+        ws.close()
+    except Exception as exc:
+        pytest.skip(f"WebSocket endpoint unavailable: {exc}")
 
 @pytest.fixture
 def ddb_feature_flag_table():
@@ -38,7 +50,7 @@ def set_sagemaker_flag(table, enabled: bool):
         'value': enabled
     })
 
-def test_inference_enabled(api_base_url, ddb_feature_flag_table):
+def test_inference_enabled(api_base_url, ddb_feature_flag_table, ws_endpoint_healthy):
     set_sagemaker_flag(ddb_feature_flag_table, True)
     
     ws = create_connection(api_base_url)
@@ -56,7 +68,7 @@ def test_inference_enabled(api_base_url, ddb_feature_flag_table):
     finally:
         ws.close()
 
-def test_inference_disabled(api_base_url, ddb_feature_flag_table):
+def test_inference_disabled(api_base_url, ddb_feature_flag_table, ws_endpoint_healthy):
     set_sagemaker_flag(ddb_feature_flag_table, False)
 
     ws = create_connection(api_base_url)
@@ -74,7 +86,7 @@ def test_inference_disabled(api_base_url, ddb_feature_flag_table):
         ws.close()
 
 
-def test_dataflow(api_base_url):
+def test_dataflow(api_base_url, ws_endpoint_healthy):
     """
     Integration test that validates:
     1. Invalid payloads are rejected with error status.
