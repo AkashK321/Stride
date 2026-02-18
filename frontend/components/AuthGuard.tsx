@@ -20,12 +20,15 @@ interface AuthGuardProps {
 }
 
 export function AuthGuard({ children, fallback }: AuthGuardProps) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isDevBypass, isLoading } = useAuth();
   const router = useRouter();
   const segments = useSegments();
 
   React.useEffect(() => {
     if (isLoading) return; // Wait for auth check
+
+    // Allow access in dev bypass mode
+    if (isDevBypass) return;
 
     if (!isAuthenticated) {
       // User is not authenticated - redirect to login
@@ -34,7 +37,7 @@ export function AuthGuard({ children, fallback }: AuthGuardProps) {
         router.replace("/");
       }
     }
-  }, [isAuthenticated, isLoading, segments, router]);
+  }, [isAuthenticated, isDevBypass, isLoading, segments, router]);
 
   // Show loading indicator while checking auth
   if (isLoading) {
@@ -55,11 +58,11 @@ export function AuthGuard({ children, fallback }: AuthGuardProps) {
     );
   }
 
-  // If not authenticated, don't render children (redirect will happen)
-  if (!isAuthenticated) {
+  // If not authenticated and not in dev bypass, don't render children (redirect will happen)
+  if (!isAuthenticated && !isDevBypass) {
     return fallback || null;
   }
 
-  // User is authenticated - render children
+  // User is authenticated or in dev bypass mode - render children
   return React.createElement(React.Fragment, null, children);
 }

@@ -55,6 +55,10 @@ on:
         required: true
         type: string
         description: 'WebSocket API Gateway endpoint URL'
+      feature_flag_table:
+        required: true
+        type: string
+        description: 'DynamoDB table name for feature flags'
   
   workflow_dispatch:
     inputs:
@@ -66,9 +70,14 @@ on:
         required: true
         type: string
         description: 'WebSocket API Gateway endpoint URL'
+      feature_flag_table:
+        required: true
+        type: string
+        description: 'DynamoDB table name for feature flags'
 
 # Permissions required for test-reporter
 permissions:
+  id-token: write
   contents: read
   checks: write      # Required for test-reporter to create check runs
   pull-requests: write  # Required for PR comments (if test-reporter adds them)
@@ -100,12 +109,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # Step 3.5: Configure AWS credentials for test execution
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
       # Step 4: Run Integration Tests
       - name: Run Integration Tests
         working-directory: aws_resources
         env:
           API_BASE_URL: ${{ inputs.api_endpoint }}
           WS_API_URL: ${{ inputs.ws_api_endpoint }}
+          FEATURE_FLAG_TABLE_NAME: ${{ inputs.feature_flag_table }}
         run: |
           python -m pytest -v backend/tests/ --junitxml=test-results/integration-tests.xml
 

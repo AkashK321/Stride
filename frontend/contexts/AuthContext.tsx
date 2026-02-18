@@ -13,16 +13,19 @@ import { refreshToken as refreshTokenApi } from "../services/api";
 
 interface AuthContextType {
   isAuthenticated: boolean;
+  isDevBypass: boolean;
   isLoading: boolean;
   login: (tokens: { accessToken: string; idToken: string; refreshToken: string }) => Promise<void>;
   logout: () => Promise<void>;
   refreshTokens: () => Promise<boolean>;
+  devBypass: () => void;
 }
 
 const AuthContext = React.createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = React.useState(false);
+  const [isDevBypass, setIsDevBypass] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(true);
   const router = useRouter();
   const segments = useSegments();
@@ -38,6 +41,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const inAuthGroup = segments[0] === "(auth)";
     const inTabsGroup = segments[0] === "(tabs)";
+
+    // Dev bypass mode - allow access to tabs without authentication
+    if (isDevBypass) {
+      if (inAuthGroup) {
+        router.replace("/home");
+      }
+      return;
+    }
 
     // If not authenticated, redirect to login (unless already in auth group)
     if (!isAuthenticated) {
@@ -60,25 +71,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // User is authenticated and accessing protected routes - allow
       return;
     }
-  }, [isAuthenticated, isLoading, segments, router]);
+  }, [isAuthenticated, isDevBypass, isLoading, segments, router]);
 
   const checkAuthStatus = async () => {
     try {
       const authenticated = await checkAuth();
       setIsAuthenticated(authenticated);
       
-      // If authenticated, attempt to refresh tokens if they're expiring
-      // If refresh endpoint is not available, we'll keep the existing tokens
-      // and the user will need to log in again when they expire
-      if (authenticated) {
-        // Attempt refresh, but don't fail if endpoint doesn't exist
-        const refreshed = await refreshTokens();
-        if (!refreshed) {
-          // Refresh failed or endpoint unavailable - keep existing auth state
-          // User will be logged out when token actually expires
-          console.log("Token refresh unavailable or failed, using existing tokens");
-        }
-      }
+      // TODO: Re-enable token refresh once the /refresh endpoint is implemented.
+      // Currently the refresh endpoint does not exist, so calling it causes
+      // "Network request failed" errors on startup. Once the backend supports
+      // POST /refresh, uncomment the block below.
+      //
+      // if (authenticated) {
+      //   const refreshed = await refreshTokens();
+      //   if (!refreshed) {
+      //     console.log("Token refresh unavailable or failed, using existing tokens");
+      //   }
+      // }
     } catch (error) {
       console.error("Error checking auth status:", error);
       setIsAuthenticated(false);
@@ -101,11 +111,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await clearTokens();
       setIsAuthenticated(false);
+      setIsDevBypass(false);
       router.replace("/");
     } catch (error) {
       console.error("Error during logout:", error);
       throw error;
     }
+  };
+
+  const devBypass = () => {
+    setIsDevBypass(true);
   };
 
   const refreshTokens = async (): Promise<boolean> => {
@@ -134,10 +149,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       
-      // If endpoint doesn't exist (404/403), don't clear tokens - allow user to continue
+      // If endpoint doesn't exist or network is unavailable, don't clear tokens - allow user to continue
       if (errorMessage.includes("not implemented") || 
           errorMessage.includes("404") || 
           errorMessage.includes("403") ||
+          errorMessage.includes("Network request failed") ||
           errorMessage.includes("Missing Authentication Token")) {
         console.warn("Refresh endpoint not available, using existing tokens");
         return false; // Return false but keep auth state
@@ -153,10 +169,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const value: AuthContextType = {
     isAuthenticated,
+    isDevBypass,
     isLoading,
     login,
     logout,
     refreshTokens,
+    devBypass,
   };
 
   return React.createElement(AuthContext.Provider, { value }, children);

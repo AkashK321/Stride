@@ -1,58 +1,103 @@
+# AWS Resources Deployment Guide
 
-# Welcome to your CDK Python project!
+This directory contains the CDK app for a two-stack architecture:
 
-This is a blank project for CDK development with Python.
+- `StrideSharedStack`: persistent shared infrastructure (SageMaker now, RDS later)
+- `StrideStack-{branch}`: branch-specific app infrastructure (Lambda/API/Cognito/DynamoDB)
 
-The `cdk.json` file tells the CDK Toolkit how to execute your app.
+## One-time setup
 
-This project is set up like a standard Python project.  The initialization
-process also creates a virtualenv within this project, stored under the `.venv`
-directory.  To create the virtualenv it assumes that there is a `python3`
-(or `python` for Windows) executable in your path with access to the `venv`
-package. If for any reason the automatic creation of the virtualenv fails,
-you can create the virtualenv manually.
-
-To manually create a virtualenv on MacOS and Linux:
-
-```
-$ python -m venv .venv
+```bash
+cd aws_resources
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-After the init process completes and the virtualenv is created, you can use the following
-step to activate your virtualenv.
+If CDK CLI is missing:
 
-```
-$ source .venv/bin/activate
-```
-
-If you are a Windows platform, you would activate the virtualenv like this:
-
-```
-% .venv\Scripts\activate.bat
+```bash
+npm install -g aws-cdk
 ```
 
-Once the virtualenv is activated, you can install the required dependencies.
+## Stack model
 
+`app.py` always defines both stacks. You must deploy by explicit stack name.
+
+- Shared stack is manual and persistent.
+- Branch stacks are CI/CD-managed for feature branches.
+
+Do not run `cdk deploy --all` in CI because it would include shared infra.
+
+## Deploy shared stack (manual)
+
+Use this when creating/updating shared singleton resources.
+
+```bash
+cd aws_resources
+source .venv/bin/activate
+BRANCH_NAME=main cdk -a "python3 app.py" deploy StrideSharedStack --require-approval never
 ```
-$ pip install -r requirements.txt
+
+Preview changes before deploy:
+
+```bash
+BRANCH_NAME=main cdk -a "python3 app.py" diff StrideSharedStack
 ```
 
-At this point you can now synthesize the CloudFormation template for this code.
+## Deploy main app stack (`StrideStack`)
 
+`main` branch resolves to `StrideStack`.
+
+```bash
+cd aws_resources
+source .venv/bin/activate
+BRANCH_NAME=main cdk -a "python3 app.py" deploy StrideStack --require-approval never
 ```
-$ cdk synth
+
+## Deploy a branch stack manually (optional)
+
+Branch name must follow:
+
+`<tag>/<issue-number>-<description>`
+
+Example:
+
+```bash
+BRANCH_NAME=feature/119-sagemaker-resource-management
+STACK_NAME=$(BRANCH_NAME="$BRANCH_NAME" python3 -c "import os; from app import sanitize_branch_name; print(sanitize_branch_name(os.environ['BRANCH_NAME']))")
+cdk -a "python3 app.py" deploy "$STACK_NAME" --require-approval never
 ```
 
-To add additional dependencies, for example other CDK libraries, just add
-them to your `setup.py` file and rerun the `pip install -r requirements.txt`
-command.
+## CI/CD behavior
 
-## Useful commands
+- Push to feature branch:
+  - Deploys only `StrideStack-{branch}`.
+- Push to `main`:
+  - Deploys `StrideStack`.
+- `StrideSharedStack`:
+  - Never auto-deployed by CI.
+  - Deployed manually only.
+- Cleanup workflow:
+  - Deletes branch stacks after merge.
+  - Explicitly protects `StrideSharedStack` from deletion.
 
- * `cdk ls`          list all stacks in the app
- * `cdk synth`       emits the synthesized CloudFormation template
- * `cdk deploy`      deploy this stack to your default AWS account/region
- * `cdk diff`        compare deployed stack with current state
- * `cdk docs`        open CDK documentation
+## Verify deployments
 
-Enjoy!
+List available stacks:
+
+```bash
+cdk -a "python3 app.py" ls
+```
+
+Synthesize one stack:
+
+```bash
+BRANCH_NAME=main cdk -a "python3 app.py" synth StrideSharedStack
+```
+
+## Important safety notes
+
+- Do not destroy `StrideSharedStack` from CI/CD.
+- Avoid `cdk deploy --all` for automated pipelines.
+- Shared SageMaker endpoint incurs cost while running.

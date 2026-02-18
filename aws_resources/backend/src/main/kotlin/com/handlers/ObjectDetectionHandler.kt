@@ -17,6 +17,7 @@ import java.net.URI
 import java.util.Base64
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.services.SageMakerClient
+import com.services.DynamoDbTableClient
 import com.models.InferenceResult
 import com.models.BoundingBox
 import kotlin.collections.emptyList
@@ -37,7 +38,15 @@ class ObjectDetectionHandler (
         .httpClient(UrlConnectionHttpClient.create())
         .build(),
 
-    private val configTableName: String = System.getenv("CONFIG_TABLE_NAME") ?: "default-table",
+    private val heightTableClient: DynamoDbTableClient = DynamoDbTableClient(
+        System.getenv("HEIGHT_MAP_TABLE_NAME") ?: "default-height-table",
+        primaryKeyName = "class_id"
+    ),
+    
+    private val featureFlagsTableClient: DynamoDbTableClient = DynamoDbTableClient(
+        System.getenv("FEATURE_FLAGS_TABLE_NAME") ?: "default-flags-table",
+        primaryKeyName = "feature_name"
+    ),
 
     private val apiGatewayFactory: (String) -> ApiGatewayManagementApiClient = { endpointUrl ->
         ApiGatewayManagementApiClient.builder()
@@ -51,7 +60,7 @@ class ObjectDetectionHandler (
 ) : RequestHandler<APIGatewayV2WebSocketEvent, APIGatewayV2WebSocketResponse> {
 
     private val mapper = jacksonObjectMapper()
-
+    
     companion object {
         internal val classHeightMap = mutableMapOf<String, Float>()
         internal var isCacheLoaded = false
@@ -62,21 +71,23 @@ class ObjectDetectionHandler (
             return
         }
         
-        val tableName = System.getenv("CONFIG_TABLE_NAME")
         try {
-            val request = ScanRequest.builder().tableName(tableName).build()
-            val response = ddbClient.scan(request)
+            // 2. Use the simplified scanAll() method
+            val items = heightTableClient.scanAll()
 
-            for (item in response.items()) {
-                val name = item["class_name"]?.n()?.toString()
-                val height = item["avg_height_meters"]?.s()?.toFloatOrNull()
+            items.forEach { item ->
+                // scanAll returns Map<String, String>, so we parse the height
+                val name = item["class_name"]
+                val height = item["avg_height_meters"]?.toFloatOrNull()
 
                 if (name != null && height != null) {
                     classHeightMap[name] = height
                 }
             }
+            
             isCacheLoaded = true
             logger.log("Class height cache loaded with ${classHeightMap.size} entries.")
+            
         } catch (e: Exception) {
             logger.log("Error loading class height cache: ${e.message}")
             classHeightMap["person"] = 1.7f // Default height
@@ -151,6 +162,7 @@ class ObjectDetectionHandler (
         val routeKey = input.requestContext.routeKey ?: "unknown"
         val rawData = input.body ?: "{}"
         var imageBytes: ByteArray = ByteArray(0)
+        var detections: List<BoundingBox> = emptyList()
 
         
         val domainName = input.requestContext.domainName
@@ -230,8 +242,12 @@ class ObjectDetectionHandler (
             logger.log("Error: Payload is not valid Base64. ${e.message}")
         }
 
-        //TODO: Run object detection on the imageBytes
-        val detections = getDetections(validImage, imageBytes, logger)
+        if (featureFlagsTableClient.getStringItem(itemName = "enable_sagemaker_inference") == true) {
+            logger.log("SageMaker inference is ENABLED via feature flag.")
+            detections = getDetections(validImage, imageBytes, logger)
+        } else {
+            logger.log("SageMaker inference is DISABLED via feature flag.")
+        }
 
         val estimatedDistances = estimateDistances(detections)
 
