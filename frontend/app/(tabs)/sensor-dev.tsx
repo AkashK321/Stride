@@ -221,7 +221,7 @@ export default function SensorDevScreen() {
                     fontWeight: "bold",
                   },
                 },
-                "100 Hz"
+                "10 Hz"
               ),
               React.createElement(
                 Text,

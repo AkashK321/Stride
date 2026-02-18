@@ -62,7 +62,7 @@ class SensorService {
     private localizationCallbacks: Set<(data: LocalizationData) => void> = new Set();
 
     // Configuration
-    private readonly SAMPLE_RATE = 100; // Hz
+    private readonly SAMPLE_RATE = 10; // Hz
     private readonly UPDATE_INTERVAL = 1000 / this.SAMPLE_RATE;
     private readonly BUFFER_SIZE = 1000;
 
