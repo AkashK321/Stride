@@ -214,6 +214,67 @@ class CdkStack(Stack):
         start = navigation.add_resource("start")
         start.add_method("POST", integration=apigw.LambdaIntegration(static_navigation_handler))
 
+        # # Create SageMaker Endpoint Configuration
+        # endpoint_config = sagemaker.CfnEndpointConfig(
+        #     self, "YoloV11EndpointConfig",
+        #     endpoint_config_name="stride-yolov11-nano-config",
+        #     production_variants=[
+        #         sagemaker.CfnEndpointConfig.ProductionVariantProperty(
+        #             variant_name="AllTraffic",
+        #             model_name=sagemaker_model.model_name,
+        #             initial_instance_count=1,
+        #             instance_type="ml.g4dn.xlarge",  # GPU instance
+        #             initial_variant_weight=1.0
+        #         )
+        #     ]
+        # )
+        # endpoint_config.add_dependency(sagemaker_model)
+
+        # # Create SageMaker Endpoint
+        # sagemaker_endpoint = sagemaker.CfnEndpoint(
+        #     self, "YoloV11Endpoint",
+        #     endpoint_name="stride-yolov11-nano-endpoint",
+        #     endpoint_config_name=endpoint_config.endpoint_config_name
+        # )
+        # sagemaker_endpoint.add_dependency(endpoint_config)
+
+        # # Grant Lambda permission to invoke SageMaker endpoint
+        # object_detection_handler.add_to_role_policy(
+        #     iam.PolicyStatement(
+        #         effect=iam.Effect.ALLOW,
+        #         actions=["sagemaker:InvokeEndpoint"],
+        #         resources=[
+        #             f"arn:aws:sagemaker:{region}:{account}:endpoint/{sagemaker_endpoint.endpoint_name}"
+        #         ]
+        #     )
+        # )
+
+        # # Add environment variables to Lambda for SageMaker endpoint
+        # object_detection_handler.add_environment(
+        #     "SAGEMAKER_ENDPOINT_NAME",
+        #     sagemaker_endpoint.endpoint_name
+        # )
+        # object_detection_handler.add_environment(
+        #     "AWS_REGION_SAGEMAKER",
+        #     region
+        # )
+
+        # Define the API Gateway REST API
+        api = apigw.LambdaRestApi(
+            self, "BusinessApi",
+            handler=auth_handler,
+            proxy=False
+        )
+
+        items = api.root.add_resource("items")
+        items.add_method("GET")
+
+        login = api.root.add_resource("login")
+        login.add_method("POST", integration=apigw.LambdaIntegration(auth_handler))
+
+        register = api.root.add_resource("register")
+        register.add_method("POST", integration=apigw.LambdaIntegration(auth_handler))
+
         # Define the API Gateway WebSocket API
         ws_api = apigw_v2.WebSocketApi(self, "StreamAPI")
         # Create a Stage (required for WebSockets)
@@ -255,6 +316,31 @@ class CdkStack(Stack):
         CfnOutput(self, "StackName",
             value=self.stack_name,
             description="Stack name used for this deployment"
+        )
+
+        # Setup DynamoDB Table to map Object Avg Heights for distance estimation
+        coco_config_table = ddb.Table(
+            self, "CocoConfigTable",
+            partition_key=ddb.Attribute(
+                name="class_id",
+                type=ddb.AttributeType.NUMBER
+            ),
+            removal_policy=RemovalPolicy.DESTROY, # For dev/testing
+            billing_mode=ddb.BillingMode.PAY_PER_REQUEST
+        )
+
+        coco_config_table.grant_read_data(object_detection_handler)
+        object_detection_handler.add_environment("HEIGHT_MAP_TABLE_NAME", coco_config_table.table_name)
+
+        init_coco_config = _lambda.Function(
+            self, "ObjDetectionConfigLambda",
+            runtime=_lambda.Runtime.PYTHON_3_10,
+            handler="populate_obj_ddb.handler",
+            code=_lambda.Code.from_asset("schema_initializer"),
+            timeout=Duration.seconds(30),
+            environment={
+                "TABLE_NAME": coco_config_table.table_name
+            }
         )
 
         # Setup DynamoDB Table to map Object Avg Heights for distance estimation
