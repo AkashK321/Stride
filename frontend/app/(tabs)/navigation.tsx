@@ -23,6 +23,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import { Ionicons } from "@expo/vector-icons";
 import Button from "../../components/Button";
 import { colors } from "../../theme/colors";
 import { spacing } from "../../theme/spacing";
@@ -38,21 +39,175 @@ import {
 import { useSensorData } from "../../hooks/useSensorData";
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 
-/** Interval for continuous navigation mode (ms) */
-const NAV_LOOP_INTERVAL_MS = 500;
+/**
+ * Default settings for frame capture.
+ * These can be changed via the settings panel.
+ */
+const DEFAULT_FRAME_WIDTH = 360;
+const DEFAULT_JPEG_QUALITY = 0.5;
+const DEFAULT_SEND_INTERVAL_MS = 500;
 
 /**
- * Max width for frames sent over WebSocket.
- *
- * API Gateway WebSocket default payload quota is 32 KB (can be increased
- * to 128 KB via AWS Service Quotas). After base64 encoding (+33%) and
- * JSON metadata (~3 KB), the raw JPEG must stay under ~21 KB.
- *
- * 480px wide at JPEG quality 0.5 produces ~15–22 KB — close to the limit
- * while preserving more detail. YOLOv11 resizes to 640×640 internally.
+ * Formats JSON with color styling for better readability.
+ * Simple approach: split by common patterns and apply colors.
  */
-const MAX_FRAME_WIDTH = 360;
-const FRAME_JPEG_COMPRESS = 0.5;
+function formatJsonForDisplay(data: any): React.ReactElement {
+  const jsonString = JSON.stringify(data, null, 3);
+  const lines = jsonString.split("\n");
+  const elements: React.ReactElement[] = [];
+
+  lines.forEach((line, lineIndex) => {
+    // Simple tokenization: split by common JSON patterns
+    const parts: React.ReactElement[] = [];
+    let remaining = line;
+    let partIndex = 0;
+
+    while (remaining.length > 0) {
+      // Match key: "key":
+      const keyMatch = remaining.match(/^(\s*)"([^"]+)":/);
+      if (keyMatch) {
+        parts.push(
+          React.createElement(Text, {
+            key: `part-${lineIndex}-${partIndex++}`,
+            style: styles.jsonDefault,
+          }, keyMatch[1] + '"'),
+        );
+        parts.push(
+          React.createElement(Text, {
+            key: `part-${lineIndex}-${partIndex++}`,
+            style: styles.jsonKey,
+          }, keyMatch[2]),
+        );
+        parts.push(
+          React.createElement(Text, {
+            key: `part-${lineIndex}-${partIndex++}`,
+            style: styles.jsonDefault,
+          }, '":'),
+        );
+        remaining = remaining.substring(keyMatch[0].length);
+        continue;
+      }
+
+      // Match string value: "value"
+      const stringMatch = remaining.match(/^:\s*"([^"]*)"/);
+      if (stringMatch) {
+        parts.push(
+          React.createElement(Text, {
+            key: `part-${lineIndex}-${partIndex++}`,
+            style: styles.jsonPunctuation,
+          }, ': '),
+        );
+        parts.push(
+          React.createElement(Text, {
+            key: `part-${lineIndex}-${partIndex++}`,
+            style: styles.jsonString,
+          }, '"' + stringMatch[1] + '"'),
+        );
+        remaining = remaining.substring(stringMatch[0].length);
+        continue;
+      }
+
+      // Match number value: 123 or 123.45
+      const numberMatch = remaining.match(/^:\s*(\d+\.?\d*)/);
+      if (numberMatch) {
+        parts.push(
+          React.createElement(Text, {
+            key: `part-${lineIndex}-${partIndex++}`,
+            style: styles.jsonPunctuation,
+          }, ': '),
+        );
+        parts.push(
+          React.createElement(Text, {
+            key: `part-${lineIndex}-${partIndex++}`,
+            style: styles.jsonNumber,
+          }, numberMatch[1]),
+        );
+        remaining = remaining.substring(numberMatch[0].length);
+        continue;
+      }
+
+      // Match boolean: true or false
+      const boolMatch = remaining.match(/^:\s*(true|false)/);
+      if (boolMatch) {
+        parts.push(
+          React.createElement(Text, {
+            key: `part-${lineIndex}-${partIndex++}`,
+            style: styles.jsonPunctuation,
+          }, ': '),
+        );
+        parts.push(
+          React.createElement(Text, {
+            key: `part-${lineIndex}-${partIndex++}`,
+            style: styles.jsonBoolean,
+          }, boolMatch[1]),
+        );
+        remaining = remaining.substring(boolMatch[0].length);
+        continue;
+      }
+
+      // Match null
+      const nullMatch = remaining.match(/^:\s*(null)/);
+      if (nullMatch) {
+        parts.push(
+          React.createElement(Text, {
+            key: `part-${lineIndex}-${partIndex++}`,
+            style: styles.jsonPunctuation,
+          }, ': '),
+        );
+        parts.push(
+          React.createElement(Text, {
+            key: `part-${lineIndex}-${partIndex++}`,
+            style: styles.jsonNull,
+          }, 'null'),
+        );
+        remaining = remaining.substring(nullMatch[0].length);
+        continue;
+      }
+
+      // Match punctuation: { } [ ] ,
+      const punctMatch = remaining.match(/^([{}[\],])/);
+      if (punctMatch) {
+        parts.push(
+          React.createElement(Text, {
+            key: `part-${lineIndex}-${partIndex++}`,
+            style: styles.jsonPunctuation,
+          }, punctMatch[1]),
+        );
+        remaining = remaining.substring(1);
+        continue;
+      }
+
+      // Default: take one character
+      parts.push(
+        React.createElement(Text, {
+          key: `part-${lineIndex}-${partIndex++}`,
+          style: styles.jsonDefault,
+        }, remaining[0]),
+      );
+      remaining = remaining.substring(1);
+    }
+
+    // If no parts were created, add the whole line
+    if (parts.length === 0) {
+      parts.push(
+        React.createElement(Text, {
+          key: `line-${lineIndex}`,
+          style: styles.jsonDefault,
+        }, line),
+      );
+    }
+
+    elements.push(
+      React.createElement(
+        Text,
+        { key: `line-${lineIndex}`, style: styles.jsonLine },
+        ...parts,
+      ),
+    );
+  });
+
+  return React.createElement(View, null, ...elements);
+}
 
 /** Session ID for the current navigation session */
 const SESSION_ID = "nav_dev_session";
@@ -88,6 +243,12 @@ export default function Navigation() {
 
   // Last compressed frame URI for preview (shows exactly what the backend receives)
   const [lastFrameUri, setLastFrameUri] = React.useState<string | null>(null);
+
+  // Settings state
+  const [showSettings, setShowSettings] = React.useState(false);
+  const [frameWidth, setFrameWidth] = React.useState(DEFAULT_FRAME_WIDTH);
+  const [jpegQuality, setJpegQuality] = React.useState(DEFAULT_JPEG_QUALITY);
+  const [sendIntervalMs, setSendIntervalMs] = React.useState(DEFAULT_SEND_INTERVAL_MS);
 
   // Focal length (computed once on mount)
   const focalLengthPixels = React.useMemo(() => getFocalLengthPixels(), []);
@@ -162,7 +323,7 @@ export default function Navigation() {
   /**
    * Capture a frame from the camera and assemble the payload.
    */
-  const captureAndSend = async () => {
+  const captureAndSend = React.useCallback(async () => {
     if (!cameraRef.current) {
       setLastError("Camera not ready");
       return;
@@ -187,12 +348,12 @@ export default function Navigation() {
         return;
       }
 
-      // Resize to MAX_FRAME_WIDTH to stay under API Gateway's 32 KB WS payload limit.
+      // Resize to configured width to stay under API Gateway's 32 KB WS payload limit.
       // YOLOv11 resizes to 640×640 internally, so detection quality is preserved.
       const resized = await manipulateAsync(
         photo.uri,
-        [{ resize: { width: MAX_FRAME_WIDTH } }],
-        { base64: true, compress: FRAME_JPEG_COMPRESS, format: SaveFormat.JPEG },
+        [{ resize: { width: frameWidth } }],
+        { base64: true, compress: jpegQuality, format: SaveFormat.JPEG },
       );
 
       if (!resized.base64) {
@@ -256,7 +417,7 @@ export default function Navigation() {
     } finally {
       setIsSending(false);
     }
-  };
+  }, [frameWidth, jpegQuality, focalLengthPixels, getSnapshot]);
 
   /**
    * Handle manual "Send Frame" button press.
@@ -279,16 +440,17 @@ export default function Navigation() {
     }
 
     setIsNavActive(true);
+    setShowSettings(false); // Close settings panel when navigation starts
     setFrameCount(0);
     setLastError(null);
 
     // Send first frame immediately
     await captureAndSend();
 
-    // Then start the interval
+    // Then start the interval with configured frequency
     navIntervalRef.current = setInterval(async () => {
       await captureAndSend();
-    }, NAV_LOOP_INTERVAL_MS);
+    }, sendIntervalMs);
   };
 
   /**
@@ -317,7 +479,7 @@ export default function Navigation() {
   if (!cameraPermission) {
     return React.createElement(
       SafeAreaView,
-      { style: styles.centered, edges: ["top", "bottom"] as const },
+      { style: styles.centered, edges: ["top"] as const },
       React.createElement(ActivityIndicator, { size: "large", color: colors.primary }),
     );
   }
@@ -325,7 +487,7 @@ export default function Navigation() {
   if (!cameraPermission.granted) {
     return React.createElement(
       SafeAreaView,
-      { style: styles.centered, edges: ["top", "bottom"] as const },
+      { style: styles.centered, edges: ["top"] as const },
       React.createElement(
         Text,
         { style: styles.permissionText },
@@ -344,7 +506,7 @@ export default function Navigation() {
   // --- Main render ---
   return React.createElement(
     SafeAreaView,
-    { style: styles.container, edges: ["top", "bottom"] as const },
+    { style: styles.container, edges: ["top"] as const },
 
     // Camera preview
     React.createElement(
@@ -380,7 +542,7 @@ export default function Navigation() {
       React.createElement(
         Text,
         { style: styles.frameCounter },
-        `Frames sent: ${frameCount}  |  Focal: ${focalLengthPixels}px`,
+        `Frames sent: ${frameCount}`,
       ),
 
       // Buttons row
@@ -388,34 +550,213 @@ export default function Navigation() {
         View,
         { style: styles.buttonRow },
 
-        // Send Frame button
+        // Send Frame button (smaller, on left)
         React.createElement(Button, {
           onPress: handleSendFrame,
           title: "Send Frame",
+          size: "small",
           disabled: isSending || isNavActive,
           loading: isSending && !isNavActive,
-          style: styles.button,
+          style: styles.sendFrameButton,
           accessibilityLabel: "Send a single camera frame",
           accessibilityRole: "button",
           accessibilityHint: "Captures a photo and sends it to the backend with sensor data",
         }),
 
-        // Start/Stop Navigation button
-        React.createElement(Button, {
-          onPress: handleToggleNav,
-          title: isNavActive ? "Stop Periodic Frame" : "Send Periodic Frame",
-          variant: isNavActive ? "danger" : "primary",
-          disabled: isSending && !isNavActive,
-          style: styles.button,
-          accessibilityLabel: isNavActive
-            ? "Stop continuous navigation"
-            : "Start continuous navigation",
-          accessibilityRole: "button",
-          accessibilityHint: isNavActive
-            ? "Stops the automatic frame capture loop"
-            : "Starts capturing and sending frames every 2 seconds",
-        }),
+        // Right-justified icon buttons container
+        React.createElement(
+          View,
+          { style: styles.rightButtonsContainer },
+          // Settings button (gear icon)
+          React.createElement(
+            Pressable,
+            {
+              onPress: () => setShowSettings(!showSettings),
+              disabled: isNavActive,
+              style: [
+                styles.iconButton,
+                styles.settingsButton,
+                showSettings && styles.settingsButtonActive,
+                isNavActive && styles.iconButtonDisabled,
+              ],
+              accessibilityLabel: isNavActive
+                ? "Settings unavailable during navigation"
+                : showSettings
+                  ? "Hide settings"
+                  : "Show settings",
+              accessibilityRole: "button",
+            },
+            React.createElement(Ionicons, {
+              name: "settings",
+              size: 24,
+              color: "#FFFFFF",
+            }),
+          ),
+
+          // Play/Stop Navigation button (icon button, on right)
+          React.createElement(
+            Pressable,
+            {
+              onPress: handleToggleNav,
+              disabled: isSending && !isNavActive,
+              style: [
+                styles.iconButton,
+                isNavActive && styles.iconButtonActive,
+                (isSending && !isNavActive) && styles.iconButtonDisabled,
+              ],
+              accessibilityLabel: isNavActive
+                ? "Stop continuous navigation"
+                : "Start continuous navigation",
+              accessibilityRole: "button",
+              accessibilityHint: isNavActive
+                ? "Stops the automatic frame capture loop"
+                : `Starts capturing and sending frames every ${sendIntervalMs / 1000}s`,
+            },
+            React.createElement(Ionicons, {
+              name: isNavActive ? "stop" : "play",
+              size: 24,
+              color: "#FFFFFF",
+            }),
+          ),
+        ),
       ),
+
+      // Settings panel (collapsible)
+      showSettings &&
+        React.createElement(
+          View,
+          { style: styles.settingsPanel },
+          React.createElement(
+            Text,
+            { style: styles.settingsHeader },
+            "Capture Settings",
+          ),
+
+          // Image Width
+          React.createElement(
+            View,
+            { style: styles.settingsRow },
+            React.createElement(
+              Text,
+              { style: styles.settingsLabel },
+              "Image Width:",
+            ),
+            React.createElement(
+              View,
+              { style: styles.settingsOptions },
+              [240, 360, 480, 640].map((width) =>
+                React.createElement(
+                  Pressable,
+                  {
+                    key: width,
+                    onPress: () => setFrameWidth(width),
+                    disabled: isNavActive,
+                    style: [
+                      styles.optionButton,
+                      frameWidth === width && styles.optionButtonActive,
+                      isNavActive && styles.optionButtonDisabled,
+                    ],
+                  },
+                  React.createElement(
+                    Text,
+                    {
+                      style: [
+                        styles.optionButtonText,
+                        frameWidth === width && styles.optionButtonTextActive,
+                      ],
+                    },
+                    `${width}px`,
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // JPEG Quality
+          React.createElement(
+            View,
+            { style: styles.settingsRow },
+            React.createElement(
+              Text,
+              { style: styles.settingsLabel },
+              `JPEG Quality: ${(jpegQuality * 100).toFixed(0)}%`,
+            ),
+            React.createElement(
+              View,
+              { style: styles.settingsOptions },
+              [0.3, 0.5, 0.7, 0.9].map((quality) =>
+                React.createElement(
+                  Pressable,
+                  {
+                    key: quality,
+                    onPress: () => setJpegQuality(quality),
+                    disabled: isNavActive,
+                    style: [
+                      styles.optionButton,
+                      Math.abs(jpegQuality - quality) < 0.05 && styles.optionButtonActive,
+                      isNavActive && styles.optionButtonDisabled,
+                    ],
+                  },
+                  React.createElement(
+                    Text,
+                    {
+                      style: [
+                        styles.optionButtonText,
+                        Math.abs(jpegQuality - quality) < 0.05 && styles.optionButtonTextActive,
+                      ],
+                    },
+                    `${(quality * 100).toFixed(0)}%`,
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // Send Frequency
+          React.createElement(
+            View,
+            { style: styles.settingsRow },
+            React.createElement(
+              Text,
+              { style: styles.settingsLabel },
+              "Send Frequency:",
+            ),
+            React.createElement(
+              View,
+              { style: styles.settingsOptions },
+              [
+                { label: "0.5s", value: 500 },
+                { label: "1s", value: 1000 },
+                { label: "2s", value: 2000 },
+                { label: "5s", value: 5000 },
+              ].map(({ label, value }) =>
+                React.createElement(
+                  Pressable,
+                  {
+                    key: value,
+                    onPress: () => setSendIntervalMs(value),
+                    disabled: isNavActive,
+                    style: [
+                      styles.optionButton,
+                      sendIntervalMs === value && styles.optionButtonActive,
+                      isNavActive && styles.optionButtonDisabled,
+                    ],
+                  },
+                  React.createElement(
+                    Text,
+                    {
+                      style: [
+                        styles.optionButtonText,
+                        sendIntervalMs === value && styles.optionButtonTextActive,
+                      ],
+                    },
+                    label,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
 
       // Error display
       lastError &&
@@ -470,123 +811,19 @@ export default function Navigation() {
         React.createElement(
           View,
           { style: styles.responseBox },
-
-          // Header
+          // JSON data display
           React.createElement(
-            Text,
-            { style: styles.responseHeader },
-            "Last Sent Packet",
+            View,
+            { style: styles.jsonContainer },
+            formatJsonForDisplay(lastSentData),
           ),
-
-          // Compressed frame preview — shows exactly what the backend receives
+          // Compressed frame preview — shows exactly what the backend receives (moved below)
           lastFrameUri &&
             React.createElement(Image, {
               source: { uri: lastFrameUri },
               style: styles.framePreview,
               resizeMode: "contain",
             }),
-
-          // Meta
-          React.createElement(
-            Text,
-            { style: styles.responseField },
-            `Session: ${lastSentData.session_id}  |  Image: ~${(lastSentData.image_size_bytes / 1024).toFixed(1)} KB`,
-          ),
-          React.createElement(
-            Text,
-            { style: styles.responseField },
-            `Timestamp: ${new Date(lastSentData.timestamp_ms).toLocaleTimeString()}`,
-          ),
-          React.createElement(
-            Text,
-            { style: styles.responseField },
-            `Focal length: ${lastSentData.focal_length_pixels}px`,
-          ),
-
-          // GPS
-          React.createElement(
-            Text,
-            { style: styles.responseSubHeader },
-            "GPS",
-          ),
-          lastSentData.gps
-            ? React.createElement(
-                View,
-                null,
-                React.createElement(
-                  Text,
-                  { style: styles.sensorItem },
-                  `  Lat: ${lastSentData.gps.latitude.toFixed(6)}`,
-                ),
-                React.createElement(
-                  Text,
-                  { style: styles.sensorItem },
-                  `  Lng: ${lastSentData.gps.longitude.toFixed(6)}`,
-                ),
-                React.createElement(
-                  Text,
-                  { style: styles.sensorItem },
-                  `  Alt: ${lastSentData.gps.altitude?.toFixed(1) ?? "N/A"}m  |  Acc: ${lastSentData.gps.accuracy?.toFixed(1) ?? "N/A"}m`,
-                ),
-                React.createElement(
-                  Text,
-                  { style: styles.sensorItem },
-                  `  Speed: ${lastSentData.gps.speed?.toFixed(2) ?? "N/A"} m/s`,
-                ),
-              )
-            : React.createElement(
-                Text,
-                { style: styles.responseField },
-                "  Not available",
-              ),
-
-          // Heading
-          React.createElement(
-            Text,
-            { style: styles.responseSubHeader },
-            "Heading",
-          ),
-          React.createElement(
-            Text,
-            { style: styles.sensorItem },
-            `  ${lastSentData.heading_degrees != null ? `${lastSentData.heading_degrees.toFixed(1)}°` : "Not available"}`,
-          ),
-
-          // Accelerometer
-          React.createElement(
-            Text,
-            { style: styles.responseSubHeader },
-            "Accelerometer (G-force)",
-          ),
-          lastSentData.accelerometer
-            ? React.createElement(
-                Text,
-                { style: styles.sensorItem },
-                `  x: ${lastSentData.accelerometer.x.toFixed(3)}  y: ${lastSentData.accelerometer.y.toFixed(3)}  z: ${lastSentData.accelerometer.z.toFixed(3)}`,
-              )
-            : React.createElement(
-                Text,
-                { style: styles.responseField },
-                "  Not available",
-              ),
-
-          // Gyroscope
-          React.createElement(
-            Text,
-            { style: styles.responseSubHeader },
-            "Gyroscope (rad/s)",
-          ),
-          lastSentData.gyroscope
-            ? React.createElement(
-                Text,
-                { style: styles.sensorItem },
-                `  x: ${lastSentData.gyroscope.x.toFixed(3)}  y: ${lastSentData.gyroscope.y.toFixed(3)}  z: ${lastSentData.gyroscope.z.toFixed(3)}`,
-              )
-            : React.createElement(
-                Text,
-                { style: styles.responseField },
-                "  Not available",
-              ),
         ),
 
       // ── Response tab ──
@@ -595,73 +832,12 @@ export default function Navigation() {
         React.createElement(
           View,
           { style: styles.responseBox },
+          // JSON data display
           React.createElement(
-            Text,
-            { style: styles.responseHeader },
-            "Latest Response",
+            View,
+            { style: styles.jsonContainer },
+            formatJsonForDisplay(lastResponse),
           ),
-
-          // Latency and request ID
-          (lastResponse.request_id !== undefined || lastResponse.latency_ms !== undefined) &&
-            React.createElement(
-              Text,
-              { style: styles.responseField },
-              `Request ID: ${lastResponse.request_id ?? "N/A"}  |  Latency: ${lastResponse.latency_ms !== undefined ? `${lastResponse.latency_ms}ms` : "N/A"}`,
-            ),
-
-          // Show detection results
-          lastResponse.valid !== undefined &&
-            React.createElement(
-              Text,
-              { style: styles.responseField },
-              `Valid: ${lastResponse.valid}  |  Frame size: ${lastResponse.frameSize ?? "N/A"} bytes`,
-            ),
-
-          // Estimated distances
-          lastResponse.estimatedDistances &&
-            lastResponse.estimatedDistances.length > 0 &&
-            React.createElement(
-              View,
-              null,
-              React.createElement(
-                Text,
-                { style: styles.responseSubHeader },
-                `Detections (${lastResponse.estimatedDistances.length}):`,
-              ),
-              ...lastResponse.estimatedDistances.map((det, i) =>
-                React.createElement(
-                  Text,
-                  { key: `det-${i}`, style: styles.detectionItem },
-                  `  ${det.className ?? "unknown"}: ${det.distance ?? "?"}m`,
-                ),
-              ),
-            ),
-
-          // No detections
-          lastResponse.estimatedDistances &&
-            lastResponse.estimatedDistances.length === 0 &&
-            React.createElement(
-              Text,
-              { style: styles.responseField },
-              "No objects detected",
-            ),
-
-          // Navigation-specific responses
-          lastResponse.type === "navigation_complete" &&
-            React.createElement(
-              Text,
-              { style: styles.successText },
-              lastResponse.message || "Navigation complete!",
-            ),
-
-          // Raw JSON fallback
-          !lastResponse.estimatedDistances &&
-            !lastResponse.type &&
-            React.createElement(
-              Text,
-              { style: styles.responseField },
-              JSON.stringify(lastResponse, null, 2),
-            ),
         ),
 
       // No data yet placeholder
@@ -671,9 +847,13 @@ export default function Navigation() {
           View,
           { style: styles.responseBox },
           React.createElement(
-            Text,
-            { style: styles.responseField },
-            "No data sent yet. Send a frame to see sensor data here.",
+            View,
+            { style: styles.placeholderContainer },
+            React.createElement(
+              Text,
+              { style: styles.responseField },
+              "No data sent yet. Send a frame to see sensor data here.",
+            ),
           ),
         ),
 
@@ -683,9 +863,13 @@ export default function Navigation() {
           View,
           { style: styles.responseBox },
           React.createElement(
-            Text,
-            { style: styles.responseField },
-            "No response received yet. Send a frame to see the response here.",
+            View,
+            { style: styles.placeholderContainer },
+            React.createElement(
+              Text,
+              { style: styles.responseField },
+              "No response received yet. Send a frame to see the response here.",
+            ),
           ),
         ),
     ),
@@ -725,8 +909,9 @@ const styles = StyleSheet.create({
   },
   cameraContainer: {
     height: 300,
-    backgroundColor: "#000",
+    backgroundColor: colors.background,
     position: "relative",
+    paddingBottom: spacing.sm,
   },
   camera: {
     flex: 1,
@@ -749,6 +934,7 @@ const styles = StyleSheet.create({
   },
   controlsContent: {
     padding: spacing.md,
+    paddingBottom: 0,
     gap: spacing.sm,
   },
   frameCounter: {
@@ -760,9 +946,86 @@ const styles = StyleSheet.create({
   buttonRow: {
     flexDirection: "row",
     gap: spacing.sm,
+    alignItems: "center",
   },
-  button: {
-    flex: 1,
+  sendFrameButton: {
+    flex: 0,
+    minWidth: 120,
+  },
+  rightButtonsContainer: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginLeft: "auto",
+  },
+  iconButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  settingsButton: {
+    backgroundColor: colors.secondary,
+  },
+  settingsButtonActive: {
+    backgroundColor: colors.secondaryDark,
+  },
+  iconButtonActive: {
+    backgroundColor: colors.danger,
+  },
+  iconButtonDisabled: {
+    opacity: 0.5,
+  },
+  settingsPanel: {
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: 8,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+    gap: spacing.md,
+  },
+  settingsHeader: {
+    ...typography.h1,
+    fontSize: 16,
+    marginBottom: spacing.xs,
+  },
+  settingsRow: {
+    gap: spacing.xs,
+  },
+  settingsLabel: {
+    ...typography.label,
+    fontSize: 14,
+    color: colors.text,
+  },
+  settingsOptions: {
+    flexDirection: "row",
+    gap: spacing.xs,
+    flexWrap: "wrap",
+  },
+  optionButton: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: 6,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.secondary,
+    minWidth: 60,
+    alignItems: "center",
+  },
+  optionButtonActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  optionButtonDisabled: {
+    opacity: 0.5,
+  },
+  optionButtonText: {
+    ...typography.label,
+    fontSize: 13,
+    color: colors.text,
+  },
+  optionButtonTextActive: {
+    color: colors.buttonPrimaryText,
   },
   errorBox: {
     backgroundColor: "#FEF2F2",
@@ -800,16 +1063,58 @@ const styles = StyleSheet.create({
   },
   framePreview: {
     width: "100%" as const,
-    height: 180,
-    borderRadius: 6,
+    flexGrow: 1,
+    minHeight: 200,
+    borderRadius: 8,
     backgroundColor: "#000",
-    marginBottom: spacing.sm,
+    marginTop: 0,
   },
   responseBox: {
     backgroundColor: colors.backgroundSecondary,
     borderRadius: 8,
-    padding: spacing.md,
+    padding: 0,
     gap: spacing.xs,
+    flexDirection: "column",
+  },
+  placeholderContainer: {
+    padding: spacing.md,
+  },
+  jsonContainer: {
+    backgroundColor: "#1E1E1E",
+    borderRadius: 8,
+    padding: spacing.md,
+    fontFamily: "monospace",
+    flexGrow: 1,
+    minHeight: 200,
+  },
+  jsonLine: {
+    fontFamily: "monospace",
+    fontSize: 10,
+    lineHeight: 15,
+    color: "#D4D4D4",
+  },
+  jsonKey: {
+    color: "#9CDCFE",
+    fontWeight: "600",
+  },
+  jsonString: {
+    color: "#CE9178",
+  },
+  jsonNumber: {
+    color: "#B5CEA8",
+  },
+  jsonBoolean: {
+    color: "#569CD6",
+  },
+  jsonNull: {
+    color: "#569CD6",
+    fontStyle: "italic",
+  },
+  jsonPunctuation: {
+    color: "#D4D4D4",
+  },
+  jsonDefault: {
+    color: "#D4D4D4",
   },
   responseHeader: {
     ...typography.medium,
