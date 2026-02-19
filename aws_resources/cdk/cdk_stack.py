@@ -252,64 +252,64 @@ class CdkStack(Stack):
         #     region
         # )
 
-        # # Define the API Gateway REST API
-        # api = apigw.LambdaRestApi(
-        #     self, "BusinessApi",
-        #     handler=auth_handler,
-        #     proxy=False
-        # )
+        # Define the API Gateway REST API
+        api = apigw.LambdaRestApi(
+            self, "BusinessApi",
+            handler=auth_handler,
+            proxy=False
+        )
 
-        # items = api.root.add_resource("items")
-        # items.add_method("GET")
+        items = api.root.add_resource("items")
+        items.add_method("GET")
 
-        # login = api.root.add_resource("login")
-        # login.add_method("POST", integration=apigw.LambdaIntegration(auth_handler))
+        login = api.root.add_resource("login")
+        login.add_method("POST", integration=apigw.LambdaIntegration(auth_handler))
 
-        # register = api.root.add_resource("register")
-        # register.add_method("POST", integration=apigw.LambdaIntegration(auth_handler))
+        register = api.root.add_resource("register")
+        register.add_method("POST", integration=apigw.LambdaIntegration(auth_handler))
 
-        # # Define the API Gateway WebSocket API
-        # ws_api = apigw_v2.WebSocketApi(self, "StreamAPI")
-        # # Create a Stage (required for WebSockets)
-        # apigw_v2.WebSocketStage(self, "ProdStage",
-        #     web_socket_api=ws_api,
-        #     stage_name="prod",
-        #     auto_deploy=True
-        # )
-        # # Add Routes
-        # # $connect and $disconnect are special AWS routes
-        # # TODO: uncomment below route definition with auth is ready
-        # # ws_api.add_route(
-        # #     route_key="$connect",
-        # #     integration=integrations.WebSocketLambdaIntegration("ConnectIntegration", auth_handler)
-        # # )
-        # # "frame" is the custom route for sending video frames
+        # Define the API Gateway WebSocket API
+        ws_api = apigw_v2.WebSocketApi(self, "StreamAPI")
+        # Create a Stage (required for WebSockets)
+        apigw_v2.WebSocketStage(self, "ProdStage",
+            web_socket_api=ws_api,
+            stage_name="prod",
+            auto_deploy=True
+        )
+        # Add Routes
+        # $connect and $disconnect are special AWS routes
+        # TODO: uncomment below route definition with auth is ready
         # ws_api.add_route(
-        #     route_key="frame",
-        #     integration=integrations.WebSocketLambdaIntegration("FrameIntegration", object_detection_handler)
+        #     route_key="$connect",
+        #     integration=integrations.WebSocketLambdaIntegration("ConnectIntegration", auth_handler)
         # )
-        # # Add $default route to catch unmatched messages (for debugging)
-        # ws_api.add_route(
-        #     route_key="$default",
-        #     integration=integrations.WebSocketLambdaIntegration("DefaultIntegration", object_detection_handler)
-        # )
-        # ws_api.grant_manage_connections(object_detection_handler)
+        # "frame" is the custom route for sending video frames
+        ws_api.add_route(
+            route_key="frame",
+            integration=integrations.WebSocketLambdaIntegration("FrameIntegration", object_detection_handler)
+        )
+        # Add $default route to catch unmatched messages (for debugging)
+        ws_api.add_route(
+            route_key="$default",
+            integration=integrations.WebSocketLambdaIntegration("DefaultIntegration", object_detection_handler)
+        )
+        ws_api.grant_manage_connections(object_detection_handler)
 
-        # # Add stack outputs for reporting to CICD
-        # CfnOutput(self, "RestAPIEndpointURL",
-        #     value=api.url,
-        #     description="API Gateway endpoint URL"
-        # )
+        # Add stack outputs for reporting to CICD
+        CfnOutput(self, "RestAPIEndpointURL",
+            value=api.url,
+            description="API Gateway endpoint URL"
+        )
 
-        # CfnOutput(self, "WebSocketURL",
-        #     value=ws_api.api_endpoint,
-        #     description="The WSS URL for Object Detection"
-        # )
+        CfnOutput(self, "WebSocketURL",
+            value=ws_api.api_endpoint,
+            description="The WSS URL for Object Detection"
+        )
 
-        # CfnOutput(self, "StackName",
-        #     value=self.stack_name,
-        #     description="Stack name used for this deployment"
-        # )
+        CfnOutput(self, "StackName",
+            value=self.stack_name,
+            description="Stack name used for this deployment"
+        )
 
         # # SageMaker Outputs
         # CfnOutput(self, "ECRRepositoryURI",
@@ -327,72 +327,72 @@ class CdkStack(Stack):
         #     description="SageMaker endpoint ARN"
         # )
 
-        # # Setup DynamoDB Table to map Object Avg Heights for distance estimation
-        # coco_config_table = ddb.Table(
-        #     self, "CocoConfigTable",
-        #     partition_key=ddb.Attribute(
-        #         name="class_id",
-        #         type=ddb.AttributeType.NUMBER
-        #     ),
-        #     removal_policy=RemovalPolicy.DESTROY, # For dev/testing
-        #     billing_mode=ddb.BillingMode.PAY_PER_REQUEST
-        # )
+        # Setup DynamoDB Table to map Object Avg Heights for distance estimation
+        coco_config_table = ddb.Table(
+            self, "CocoConfigTable",
+            partition_key=ddb.Attribute(
+                name="class_id",
+                type=ddb.AttributeType.NUMBER
+            ),
+            removal_policy=RemovalPolicy.DESTROY, # For dev/testing
+            billing_mode=ddb.BillingMode.PAY_PER_REQUEST
+        )
 
-        # coco_config_table.grant_read_data(object_detection_handler)
-        # object_detection_handler.add_environment("HEIGHT_MAP_TABLE_NAME", coco_config_table.table_name)
+        coco_config_table.grant_read_data(object_detection_handler)
+        object_detection_handler.add_environment("HEIGHT_MAP_TABLE_NAME", coco_config_table.table_name)
 
-        # init_coco_config = _lambda.Function(
-        #     self, "ObjDetectionConfigLambda",
-        #     runtime=_lambda.Runtime.PYTHON_3_10,
-        #     handler="populate_obj_ddb.handler",
-        #     code=_lambda.Code.from_asset("schema_initializer"),
-        #     timeout=Duration.seconds(30),
-        #     environment={
-        #         "TABLE_NAME": coco_config_table.table_name
-        #     }
-        # )
+        init_coco_config = _lambda.Function(
+            self, "ObjDetectionConfigLambda",
+            runtime=_lambda.Runtime.PYTHON_3_10,
+            handler="populate_obj_ddb.handler",
+            code=_lambda.Code.from_asset("schema_initializer"),
+            timeout=Duration.seconds(30),
+            environment={
+                "TABLE_NAME": coco_config_table.table_name
+            }
+        )
 
-        # coco_config_table.grant_write_data(init_coco_config)
+        coco_config_table.grant_write_data(init_coco_config)
 
-        # CustomResource(
-        #     self, "TriggerCOCOConfigInit",
-        #     service_token=init_coco_config.function_arn,
-        #     properties={
-        #         "RunOnDeploy": str(time())
-        #     }
-        # )
+        CustomResource(
+            self, "TriggerCOCOConfigInit",
+            service_token=init_coco_config.function_arn,
+            properties={
+                "RunOnDeploy": str(time())
+            }
+        )
 
-        # # Setup DynamoDB Table for manual feature flags (e.g. to toggle object detection on/off without redeploying)
-        # feature_flags_table = ddb.Table(
-        #     self, "FeatureFlagsTable",
-        #     partition_key=ddb.Attribute(
-        #         name="feature_name",
-        #         type=ddb.AttributeType.STRING
-        #     ),
-        #     # RETAIN = If you delete the stack, this table (and its manual flags) 
-        #     # will stay in AWS so you don't lose your settings.
-        #     removal_policy=RemovalPolicy.RETAIN, 
-        #     billing_mode=ddb.BillingMode.PAY_PER_REQUEST
-        # )
+        # Setup DynamoDB Table for manual feature flags (e.g. to toggle object detection on/off without redeploying)
+        feature_flags_table = ddb.Table(
+            self, "FeatureFlagsTable",
+            partition_key=ddb.Attribute(
+                name="feature_name",
+                type=ddb.AttributeType.STRING
+            ),
+            # RETAIN = If you delete the stack, this table (and its manual flags) 
+            # will stay in AWS so you don't lose your settings.
+            removal_policy=RemovalPolicy.RETAIN, 
+            billing_mode=ddb.BillingMode.PAY_PER_REQUEST
+        )
 
-        # CfnOutput(
-        #     self, "FeatureFlagsTableName",
-        #     value=feature_flags_table.table_name,
-        #     description="Table for manual feature toggles"
-        # )
+        CfnOutput(
+            self, "FeatureFlagsTableName",
+            value=feature_flags_table.table_name,
+            description="Table for manual feature toggles"
+        )
 
-        # feature_flags_table.grant_read_data(object_detection_handler)
-        # object_detection_handler.add_environment("FEATURE_FLAGS_TABLE_NAME", feature_flags_table.table_name)
+        feature_flags_table.grant_read_data(object_detection_handler)
+        object_detection_handler.add_environment("FEATURE_FLAGS_TABLE_NAME", feature_flags_table.table_name)
 
-        # CfnOutput(self, "UserPoolId",
-        #     value=user_pool.user_pool_id,
-        #     description="Cognito User Pool ID"
-        # )
+        CfnOutput(self, "UserPoolId",
+            value=user_pool.user_pool_id,
+            description="Cognito User Pool ID"
+        )
 
-        # CfnOutput(self, "UserPoolClientId",
-        #     value=user_pool_client.user_pool_client_id,
-        #     description="Cognito User Pool Client ID"
-        # )
+        CfnOutput(self, "UserPoolClientId",
+            value=user_pool_client.user_pool_client_id,
+            description="Cognito User Pool Client ID"
+        )
 
         # TODO: RDS setup disabled for now - to be re-enabled when ready
         # Define RDS Resource
