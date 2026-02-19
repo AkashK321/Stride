@@ -208,7 +208,31 @@ class ObjectDetectionHandler (
         try {
             logger.log("Parsing JSON body...")
             val jsonMap = mapper.readValue(rawData, Map::class.java)
-            val imageBase64 = jsonMap["body"] as? String ?: ""
+
+            // Support new schema (image_base64) with fallback to legacy (body)
+            val imageBase64 = (jsonMap["image_base64"] as? String)
+                ?: (jsonMap["body"] as? String)
+                ?: ""
+
+            // Extract focal_length_pixels from new payload schema
+            val payloadFocalLength = (jsonMap["focal_length_pixels"] as? Number)?.toDouble()
+            if (payloadFocalLength != null && payloadFocalLength > 0) {
+                focalLength = payloadFocalLength
+                logger.log("Using focal length from payload: $focalLength")
+            } else {
+                logger.log("Using default focal length: $focalLength")
+            }
+
+            // Log optional sensor data for debugging (don't fail if missing)
+            val sessionId = jsonMap["session_id"] as? String
+            val headingDegrees = (jsonMap["heading_degrees"] as? Number)?.toDouble()
+            val timestampMs = (jsonMap["timestamp_ms"] as? Number)?.toLong()
+            val requestId = (jsonMap["request_id"] as? Number)?.toInt()
+            if (sessionId != null) logger.log("Session: $sessionId")
+            if (headingDegrees != null) logger.log("Heading: ${headingDegrees}°")
+            if (timestampMs != null) logger.log("Client timestamp: $timestampMs")
+            if (requestId != null) logger.log("Request ID: $requestId")
+
             logger.log("Base64 string length: ${imageBase64.length}")
 
             if (imageBase64.isNotEmpty()) {
@@ -259,11 +283,17 @@ class ObjectDetectionHandler (
                 )
             }
 
-            val responsePayload = mapOf(
+            // Build response payload, including request_id if present
+            val responsePayload = mutableMapOf<String, Any>(
                 "frameSize" to imageBytes.size,
                 "valid" to validImage,
                 "estimatedDistances" to distancesList
             )
+            
+            // Echo request_id back for latency tracking
+            if (requestId != null) {
+                responsePayload["request_id"] = requestId
+            }
 
             val responseMessage = mapper.writeValueAsString(responsePayload)
             logger.log("Sending response: $responseMessage")

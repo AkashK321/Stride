@@ -37,6 +37,7 @@ export interface NavigationFrameMessage {
     z: number;
   } | null;
   timestamp_ms: number;
+  request_id: number;
 }
 
 /**
@@ -58,6 +59,8 @@ export interface NavigationResponse {
   message?: string;
   error?: string;
   status?: string;
+  request_id?: number;
+  latency_ms?: number; // Calculated on frontend, not from backend
 }
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
@@ -78,6 +81,8 @@ export class NavigationWebSocket {
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _reconnectAttempts = 0;
   private _disposed = false;
+  private _requestIdCounter = 0;
+  private _pendingRequests = new Map<number, number>(); // request_id -> sentTime
 
   /** Delay before attempting auto-reconnect (ms) */
   private static readonly RECONNECT_DELAY_MS = 2000;
@@ -163,6 +168,20 @@ export class NavigationWebSocket {
         this.ws.onmessage = (event) => {
           try {
             const data: NavigationResponse = JSON.parse(event.data);
+            
+            // Calculate latency if request_id is present
+            if (data.request_id !== undefined) {
+              const sentTime = this._pendingRequests.get(data.request_id);
+              if (sentTime !== undefined) {
+                const latency = Date.now() - sentTime;
+                data.latency_ms = latency;
+                this._pendingRequests.delete(data.request_id);
+                console.log(`[WebSocket] Request ${data.request_id} latency: ${latency}ms`);
+              } else {
+                console.warn(`[WebSocket] Received response with unknown request_id: ${data.request_id}`);
+              }
+            }
+            
             this.onMessage?.(data);
           } catch (e) {
             console.error("Failed to parse WebSocket message:", e);
@@ -221,10 +240,18 @@ export class NavigationWebSocket {
   }
 
   /**
+   * Generate a new request ID for tracking latency.
+   */
+  generateRequestId(): number {
+    return ++this._requestIdCounter;
+  }
+
+  /**
    * Send a navigation frame to the backend.
    * 
    * Validates payload size before sending to prevent WebSocket disconnection.
    * API Gateway WebSocket has a default payload limit of 32 KB (can be increased to 128 KB).
+   * Tracks request_id for latency measurement.
    */
   sendFrame(message: NavigationFrameMessage): boolean {
     if (this.ws?.readyState !== WebSocket.OPEN) {
@@ -278,7 +305,11 @@ export class NavigationWebSocket {
         return false;
       }
 
-      console.log(`[WebSocket] ✅ Sending frame (${Math.round(payloadSizeBytes / 1024)} KB)`);
+      // Track request for latency measurement
+      const sentTime = Date.now();
+      this._pendingRequests.set(message.request_id, sentTime);
+      
+      console.log(`[WebSocket] ✅ Sending frame (request_id: ${message.request_id}, ${Math.round(payloadSizeBytes / 1024)} KB)`);
       this.ws.send(payload);
       return true;
     } catch (e) {

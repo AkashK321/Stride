@@ -217,6 +217,9 @@ export default function Navigation() {
       // Get current sensor readings
       const sensors = getSnapshot();
 
+      // Generate request ID for latency tracking
+      const requestId = wsRef.current.generateRequestId();
+
       // Assemble the NavigationFrameMessage
       const message: NavigationFrameMessage = {
         action: "frame",
@@ -228,6 +231,7 @@ export default function Navigation() {
         accelerometer: sensors.accelerometer,
         gyroscope: sensors.gyroscope,
         timestamp_ms: Date.now(),
+        request_id: requestId,
       };
 
       // Store the sent data for display (exclude the large base64 image)
@@ -607,6 +611,14 @@ export default function Navigation() {
             { style: styles.responseHeader },
             "Latest Response",
           ),
+
+          // Latency and request ID
+          (lastResponse.request_id !== undefined || lastResponse.latency_ms !== undefined) &&
+            React.createElement(
+              Text,
+              { style: styles.responseField },
+              `Request ID: ${lastResponse.request_id ?? "N/A"}  |  Latency: ${lastResponse.latency_ms !== undefined ? `${lastResponse.latency_ms}ms` : "N/A"}`,
+            ),
 
           // Show detection results
           lastResponse.valid !== undefined &&
