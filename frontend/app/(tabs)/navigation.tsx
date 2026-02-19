@@ -52,8 +52,8 @@ const NAV_LOOP_INTERVAL_MS = 2000;
  * 480px wide at JPEG quality 0.5 produces ~15–22 KB — close to the limit
  * while preserving more detail. YOLOv11 resizes to 640×640 internally.
  */
-const MAX_FRAME_WIDTH = 360;
-const FRAME_JPEG_COMPRESS = 0.4;
+const MAX_FRAME_WIDTH = 480;
+const FRAME_JPEG_COMPRESS = 0.5;
 
 /** Session ID for the current navigation session */
 const SESSION_ID = "nav_dev_session";
@@ -240,8 +240,21 @@ export default function Navigation() {
       const sent = wsRef.current.sendFrame(message);
       if (sent) {
         setFrameCount((c) => c + 1);
+        setLastError(null); // Clear any previous errors on successful send
       } else {
-        setLastError("Failed to send frame via WebSocket");
+        // Check if the payload might be too large
+        const payloadSize = JSON.stringify(message).length;
+        const maxSize = 30 * 1024; // 30 KB limit
+        if (payloadSize > maxSize) {
+          const imageSizeKB = Math.round((message.image_base64.length * 3) / 4 / 1024);
+          setLastError(
+            `Frame too large (${Math.round(payloadSize / 1024)} KB). ` +
+            `Image: ${imageSizeKB} KB. Skipped to prevent disconnection. ` +
+            `Check console for details.`
+          );
+        } else {
+          setLastError("Failed to send frame via WebSocket");
+        }
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Capture failed";
