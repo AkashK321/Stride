@@ -37,10 +37,9 @@ import {
 } from "../../services/navigationWebSocket";
 import { useSensorData } from "../../hooks/useSensorData";
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
-import * as MediaLibrary from "expo-media-library";
 
 /** Interval for continuous navigation mode (ms) */
-const NAV_LOOP_INTERVAL_MS = 2000;
+const NAV_LOOP_INTERVAL_MS = 500;
 
 /**
  * Max width for frames sent over WebSocket.
@@ -52,7 +51,7 @@ const NAV_LOOP_INTERVAL_MS = 2000;
  * 480px wide at JPEG quality 0.5 produces ~15–22 KB — close to the limit
  * while preserving more detail. YOLOv11 resizes to 640×640 internally.
  */
-const MAX_FRAME_WIDTH = 480;
+const MAX_FRAME_WIDTH = 360;
 const FRAME_JPEG_COMPRESS = 0.5;
 
 /** Session ID for the current navigation session */
@@ -203,16 +202,6 @@ export default function Navigation() {
 
       // Store the compressed frame URI for in-app preview
       setLastFrameUri(resized.uri);
-
-      // Save compressed frame to camera roll for inspection
-      try {
-        const { status } = await MediaLibrary.requestPermissionsAsync();
-        if (status === "granted") {
-          await MediaLibrary.saveToLibraryAsync(resized.uri);
-        }
-      } catch (e) {
-        console.warn("Failed to save frame to camera roll:", e);
-      }
 
       // Get current sensor readings
       const sensors = getSnapshot();

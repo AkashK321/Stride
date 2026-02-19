@@ -8,7 +8,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "dev-logger": "node dev-logger-server.js"
   },
   "dependencies": {
     "@expo-google-fonts/roboto": "^0.4.2",

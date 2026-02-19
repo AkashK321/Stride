@@ -83,6 +83,7 @@ export class NavigationWebSocket {
   private _disposed = false;
   private _requestIdCounter = 0;
   private _pendingRequests = new Map<number, number>(); // request_id -> sentTime
+  private _currentSessionId: string | null = null;
 
   /** Delay before attempting auto-reconnect (ms) */
   private static readonly RECONNECT_DELAY_MS = 2000;
@@ -180,6 +181,14 @@ export class NavigationWebSocket {
               } else {
                 console.warn(`[WebSocket] Received response with unknown request_id: ${data.request_id}`);
               }
+            }
+            
+            // In development mode, send response to local CSV logger server
+            if (__DEV__ && typeof fetch !== "undefined") {
+              this.logResponseToDevServer(data).catch((err) => {
+                // Silently fail - dev logger is optional
+                console.debug("[WebSocket] Failed to log to dev server:", err);
+              });
             }
             
             this.onMessage?.(data);
@@ -309,12 +318,50 @@ export class NavigationWebSocket {
       const sentTime = Date.now();
       this._pendingRequests.set(message.request_id, sentTime);
       
+      // Track session_id for dev logging
+      if (message.session_id) {
+        this._currentSessionId = message.session_id;
+      }
+      
       console.log(`[WebSocket] ✅ Sending frame (request_id: ${message.request_id}, ${Math.round(payloadSizeBytes / 1024)} KB)`);
       this.ws.send(payload);
       return true;
     } catch (e) {
       console.error("[WebSocket] Failed to send WebSocket message:", e);
       return false;
+    }
+  }
+
+  /**
+   * Log response to development CSV logger server (dev mode only).
+   * Silently fails if the server is not running.
+   */
+  private async logResponseToDevServer(response: NavigationResponse): Promise<void> {
+    if (!__DEV__) return;
+    
+    try {
+      // Try to connect to local dev logger server
+      // Use the machine's IP address that Expo is running on
+      // For Expo Go, we can use localhost or the Metro bundler's IP
+      // Default to localhost, but could be configured via env var
+      const loggerUrl = process.env.EXPO_PUBLIC_DEV_LOGGER_URL || "http://localhost:3001/log";
+      
+      await fetch(loggerUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          session_id: this._currentSessionId || "default",
+          response: response,
+        }),
+      });
+    } catch (error) {
+      // Silently fail - dev logger is optional
+      // Only log in debug mode to avoid console spam
+      if (console.debug) {
+        console.debug("[WebSocket] Dev logger not available:", error);
+      }
     }
   }
 
