@@ -205,6 +205,10 @@ class ObjectDetectionHandler (
             return APIGatewayV2WebSocketResponse().apply { statusCode = 400 }
         }
 
+        // Default focal length — overridden by payload if provided
+        var focalLength = 800.0
+        var requestId: Int? = null
+
         try {
             logger.log("Parsing JSON body...")
             val jsonMap = mapper.readValue(rawData, Map::class.java)
@@ -227,7 +231,7 @@ class ObjectDetectionHandler (
             val sessionId = jsonMap["session_id"] as? String
             val headingDegrees = (jsonMap["heading_degrees"] as? Number)?.toDouble()
             val timestampMs = (jsonMap["timestamp_ms"] as? Number)?.toLong()
-            val requestId = (jsonMap["request_id"] as? Number)?.toInt()
+            requestId = (jsonMap["request_id"] as? Number)?.toInt()
             if (sessionId != null) logger.log("Session: $sessionId")
             if (headingDegrees != null) logger.log("Heading: ${headingDegrees}°")
             if (timestampMs != null) logger.log("Client timestamp: $timestampMs")
