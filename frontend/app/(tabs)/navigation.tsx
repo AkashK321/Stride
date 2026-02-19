@@ -3,7 +3,7 @@
  *
  * Provides two modes:
  * 1. Manual Frame — capture a single photo, attach sensor data, send via WebSocket
- * 2. Navigation Mode — continuous loop capturing and sending every 2 seconds
+ * 2. Navigation Mode — continuous loop capturing and sending at configurable intervals (default: 0.5s)
  *
  * Uses expo-camera for frame capture, expo-location for GPS/heading,
  * expo-sensors for accelerometer/gyroscope, and a WebSocket connection for

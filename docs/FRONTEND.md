@@ -217,6 +217,43 @@ Files are named: `responses-{session_id}-{timestamp}.csv`
 - CSV files are written to `frontend/dev-logs/` (this directory is git-ignored)
 - The logger server must be running before responses can be logged
 
+### Navigation Screen UI
+
+The navigation screen provides a camera-based interface for indoor navigation with the following features:
+
+#### Controls
+
+- **Send Frame Button** - Manually capture and send a single camera frame with sensor data to the backend
+- **Play/Stop Button** - Toggle continuous navigation mode that automatically captures and sends frames at a configurable interval
+- **Settings Button** - Opens an inline settings panel to configure:
+  - **Image Width** - Frame capture width in pixels (default: 360px)
+  - **JPEG Quality** - Image compression quality from 0.1 to 1.0 (default: 0.5)
+  - **Send Frequency** - Interval between automatic frame captures (default: 0.5s, options: 0.5s, 1s, 2s, 5s)
+
+**Note:** Settings are disabled and cannot be changed while continuous navigation is active. The settings panel automatically closes when navigation starts.
+
+#### Data Display
+
+The screen includes two tabs for viewing sent and received data:
+
+- **Sent Tab** - Displays the raw JSON payload of the last sent frame, including:
+  - Image data (base64 encoded)
+  - Sensor readings (GPS, accelerometer, gyroscope, heading)
+  - Frame metadata (width, quality, timestamp, request ID)
+  - Image preview below the JSON data
+
+- **Response Tab** - Displays the raw JSON response from the backend, including:
+  - Object detection results
+  - Estimated distances
+  - Request ID and calculated latency
+  - Frame validation status
+
+Both tabs use syntax-highlighted JSON formatting with color-coded keys, strings, numbers, and booleans for improved readability.
+
+#### Frame Counter
+
+A header displays the total number of frames sent during the current session.
+
 ## Building
 
 For production builds, see the [Expo documentation](https://docs.expo.dev/build/introduction/).
