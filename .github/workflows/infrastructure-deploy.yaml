@@ -71,6 +71,10 @@ on:
         required: true
         type: string
         description: 'Name of the JAR artifact to download'
+      branch_name:
+        required: false
+        type: string
+        description: 'Branch name for stack deployment (if not provided, will try to detect from context)'
   
   workflow_dispatch:
     inputs:
@@ -78,6 +82,10 @@ on:
         required: false
         type: string
         description: 'Name of the JAR artifact to download (optional)'
+      branch_name:
+        required: false
+        type: string
+        description: 'Branch name for stack deployment (optional)'
 
 # Permissions required for OIDC (OpenID Connect) authentication and called workflows
 permissions:
@@ -190,9 +198,23 @@ jobs:
         id: get-stack-name
         working-directory: aws_resources
         run: |
-          BRANCH_NAME="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          # Try input first, then GitHub context variables
+          BRANCH_NAME="${{ inputs.branch_name }}"
+          if [ -z "$BRANCH_NAME" ]; then
+            BRANCH_NAME="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          fi
+          # If still empty, try extracting from GITHUB_REF
+          if [ -z "$BRANCH_NAME" ]; then
+            BRANCH_NAME=$(echo "${{ github.ref }}" | sed 's|refs/heads/||')
+          fi
+          
           if [ -z "$BRANCH_NAME" ]; then
             echo "ERROR: Could not determine branch name from GitHub context"
+            echo "Available context:"
+            echo "  GITHUB_HEAD_REF: ${GITHUB_HEAD_REF:-<empty>}"
+            echo "  GITHUB_REF_NAME: ${GITHUB_REF_NAME:-<empty>}"
+            echo "  GITHUB_REF: ${{ github.ref }}"
+            echo "  Input branch_name: ${{ inputs.branch_name }}"
             exit 1
           fi
 
