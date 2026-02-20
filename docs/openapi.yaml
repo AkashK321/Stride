@@ -1572,6 +1572,7 @@ components:
         - accelerometer
         - gyroscope
         - focal_length_pixels
+        - request_id
       properties:
         session_id:
           type: string

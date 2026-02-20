@@ -207,11 +207,28 @@ class ObjectDetectionHandler (
 
         // Default focal length — overridden by payload if provided
         var focalLength = 800.0
-        var requestId: Int? = null
+        var requestId: Int
 
         try {
             logger.log("Parsing JSON body...")
             val jsonMap = mapper.readValue(rawData, Map::class.java)
+
+            // Validate required request_id field
+            val requestIdValue = (jsonMap["request_id"] as? Number)?.toInt()
+            if (requestIdValue == null) {
+                logger.log("ERROR: Missing required field 'request_id'")
+                val errorResponse = mapper.writeValueAsString(
+                    mapOf("error" to "Missing required field: request_id")
+                )
+                val postRequest = PostToConnectionRequest.builder()
+                    .connectionId(connectionId)
+                    .data(SdkBytes.fromByteArray(errorResponse.toByteArray()))
+                    .build()
+                apiClient.postToConnection(postRequest)
+                return APIGatewayV2WebSocketResponse().apply { statusCode = 400 }
+            }
+            requestId = requestIdValue
+            logger.log("Request ID: $requestId")
 
             // Support new schema (image_base64) with fallback to legacy (body)
             val imageBase64 = (jsonMap["image_base64"] as? String)
@@ -231,11 +248,9 @@ class ObjectDetectionHandler (
             val sessionId = jsonMap["session_id"] as? String
             val headingDegrees = (jsonMap["heading_degrees"] as? Number)?.toDouble()
             val timestampMs = (jsonMap["timestamp_ms"] as? Number)?.toLong()
-            requestId = (jsonMap["request_id"] as? Number)?.toInt()
             if (sessionId != null) logger.log("Session: $sessionId")
             if (headingDegrees != null) logger.log("Heading: ${headingDegrees}°")
             if (timestampMs != null) logger.log("Client timestamp: $timestampMs")
-            if (requestId != null) logger.log("Request ID: $requestId")
 
             logger.log("Base64 string length: ${imageBase64.length}")
 
@@ -287,17 +302,13 @@ class ObjectDetectionHandler (
                 )
             }
 
-            // Build response payload, including request_id if present
-            val responsePayload = mutableMapOf<String, Any>(
+            // Build response payload, always including request_id
+            val responsePayload = mapOf(
                 "frameSize" to imageBytes.size,
                 "valid" to validImage,
-                "estimatedDistances" to distancesList
+                "estimatedDistances" to distancesList,
+                "request_id" to requestId
             )
-            
-            // Echo request_id back for latency tracking
-            if (requestId != null) {
-                responsePayload["request_id"] = requestId
-            }
 
             val responseMessage = mapper.writeValueAsString(responsePayload)
             logger.log("Sending response: $responseMessage")

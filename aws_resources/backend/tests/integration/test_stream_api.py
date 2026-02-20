@@ -61,12 +61,14 @@ def test_inference_enabled(api_base_url, ddb_feature_flag_table, ws_endpoint_hea
         with open(IMAGE_PATH, "rb") as f:
             img_str = base64.b64encode(f.read()).decode("utf-8")
 
-        ws.send(json.dumps({"action": "frame", "body": img_str}))
+        ws.send(json.dumps({"action": "frame", "body": img_str, "request_id": 1}))
         response = json.loads(ws.recv())
 
         assert response.get("valid") is True
         # When enabled, we expect the list to potentially contain detections
         assert "estimatedDistances" in response
+        # Verify request_id is echoed back
+        assert response.get("request_id") == 1, "Expected request_id to be echoed back"
         print(f"Inference Enabled Response: {response}")
     finally:
         ws.close()
@@ -80,12 +82,35 @@ def test_inference_disabled(api_base_url, ddb_feature_flag_table, ws_endpoint_he
         with open(IMAGE_PATH, "rb") as f:
             img_str = base64.b64encode(f.read()).decode("utf-8")
 
-        ws.send(json.dumps({"action": "frame", "body": img_str}))
+        ws.send(json.dumps({"action": "frame", "body": img_str, "request_id": 1}))
         response = json.loads(ws.recv())
 
         assert response.get("valid") is True
         assert len(response.get("estimatedDistances", [])) == 0
+        # Verify request_id is echoed back
+        assert response.get("request_id") == 1, "Expected request_id to be echoed back"
         print(f"Inference Disabled Response: {response}")
+    finally:
+        ws.close()
+
+
+def test_missing_request_id(api_base_url, ws_endpoint_healthy):
+    """Test that missing request_id returns an error."""
+    ws = create_connection(api_base_url)
+    try:
+        with open(IMAGE_PATH, "rb") as f:
+            img_str = base64.b64encode(f.read()).decode("utf-8")
+
+        # Send payload without request_id
+        ws.send(json.dumps({"action": "frame", "body": img_str}))
+        response = json.loads(ws.recv())
+
+        # Should receive error response
+        assert "error" in response, "Expected error response for missing request_id"
+        assert "request_id" in response["error"].lower(), (
+            "Expected error message to mention request_id"
+        )
+        print(f"✅ Missing request_id correctly rejected: {response}")
     finally:
         ws.close()
 
@@ -107,6 +132,7 @@ def test_dataflow(api_base_url, ws_endpoint_healthy):
         payload_fake = {
             "action": "frame",
             "body": "simulated_base64_image_data_xyz_INVALID",
+            "request_id": 1,
         }
         ws.send(json.dumps(payload_fake))
 
@@ -135,7 +161,7 @@ def test_dataflow(api_base_url, ws_endpoint_healthy):
         with open(IMAGE_PATH, "rb") as image_file:
             base64_string = base64.b64encode(image_file.read()).decode("utf-8")
 
-        payload_real = {"action": "frame", "body": base64_string}
+        payload_real = {"action": "frame", "body": base64_string, "request_id": 2}
         ws.send(json.dumps(payload_real))
 
         # Wait for response (Blocking)
@@ -153,6 +179,8 @@ def test_dataflow(api_base_url, ws_endpoint_healthy):
             assert "estimatedDistances" in result_2, (
                 "Response missing 'estimatedDistances' field"
             )
+            # Verify request_id is echoed back
+            assert result_2.get("request_id") == 2, "Expected request_id to be echoed back"
 
             detection_count = len(result_2.get("estimatedDistances", []))
             print(f"✅ Valid JPEG processed successfully")
