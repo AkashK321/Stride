@@ -159,7 +159,7 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
     }
 
     private fun getNearestNodeFromLandmark(landmarkId: Int, conn: Connection): Int? {
-        val query = "SELECT NearestNodeID FROM landmarks WHERE LandmarkID = ?"
+        val query = "SELECT NearestNodeID FROM Landmarks WHERE LandmarkID = ?"
         conn.prepareStatement(query).use { stmt -> 
             stmt.setInt(1, landmarkId)
             val rs = stmt.executeQuery()
