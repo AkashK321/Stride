@@ -31,6 +31,7 @@ dependencies {
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.14.2")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.14.2")
     implementation(kotlin("stdlib"))
+    implementation("org.postgresql:postgresql:42.6.0")
 
     // Test dependencies
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5:1.9.23")
