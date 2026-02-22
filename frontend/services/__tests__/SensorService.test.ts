@@ -140,10 +140,10 @@ describe("SensorService", () => {
 
     it("does not subscribe again if already monitoring", () => {
       service.startMonitoring();
-      const callCount1 = Sensors.Accelerometer.addListener.mock.calls.length;
+      const callCount1 = (Sensors.Accelerometer.addListener as jest.Mock).mock.calls.length;
 
       service.startMonitoring();
-      const callCount2 = Sensors.Accelerometer.addListener.mock.calls.length;
+      const callCount2 = (Sensors.Accelerometer.addListener as jest.Mock).mock.calls.length;
 
       expect(callCount1).toBe(callCount2);
     });
@@ -182,9 +182,9 @@ describe("SensorService", () => {
   describe("stopMonitoring", () => {
     it("removes all sensor subscriptions", () => {
       service.startMonitoring();
-      const accelSub = Sensors.Accelerometer.addListener.mock.results[0].value;
-      const gyroSub = Sensors.Gyroscope.addListener.mock.results[0].value;
-      const magnetSub = Sensors.Magnetometer.addListener.mock.results[0].value;
+      const accelSub = (Sensors.Accelerometer.addListener as jest.Mock).mock.results[0].value;
+      const gyroSub = (Sensors.Gyroscope.addListener as jest.Mock).mock.results[0].value;
+      const magnetSub = (Sensors.Magnetometer.addListener as jest.Mock).mock.results[0].value;
 
       service.stopMonitoring();
 
