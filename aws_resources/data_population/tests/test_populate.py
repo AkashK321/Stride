@@ -1,5 +1,9 @@
 import pytest
 import math
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from populate_floor_data import (
     calculate_bearing,
     calculate_distance,
