@@ -156,7 +156,6 @@ This allows frontend developers to iterate on UI/UX without deploying a backend 
 - **Linting:** `npm run lint`
 - **Type checking:** TypeScript is configured and will show errors in your IDE
 
-<<<<<<< app/129-setup-jest-react-native-testing
 ## Testing
 
 The frontend uses **Jest** and **React Native Testing Library** for unit and component testing.
@@ -212,7 +211,6 @@ describe('tokenStorage', () => {
 - React Native components can be tested without a device/simulator
 - Path aliases (`@/`) work in test files
 - TypeScript and JSX are automatically transformed
-=======
 ### Development CSV Logger
 
 The dev logger is a development-only tool that logs WebSocket responses to CSV files on your laptop for analysis. This is useful for debugging latency, response patterns, and object detection results.
@@ -310,7 +308,6 @@ Both tabs use syntax-highlighted JSON formatting with color-coded keys, strings,
 #### Frame Counter
 
 A header displays the total number of frames sent during the current session.
->>>>>>> main
 
 ## Building
 
