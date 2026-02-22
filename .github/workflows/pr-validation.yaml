@@ -137,3 +137,32 @@ jobs:
           fail-on-error: false
           list-suites: all
           list-tests: all
+
+      # Step 6: Set up Python for database tests
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      # Step 7: Install Python dependencies
+      - name: Install Python dependencies
+        working-directory: aws_resources/data_population
+        run: |
+          pip install -r requirements.txt
+          pip install pytest
+      
+      # Step 8: Run database unit tests
+      - name: Run database unit tests
+        working-directory: aws_resources/data_population
+        run: |
+          pytest tests/test_populate.py tests/test_data_validation.py -v --junitxml=test-results/database-tests.xml
+      
+      # Step 9: Publish database test results
+      - name: Publish database test results
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Database Test Results
+          path: aws_resources/data_population/test-results/database-tests.xml
+          reporter: java-junit
+          fail-on-error: false
