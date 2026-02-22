@@ -1,0 +1,8 @@
+path: /content/drive/MyDrive/room_sign_dataset
+train: images/train
+val: images/val
+names:
+  0: "230"
+  1: "232"
+  2: "226"
+  3: "224"

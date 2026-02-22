@@ -25,11 +25,12 @@ from pathlib import Path
 # -------------------------
 # Edit only this section
 # -------------------------
-DATASET_ROOT = "/content/drive/MyDrive/your_dataset_folder"
+DATASET_ROOT = "/content/drive/MyDrive/room_sign_dataset"
 CLASS_NAMES = [
-    "person",
-    "chair",
-    "table",
+    "230",
+    "232",
+    "226",
+    "224",
 ]
 
 # Optional training config
