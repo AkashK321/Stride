@@ -14,6 +14,7 @@ SCRIPT_DIR = Path(__file__).parent.absolute()
 # This builds the path: .../backend/tests/integration/test.jpg
 IMAGE_PATH = SCRIPT_DIR / "resized/IMG_2828.jpg"
 
+
 @pytest.fixture
 def api_base_url():
     """Get the API base URL from environment variable."""
@@ -36,6 +37,7 @@ def ws_endpoint_healthy(api_base_url):
     except Exception as exc:
         pytest.skip(f"WebSocket endpoint unavailable: {exc}")
 
+
 @pytest.fixture
 def ddb_feature_flag_table():
     """Fixture to access the DynamoDB table for feature flags."""
@@ -43,30 +45,34 @@ def ddb_feature_flag_table():
     table_name = os.getenv("FEATURE_FLAG_TABLE_NAME", "FeatureFlags")
     return ddb.Table(table_name)
 
+
 def set_sagemaker_flag(table, enabled: bool):
     """Helper to update the feature flag in DynamoDB."""
-    table.put_item(Item={
-        'feature_name': 'enable_sagemaker_inference',
-        'value': enabled
-    })
+    table.put_item(
+        Item={"feature_name": "enable_sagemaker_inference", "value": enabled}
+    )
+
 
 def test_inference_enabled(api_base_url, ddb_feature_flag_table, ws_endpoint_healthy):
     set_sagemaker_flag(ddb_feature_flag_table, True)
-    
+
     ws = create_connection(api_base_url)
     try:
         with open(IMAGE_PATH, "rb") as f:
-            img_str = base64.b64encode(f.read()).decode('utf-8')
-        
-        ws.send(json.dumps({"action": "frame", "body": img_str}))
+            img_str = base64.b64encode(f.read()).decode("utf-8")
+
+        ws.send(json.dumps({"action": "frame", "body": img_str, "request_id": 1}))
         response = json.loads(ws.recv())
-        
+
         assert response.get("valid") is True
         # When enabled, we expect the list to potentially contain detections
         assert "estimatedDistances" in response
+        # Verify request_id is echoed back
+        assert response.get("request_id") == 1, "Expected request_id to be echoed back"
         print(f"Inference Enabled Response: {response}")
     finally:
         ws.close()
+
 
 def test_inference_disabled(api_base_url, ddb_feature_flag_table, ws_endpoint_healthy):
     set_sagemaker_flag(ddb_feature_flag_table, False)
@@ -74,14 +80,37 @@ def test_inference_disabled(api_base_url, ddb_feature_flag_table, ws_endpoint_he
     ws = create_connection(api_base_url)
     try:
         with open(IMAGE_PATH, "rb") as f:
-            img_str = base64.b64encode(f.read()).decode('utf-8')
-        
-        ws.send(json.dumps({"action": "frame", "body": img_str}))
+            img_str = base64.b64encode(f.read()).decode("utf-8")
+
+        ws.send(json.dumps({"action": "frame", "body": img_str, "request_id": 1}))
         response = json.loads(ws.recv())
-        
+
         assert response.get("valid") is True
         assert len(response.get("estimatedDistances", [])) == 0
+        # Verify request_id is echoed back
+        assert response.get("request_id") == 1, "Expected request_id to be echoed back"
         print(f"Inference Disabled Response: {response}")
+    finally:
+        ws.close()
+
+
+def test_missing_request_id(api_base_url, ws_endpoint_healthy):
+    """Test that missing request_id returns an error."""
+    ws = create_connection(api_base_url)
+    try:
+        with open(IMAGE_PATH, "rb") as f:
+            img_str = base64.b64encode(f.read()).decode("utf-8")
+
+        # Send payload without request_id
+        ws.send(json.dumps({"action": "frame", "body": img_str}))
+        response = json.loads(ws.recv())
+
+        # Should receive error response
+        assert "error" in response, "Expected error response for missing request_id"
+        assert "request_id" in response["error"].lower(), (
+            "Expected error message to mention request_id"
+        )
+        print(f"✅ Missing request_id correctly rejected: {response}")
     finally:
         ws.close()
 
@@ -92,35 +121,37 @@ def test_dataflow(api_base_url, ws_endpoint_healthy):
     1. Invalid payloads are rejected with error status.
     2. Valid JPEG payloads return inference results.
     """
-    
+
     # 1. CONNECT (Synchronous)
     print(f"\n🔌 Connecting to {api_base_url}...")
     ws = create_connection(api_base_url)
-    
+
     try:
         # --- TEST CASE 1: SEND GARBAGE DATA ---
         print("🚀 [Step 1] Sending Invalid Data...")
         payload_fake = {
             "action": "frame",
-            "body": "simulated_base64_image_data_xyz_INVALID"
+            "body": "simulated_base64_image_data_xyz_INVALID",
+            "request_id": 1,
         }
         ws.send(json.dumps(payload_fake))
-        
+
         # Wait for response (Blocking)
         response_1 = ws.recv()
         print(f"📩 Received: {response_1}")
-        
+
         # Parse JSON response
         try:
             result_1 = json.loads(response_1)
-            assert result_1.get("valid") == False, \
+            assert result_1.get("valid") == False, (
                 f"Expected error status for bad data, got: {result_1.get('valid')}"
+            )
             print("✅ Invalid data correctly rejected")
         except json.JSONDecodeError:
             # Fallback for old response format
-            assert "error" in response_1.lower(), \
+            assert "error" in response_1.lower(), (
                 f"Expected error response for bad data, got: {response_1}"
-
+            )
 
         # --- TEST CASE 2: SEND REAL JPEG ---
         print("🚀 [Step 2] Sending Valid JPEG...")
@@ -128,14 +159,11 @@ def test_dataflow(api_base_url, ws_endpoint_healthy):
             pytest.fail(f"Test image not found at {IMAGE_PATH}")
 
         with open(IMAGE_PATH, "rb") as image_file:
-            base64_string = base64.b64encode(image_file.read()).decode('utf-8')
+            base64_string = base64.b64encode(image_file.read()).decode("utf-8")
 
-        payload_real = {
-            "action": "frame",
-            "body": base64_string
-        }
+        payload_real = {"action": "frame", "body": base64_string, "request_id": 2}
         ws.send(json.dumps(payload_real))
-        
+
         # Wait for response (Blocking)
         response_2 = ws.recv()
         print(f"📩 Received: {response_2}")
@@ -143,24 +171,32 @@ def test_dataflow(api_base_url, ws_endpoint_healthy):
         # Parse JSON response (new format with SageMaker inference)
         try:
             result_2 = json.loads(response_2)
-            assert result_2.get("valid") == True, \
+            assert result_2.get("valid") == True, (
                 f"Expected success status for valid JPEG, got: {result_2.get('valid')}"
-            
+            )
+
             # Validate structure
-            assert "estimatedDistances" in result_2, "Response missing 'estimatedDistances' field"
-            
+            assert "estimatedDistances" in result_2, (
+                "Response missing 'estimatedDistances' field"
+            )
+            # Verify request_id is echoed back
+            assert result_2.get("request_id") == 2, "Expected request_id to be echoed back"
+
             detection_count = len(result_2.get("estimatedDistances", []))
             print(f"✅ Valid JPEG processed successfully")
             print(f"   Detections found: {detection_count}")
-            
+
             if result_2.get("metadata"):
                 inference_time = result_2["metadata"].get("inferenceTimeMs", 0)
                 print(f"   Inference time: {inference_time}ms")
         except json.JSONDecodeError:
             # Fallback for testing without SageMaker endpoint deployed
-            assert "valid" in response_2.lower() or "success" in response_2.lower(), \
+            assert "valid" in response_2.lower() or "success" in response_2.lower(), (
                 f"Expected success for valid JPEG, got: {response_2}"
-            print("⚠️  Note: Received old response format (SageMaker endpoint may not be deployed)")
+            )
+            print(
+                "⚠️  Note: Received old response format (SageMaker endpoint may not be deployed)"
+            )
 
     finally:
         # Always close connection, even if test fails

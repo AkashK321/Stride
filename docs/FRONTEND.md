@@ -61,6 +61,19 @@ You can open the app in:
   - Format: `https://xxxxx.execute-api.us-east-1.amazonaws.com/prod`
   - No trailing slash
 
+- `EXPO_PUBLIC_WS_API_URL` - The WebSocket API Gateway URL for navigation frame transmission
+  - Must be set in `.env` file
+  - Format: `wss://xxxxx.execute-api.us-east-1.amazonaws.com/prod`
+  - No trailing slash
+
+### Optional
+
+- `EXPO_PUBLIC_DEV_LOGGER_URL` - Development CSV logger server URL (dev mode only)
+  - Only needed if you want to log WebSocket responses to CSV files
+  - Format: `http://<your-laptop-ip>:3001/log`
+  - Example: `http://192.168.1.100:3001/log`
+  - See [Development CSV Logger](#development-csv-logger) section for setup instructions
+
 ### Expo Environment Variables
 
 In Expo, environment variables prefixed with `EXPO_PUBLIC_` are exposed to client-side code. This is necessary for the API base URL since it's used in the React Native app.
@@ -142,6 +155,104 @@ This allows frontend developers to iterate on UI/UX without deploying a backend 
 
 - **Linting:** `npm run lint`
 - **Type checking:** TypeScript is configured and will show errors in your IDE
+
+### Development CSV Logger
+
+The dev logger is a development-only tool that logs WebSocket responses to CSV files on your laptop for analysis. This is useful for debugging latency, response patterns, and object detection results.
+
+#### Setup
+
+1. **Start the dev logger server** (in a separate terminal):
+   ```bash
+   cd frontend
+   npm run dev-logger
+   ```
+   
+   The server will display:
+   - The localhost URL: `http://localhost:3001`
+   - Your laptop's network IP address (e.g., `http://192.168.1.100:3001`)
+   - Instructions for configuring the `.env` file
+
+2. **Configure for physical devices** (if using Expo Go on a physical device):
+   
+   Add to your `.env` file:
+   ```
+   EXPO_PUBLIC_DEV_LOGGER_URL=http://YOUR_LAPTOP_IP:3001/log
+   ```
+   
+   Replace `YOUR_LAPTOP_IP` with the IP address shown by the logger server.
+   
+   **Note:** If using an emulator/simulator, you can skip this step as `localhost` will work automatically.
+
+3. **Restart Expo server** after adding the env var:
+   ```bash
+   npx expo start --clear
+   ```
+
+4. **Use your app** — responses will automatically be logged to CSV files in `frontend/dev-logs/`
+
+5. **Stop the logger** when done by pressing `Ctrl+C` in the logger server terminal
+
+#### CSV File Format
+
+Each CSV file contains the following columns:
+- `timestamp` - When the response was received
+- `request_id` - Request ID for correlation with sent frames
+- `latency_ms` - Calculated request-response latency
+- `frame_size` - Size of the image frame in bytes
+- `valid` - Whether the image was valid (true/false)
+- `estimated_distances_count` - Number of detected objects
+- `estimated_distances_json` - Full detection results as JSON
+- `type` - Response type (if any)
+- `error` - Error message (if any)
+- `status` - Response status
+- `full_response_json` - Complete response payload for debugging
+
+Files are named: `responses-{session_id}-{timestamp}.csv`
+
+#### Notes
+
+- The logger only works in development mode (`__DEV__ === true`)
+- If the logger server isn't running, the app will continue to work normally (it fails silently)
+- CSV files are written to `frontend/dev-logs/` (this directory is git-ignored)
+- The logger server must be running before responses can be logged
+
+### Navigation Screen UI
+
+The navigation screen provides a camera-based interface for indoor navigation with the following features:
+
+#### Controls
+
+- **Send Frame Button** - Manually capture and send a single camera frame with sensor data to the backend
+- **Play/Stop Button** - Toggle continuous navigation mode that automatically captures and sends frames at a configurable interval
+- **Settings Button** - Opens an inline settings panel to configure:
+  - **Image Width** - Frame capture width in pixels (default: 360px)
+  - **JPEG Quality** - Image compression quality from 0.1 to 1.0 (default: 0.5)
+  - **Send Frequency** - Interval between automatic frame captures (default: 0.5s, options: 0.5s, 1s, 2s, 5s)
+
+**Note:** Settings are disabled and cannot be changed while continuous navigation is active. The settings panel automatically closes when navigation starts.
+
+#### Data Display
+
+The screen includes two tabs for viewing sent and received data:
+
+- **Sent Tab** - Displays the raw JSON payload of the last sent frame, including:
+  - Image data (base64 encoded)
+  - Sensor readings (GPS, accelerometer, gyroscope, heading)
+  - Frame metadata (width, quality, timestamp, request ID)
+  - Image preview below the JSON data
+
+- **Response Tab** - Displays the raw JSON response from the backend, including:
+  - Object detection results
+  - Estimated distances
+  - Request ID and calculated latency
+  - Frame validation status
+
+Both tabs use syntax-highlighted JSON formatting with color-coded keys, strings, numbers, and booleans for improved readability.
+
+#### Frame Counter
+
+A header displays the total number of frames sent during the current session.
 
 ## Building
 
