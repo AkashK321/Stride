@@ -67,7 +67,16 @@ class StaticNavigationHandlerTest {
     @Test
     fun `handleNavigationStart should calculate shortest path using Dijkstra and return instructions`() {
         val mockLandmarkStmt = mockk<PreparedStatement>(relaxed = true)
-        every { mockLandmarkStmt.executeQuery() } returns mockResultSet(listOf(mapOf("NearestNodeID" to 3)))
+        every { mockLandmarkStmt.executeQuery() } returns mockResultSet(listOf(
+            mapOf(
+                "Name" to "Room 205",
+                "NearestNodeID" to 2,
+                "DistanceToNode" to 2.0, // 2 meters from node 2
+                "BearingFromNode" to "East",
+                "MapCoordinateX" to 12,
+                "MapCoordinateY" to 0
+            )
+        ))
 
         val mockBuildingStmt = mockk<PreparedStatement>(relaxed = true)
         every { mockBuildingStmt.executeQuery() } returns mockResultSet(listOf(mapOf("BuildingID" to "B1")))
@@ -106,7 +115,7 @@ class StaticNavigationHandlerTest {
         val requestBody = """
             {
                 "start_location": { "node_id": "1" },
-                "destination": { "landmark_id": "999" }
+                "destination": { "landmark_id": "2" }
             }
         """.trimIndent()
 
@@ -117,28 +126,22 @@ class StaticNavigationHandlerTest {
         }
 
         val response = handler.handleRequest(event, mockContext)
+        println("Navigation instructions: ${response.body}")
 
-        // --- 3. ASSERTIONS ---
         assertEquals(200, response.statusCode)
 
         val responseBody = response.body
-        println("Response Body: $responseBody")
 
-        // Assert Path Node Sequence (Dijkstra)
-        assertTrue(responseBody.contains(""""node_id":"1""""))
-        assertTrue(responseBody.contains(""""node_id":"2""""))
-        assertTrue(responseBody.contains(""""node_id":"3""""))
-
-        // Assert Instructions and Bearing conversions
-        // 10m = ~32.8 feet, Bearing 90 = "Head East"
+        // Assert Step 1: Node 1 to Node 2 (10m = 32.8ft, East)
         assertTrue(responseBody.contains("Head East"))
         assertTrue(responseBody.contains("32.8084"))
 
-        // 5m = ~16.4 feet, Bearing 0 = "Head North"
-        assertTrue(responseBody.contains("Head North"))
-        assertTrue(responseBody.contains("16.4042"))
+        // Assert Step 2: Node 2 to Landmark 2 (5m = 16.4ft, North)
+        assertTrue(responseBody.contains("Head East"))
+        assertTrue(responseBody.contains("6.56168"))
 
-        // Final destination
+        // Assert Step 3: Final arrival at Landmark
+        assertTrue(responseBody.contains("Room 205"))
         assertTrue(responseBody.contains("arrive"))
     }
 

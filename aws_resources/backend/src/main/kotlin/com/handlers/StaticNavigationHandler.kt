@@ -10,7 +10,15 @@ import java.sql.Connection
 import java.sql.DriverManager
 import java.util.PriorityQueue
 
-
+data class LandmarkDetails(
+    val id: Int,
+    val name: String,
+    val nearestNodeId: Int,
+    val distanceToNode: Double,
+    val bearingFromNode: String,
+    val coordX: Int,
+    val coordY: Int
+)
 
 data class LandmarkResult(
     val name: String,
@@ -130,8 +138,10 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
 
         getDbConnection().use { conn ->
             // 1. Resolve Landmark to Nearest Node
-            val destNodeId = getNearestNodeFromLandmark(destLandmarkId, conn)
+            val landmark = getLandmarkDetails(destLandmarkId, conn)
                 ?: throw IllegalArgumentException("Landmark not found or has no associated node.")
+
+            val destNodeId = landmark.nearestNodeId
 
             // 2. Identify Building Context (to limit the graph size)
             val buildingId = getBuildingIdForNode(startNodeId, conn)
@@ -145,7 +155,7 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
             logger.log("Calculated path: ${pathNodes.joinToString(" -> ")}")
 
             // 4. Transform Path into Instructions
-            val instructions = buildInstructions(conn, pathNodes)
+            val instructions = buildInstructions(conn, pathNodes, landmark)
             logger.log("Translated instructions")
             instructions.forEach({inst -> 
                 logger.log("Instruction: $inst")
@@ -158,13 +168,21 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
         }
     }
 
-    private fun getNearestNodeFromLandmark(landmarkId: Int, conn: Connection): Int? {
-        val query = "SELECT NearestNodeID FROM Landmarks WHERE LandmarkID = ?"
+    private fun getLandmarkDetails(landmarkId: Int, conn: Connection): LandmarkDetails? {
+        val query = "SELECT Name, NearestNodeID, DistanceToNode, BearingFromNode, MapCoordinateX, MapCoordinateY FROM Landmarks WHERE LandmarkID = ?"
         conn.prepareStatement(query).use { stmt -> 
             stmt.setInt(1, landmarkId)
             val rs = stmt.executeQuery()
             if (rs.next()) {
-                return rs.getInt("NearestNodeID")
+                return LandmarkDetails(
+                    id = landmarkId,
+                    name = rs.getString("Name"),
+                    nearestNodeId = rs.getInt("NearestNodeID"),
+                    distanceToNode = rs.getDouble("DistanceToNode"),
+                    bearingFromNode = rs.getString("BearingFromNode") ?: "continue",
+                    coordX = rs.getInt("MapCoordinateX"),
+                    coordY = rs.getInt("MapCoordinateY")
+                )
             }
         }
         return null
@@ -251,12 +269,10 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
      * Converts a raw list of NodeIDs into the structured payload expected by the frontend.
      * Fetches exact distances and bearings from the MapEdges table.
      */
-    private fun buildInstructions(conn: Connection, path: List<Int>): List<NavigationInstruction> {
+    private fun buildInstructions(conn: Connection, path: List<Int>, landmark: LandmarkDetails): List<NavigationInstruction> {
         if (path.isEmpty()) return emptyList()
 
         val placeholders = path.joinToString(",") { "?" }
-        
-        // 1. Fetch Coordinates for all nodes in the path
         val nodeQuery = "SELECT NodeID, CoordinateX, CoordinateY FROM MapNodes WHERE NodeID IN ($placeholders)"
         val nodeData = mutableMapOf<Int, Pair<Int, Int>>()
         
@@ -268,38 +284,27 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
             }
         }
 
-        // 2. Fetch Actual Distances and Bearings for the edges in the path
-        // We fetch any edge where BOTH start and end nodes are in our path list.
         val edgeQuery = """
             SELECT StartNodeID, EndNodeID, DistanceMeters, Bearing, IsBidirectional
-            FROM MapEdges
-            WHERE StartNodeID IN ($placeholders) AND EndNodeID IN ($placeholders)
+            FROM MapEdges WHERE StartNodeID IN ($placeholders) AND EndNodeID IN ($placeholders)
         """
-        
-        // Map<Pair<FromNode, ToNode>, Pair<DistanceMeters, Bearing?>>
         val edgeMap = mutableMapOf<Pair<Int, Int>, Pair<Double, Double?>>()
         
         if (path.size > 1) {
             conn.prepareStatement(edgeQuery).use { stmt ->
-                // We have two IN clauses, so we bind the path variables twice
                 var paramIndex = 1
                 path.forEach { stmt.setInt(paramIndex++, it) }
                 path.forEach { stmt.setInt(paramIndex++, it) }
-                
                 val rs = stmt.executeQuery()
                 while (rs.next()) {
                     val start = rs.getInt("StartNodeID")
                     val end = rs.getInt("EndNodeID")
                     val dist = rs.getDouble("DistanceMeters")
-                    
                     val rawBearing = rs.getDouble("Bearing")
                     val bearing: Double? = if (rs.wasNull()) null else rawBearing
                     val isBidi = rs.getBoolean("IsBidirectional")
                     
-                    // Forward direction
                     edgeMap[Pair(start, end)] = Pair(dist, bearing)
-                    
-                    // Reverse direction (if bidirectional, we add 180 degrees to the bearing)
                     if (isBidi) {
                         val reverseBearing = bearing?.let { (it + 180.0) % 360.0 }
                         edgeMap[Pair(end, start)] = Pair(dist, reverseBearing)
@@ -308,30 +313,31 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
             }
         }
 
-        // 3. Construct the Instructions
         val instructions = mutableListOf<NavigationInstruction>()
         
+        // Map the Node path
         for (i in path.indices) {
             val nodeId = path[i]
             val coords = nodeData[nodeId] ?: Pair(0, 0)
             
             var distFeet = 0.0
-            var directionStr = "arrive" // Default for the last node
+            var directionStr = ""
             
-            // If we are not at the final destination, look up the edge to the next node
             if (i < path.size - 1) {
+                // Not at the last node yet, lookup edge to the next node
                 val nextNodeId = path[i + 1]
                 val edgeInfo = edgeMap[Pair(nodeId, nextNodeId)]
                 
                 if (edgeInfo != null) {
-                    val distMeters = edgeInfo.first
-                    distFeet = distMeters * 3.28084 // Convert to feet
-                    
+                    distFeet = edgeInfo.first * 3.28084
                     directionStr = bearingToDirectionString(edgeInfo.second)
                 } else {
-                    // Fallback in case edge data is missing
                     directionStr = "continue"
                 }
+            } else {
+                // At the final node. Look towards the actual Landmark destination.
+                distFeet = landmark.distanceToNode * 3.28084
+                directionStr = "Head ${landmark.bearingFromNode}"
             }
             
             instructions.add(
@@ -340,13 +346,22 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
                     distance_feet = distFeet,
                     direction = directionStr,
                     node_id = nodeId.toString(),
-                    coordinates = mapOf(
-                        "x" to coords.first.toDouble(),
-                        "y" to coords.second.toDouble()
-                    )
+                    coordinates = mapOf("x" to coords.first.toDouble(), "y" to coords.second.toDouble())
                 )
             )
         }
+
+        // Add the absolute final "arrive" instruction for the landmark coordinates
+        instructions.add(
+            NavigationInstruction(
+                step = path.size + 1,
+                distance_feet = 0.0,
+                direction = "arrive",
+                node_id = "${landmark.name}",
+                coordinates = mapOf("x" to landmark.coordX.toDouble(), "y" to landmark.coordY.toDouble())
+            )
+        )
+
         return instructions
     }
 
