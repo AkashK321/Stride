@@ -33,6 +33,11 @@
 name: Frontend Tests
 
 on:
+  push:
+    branches:
+      - '**'
+    paths:
+      - 'frontend/**'
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
