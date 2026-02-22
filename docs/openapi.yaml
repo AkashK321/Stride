@@ -2,21 +2,26 @@ openapi: 3.0.3
 info:
   title: Stride API
   description: |
-    REST API for the Stride application. Provides authentication endpoints
-    for user login and registration using AWS Cognito.
+    REST API and WebSocket API for the Stride application. Provides authentication endpoints
+    for user login and registration using AWS Cognito, as well as indoor navigation endpoints
+    and WebSocket connections for live navigation updates.
   version: 1.0.0
   contact:
     name: Stride Development Team
 
 servers:
   - url: https://{apiId}.execute-api.{region}.amazonaws.com/prod
-    description: Production API Gateway endpoint
+    description: Production API Gateway REST endpoint
+  - url: wss://{wsApiId}.execute-api.{region}.amazonaws.com/prod
+    description: Production WebSocket API endpoint for live navigation and object detection
 
 tags:
   - name: Authentication
     description: User authentication and registration endpoints
   - name: Items
     description: Items endpoint (placeholder)
+  - name: Navigation
+    description: Indoor navigation and search endpoints
 
 paths:
   /login:
@@ -827,8 +832,6 @@ paths:
         Changes the authenticated user's password. Requires a valid access token.
         Uses Cognito's `ChangePassword` API.
       operationId: changePassword
-      security:
-        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -929,6 +932,341 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+
+  /search:
+    get:
+      tags:
+        - Navigation
+      summary: Search landmarks
+      description: |
+        Searches landmarks (rooms, facilities) by name. Returns matching landmarks
+        with their floor number and nearest navigation node. The search is performed
+        on the `name` field in the Landmarks table using case-insensitive partial matching.
+        
+        **Implementation Notes:**
+        - Frontend should debounce search requests (e.g., 300ms delay) to reduce API calls
+        - Results are ordered by relevance (exact matches first, then partial matches)
+        - Query parameter must be at least 1 character
+      operationId: searchLandmarks
+      parameters:
+        - name: query
+          in: query
+          required: true
+          description: Search query (min 1 character). Searches the `name` field in the Landmarks table.
+          schema:
+            type: string
+            minLength: 1
+            example: "room 226"
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of results to return
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 10
+            example: 10
+      responses:
+        '200':
+          description: Search completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+              examples:
+                success:
+                  summary: Successful search results
+                  value:
+                    results:
+                      - name: "Room 226"
+                        floor_number: 2
+                        nearest_node: "r226_door"
+                      - name: "Room 224"
+                        floor_number: 2
+                        nearest_node: "r224_door"
+                      - name: "Men's Restroom 219"
+                        floor_number: 2
+                        nearest_node: "r219_door"
+        '400':
+          description: Bad request - invalid or missing query parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingQuery:
+                  summary: Missing query parameter
+                  value:
+                    error: "Query parameter 'query' is required and must be at least 1 character"
+                emptyQuery:
+                  summary: Empty query string
+                  value:
+                    error: "Query parameter 'query' is required and must be at least 1 character"
+        '401':
+          description: Unauthorized - missing or invalid authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                unauthorized:
+                  summary: Unauthorized request
+                  value:
+                    error: "Unauthorized"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                serverError:
+                  summary: Database or server error
+                  value:
+                    error: "Internal server error"
+
+  /navigation/start:
+    post:
+      tags:
+        - Navigation
+      summary: Start navigation to destination
+      description: |
+        Starts a navigation session by calculating the path from the user's specified start node
+        to the destination landmark. The backend uses A* pathfinding on MapNodes/MapEdges to
+        calculate the complete navigation path.
+        
+        **Pathfinding:**
+        - Uses A* algorithm on the navigation graph (MapEdges indexed by FloorID)
+        - Handles multi-floor paths via elevator/stair edges
+        - Returns complete path with all navigation instructions
+        
+        **Navigation Instructions:**
+        - Each step provides distance in feet and direction (north, south, east, west)
+        - Direction may be null for special cases like elevators or stairs
+        - Frontend is responsible for generating user-friendly instruction text from distance and direction
+        
+        **Coordinates:**
+        - All coordinates use feet (`x_feet`, `y_feet`)
+        - Node coordinates are at decision points (doors, intersections, corners, elevators, stairwells)
+        - Final destination coordinates are from the landmark's location
+      operationId: startNavigation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NavigationStartRequest'
+            examples:
+              validRequest:
+                summary: Valid navigation request
+                value:
+                  destination:
+                    landmark_id: "landmark_123"
+                  start_location:
+                    node_id: "staircase_main_2S01"
+      responses:
+        '200':
+          description: Navigation path calculated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NavigationStartResponse'
+              examples:
+                success:
+                  summary: Successful navigation path
+                  value:
+                    session_id: "nav_session_abc123"
+                    instructions:
+                      - step: 1
+                        distance_feet: 13.0
+                        direction: "west"
+                        node_id: "staircase_main_2S01"
+                        coordinates:
+                          x_feet: 0
+                          y_feet: 0
+                      - step: 2
+                        distance_feet: 0
+                        direction: "west"
+                        node_id: "stair_west_corner"
+                        coordinates:
+                          x_feet: -13
+                          y_feet: 0
+                      - step: 3
+                        distance_feet: 15.0
+                        direction: "west"
+                        node_id: "r226_door"
+                        coordinates:
+                          x_feet: -28
+                          y_feet: 0
+                      - step: 4
+                        distance_feet: 5.0
+                        direction: "south"
+                        node_id: "r226_door"
+                        coordinates:
+                          x_feet: -28
+                          y_feet: -5
+        '400':
+          description: Bad request - invalid destination or missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingFields:
+                  summary: Missing required fields
+                  value:
+                    error: "Destination and start_location.node_id are required"
+                invalidNodeId:
+                  summary: Invalid node ID
+                  value:
+                    error: "Invalid node ID in start_location"
+        '401':
+          description: Unauthorized - missing or invalid authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                unauthorized:
+                  summary: Unauthorized request
+                  value:
+                    error: "Unauthorized"
+        '404':
+          description: Destination not found or no path available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                destinationNotFound:
+                  summary: Destination landmark not found
+                  value:
+                    error: "Destination not found"
+                noPathAvailable:
+                  summary: No path available between start and destination
+                  value:
+                    error: "No path available to destination"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                serverError:
+                  summary: Server or pathfinding error
+                  value:
+                    error: "Internal server error"
+
+  /navigation/frame:
+    post:
+      tags:
+        - Navigation
+      summary: Send navigation frame (WebSocket)
+      description: |
+        **⚠️ WebSocket Endpoint - Not a REST endpoint**
+        
+        This is a WebSocket message exchange, not a traditional REST endpoint.
+        To use this:
+        
+        1. Connect to WebSocket: `wss://{wsApiId}.execute-api.{region}.amazonaws.com/prod`
+        2. Use route key: `"navigation"` (configured in AWS API Gateway)
+        3. Send `NavigationFrameMessage` as JSON via WebSocket
+        4. Receive `NavigationUpdateMessage` responses via WebSocket
+        
+        **Message Flow:**
+        - Client sends `NavigationFrameMessage` with camera frame, focal length, GPS, and IMU sensor data
+        - Server responds with `NavigationUpdateMessage` containing updated navigation instructions
+        - This exchange happens continuously while navigation is active (every 1-2 seconds)
+        
+        **Sensor Data:**
+        - `focal_length_pixels`: Per-device focal length for distance estimation (from hardcoded device map via `expo-device`)
+        - `gps`: GPS coordinates from `expo-location`
+        - `accelerometer`: Raw accelerometer data from `expo-sensors`
+        - `gyroscope`: Raw gyroscope data from `expo-sensors`
+        - `heading_degrees`: Device compass heading from `expo-location` or `expo-sensors`
+        
+        **Connection:**
+        - WebSocket URL: `wss://{wsApiId}.execute-api.{region}.amazonaws.com/prod`
+        - Route: `"navigation"` (configured in CDK stack)
+        - Protocol: JSON messages over WebSocket
+      operationId: sendNavigationFrame
+      requestBody:
+        required: true
+        description: Navigation frame message sent via WebSocket
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NavigationFrameMessage'
+            examples:
+              navigationFrame:
+                summary: Navigation frame with image, focal length, GPS, and IMU sensors
+                value:
+                  session_id: "nav_session_abc123"
+                  image_base64: "<base64-encoded-image>"
+                  focal_length_pixels: 1435.2
+                  heading_degrees: 270.0
+                  gps:
+                    latitude: 39.1653
+                    longitude: -86.5264
+                    altitude: 230.5
+                    accuracy: 5.0
+                    altitude_accuracy: 10.0
+                    speed: 1.2
+                  accelerometer:
+                    x: 0.1
+                    y: 0.0
+                    z: 9.8
+                  gyroscope:
+                    x: 0.01
+                    y: -0.02
+                    z: 0.005
+                  timestamp_ms: 1739052345123
+                  request_id: 42
+      responses:
+        '200':
+          description: Navigation update response (sent via WebSocket)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/NavigationUpdateMessage'
+                  - $ref: '#/components/schemas/NavigationErrorMessage'
+                  - $ref: '#/components/schemas/NavigationCompleteMessage'
+              examples:
+                navigationUpdate:
+                  summary: Regular navigation update
+                  value:
+                    type: "navigation_update"
+                    session_id: "nav_session_abc123"
+                    current_step: 2
+                    remaining_instructions:
+                      - step: 2
+                        distance_feet: 5.0
+                        direction: "west"
+                        node_id: "stair_west_corner"
+                        coordinates:
+                          x_feet: -13
+                          y_feet: 0
+                    estimated_position:
+                      node_id: "stair_west_corner"
+                      coordinates:
+                        x_feet: -13
+                        y_feet: 0
+                    confidence: 0.87
+                navigationComplete:
+                  summary: Navigation completed
+                  value:
+                    type: "navigation_complete"
+                    session_id: "nav_session_abc123"
+                    message: "You have arrived at Room 226"
+                navigationError:
+                  summary: Navigation error
+                  value:
+                    type: "navigation_error"
+                    session_id: "nav_session_abc123"
+                    error: "Invalid or expired session_id"
 
 components:
   securitySchemes:
@@ -1060,3 +1398,410 @@ components:
           type: string
           description: Error message describing what went wrong
           example: "Invalid username or password"
+
+    SearchResponse:
+      type: object
+      required:
+        - results
+      properties:
+        results:
+          type: array
+          description: List of matching landmarks
+          items:
+            $ref: '#/components/schemas/LandmarkResult'
+
+    LandmarkResult:
+      type: object
+      required:
+        - name
+        - floor_number
+        - nearest_node
+      properties:
+        name:
+          type: string
+          description: Landmark name (e.g., "Room 226", "Men's Restroom 219")
+          example: "Room 226"
+        floor_number:
+          type: integer
+          description: Floor number where the landmark is located
+          example: 2
+        nearest_node:
+          type: string
+          description: Node ID of the nearest navigation node (used for pathfinding)
+          example: "r226_door"
+
+    NavigationStartRequest:
+      type: object
+      required:
+        - destination
+        - start_location
+      properties:
+        destination:
+          type: object
+          required:
+            - landmark_id
+          properties:
+            landmark_id:
+              type: string
+              description: ID of the destination landmark
+              example: "landmark_123"
+        start_location:
+          type: object
+          required:
+            - node_id
+          properties:
+            node_id:
+              type: string
+              description: Node ID where navigation starts
+              example: "staircase_main_2S01"
+
+    NavigationStartResponse:
+      type: object
+      required:
+        - session_id
+        - instructions
+      properties:
+        session_id:
+          type: string
+          description: Unique session ID for this navigation instance
+          example: "nav_session_abc123"
+        instructions:
+          type: array
+          description: List of turn-by-turn navigation instructions
+          items:
+            $ref: '#/components/schemas/NavigationInstruction'
+    NavigationInstruction:
+      type: object
+      required:
+        - step
+        - distance_feet
+        - direction
+        - node_id
+        - coordinates
+      properties:
+        step:
+          type: integer
+          description: Step number in the navigation sequence
+          example: 1
+        distance_feet:
+          type: number
+          description: Distance to travel in feet for this step
+          example: 13.0
+        direction:
+          type: string
+          nullable: true
+          description: |
+            Direction to walk for this step. Cardinal directions: "north", "south", "east", "west".
+            May be null for special cases like elevators or stairs where direction is not applicable.
+          enum:
+            - north
+            - south
+            - east
+            - west
+          example: "west"
+        node_id:
+          type: string
+          description: Node ID associated with this step
+          example: "staircase_main_2S01"
+        coordinates:
+          type: object
+          required:
+            - x_feet
+            - y_feet
+          description: Coordinates of this step in feet
+          properties:
+            x_feet:
+              type: number
+              description: X coordinate in feet
+              example: 0
+            y_feet:
+              type: number
+              description: Y coordinate in feet
+              example: 0
+
+    PathNode:
+      type: object
+      required:
+        - node_id
+        - coordinates
+      properties:
+        node_id:
+          type: string
+          description: Node ID
+          example: "staircase_main_2S01"
+        coordinates:
+          type: object
+          required:
+            - x_feet
+            - y_feet
+          description: Node coordinates in feet
+          properties:
+            x_feet:
+              type: number
+              description: X coordinate in feet
+              example: 0
+            y_feet:
+              type: number
+              description: Y coordinate in feet
+              example: 0
+
+    NavigationFrameMessage:
+      type: object
+      description: |
+        Client → Server WebSocket message for live navigation.
+        Sent on the WebSocket route (e.g., "navigation" or "frame") to provide a new
+        camera frame plus sensor data so the backend can localize the user and update
+        navigation instructions.
+        
+        **Note:** Routing is handled by AWS API Gateway WebSocket route keys configured
+        in the infrastructure (e.g., "navigation" route). The message itself does not
+        need an action field for routing.
+        
+        **Sensor Data Sources (Expo):**
+        - `focal_length_pixels`: Computed on the frontend from a hardcoded device model → focal length map
+          using `expo-device` to detect the device. Focal length in mm and sensor width in mm are mapped
+          per device, then converted to pixels: `f_pixels = (f_mm / sensor_width_mm) * image_width_pixels`.
+        - `gps`: From `expo-location` (`Location.getCurrentPositionAsync` or `Location.watchPositionAsync`).
+        - `accelerometer`: From `expo-sensors` (`Accelerometer`).
+        - `gyroscope`: From `expo-sensors` (`Gyroscope`).
+        - `heading_degrees`: From `expo-location` (`Location.watchHeadingAsync`) or `expo-sensors` (`Magnetometer`).
+      required:
+        - session_id
+        - image_base64
+        - heading_degrees
+        - accelerometer
+        - gyroscope
+        - focal_length_pixels
+        - request_id
+      properties:
+        session_id:
+          type: string
+          description: Active navigation session ID from /navigation/start
+          example: "nav_session_abc123"
+        image_base64:
+          type: string
+          description: JPEG/PNG frame encoded as base64
+          format: byte
+          example: "<base64-encoded-image>"
+        focal_length_pixels:
+          type: number
+          description: |
+            Camera focal length in pixels, used for distance estimation.
+            Computed on the frontend from a per-device hardcoded map:
+            `f_pixels = (f_mm / sensor_width_mm) * image_width_pixels`.
+            The device model is detected via `expo-device` (`Device.modelName`).
+            If the device is not in the map, a reasonable default should be used.
+          example: 1435.2
+        heading_degrees:
+          type: number
+          description: |
+            User heading from device sensors, in degrees (0–360),
+            where 0/360 = north, 90 = east, 180 = south, 270 = west.
+            Source: `expo-location` heading or `expo-sensors` magnetometer.
+          example: 270.0
+        gps:
+          type: object
+          description: |
+            GPS location data from `expo-location`. Provides the device's current
+            geographic position. May be used for initial localization or as a
+            supplementary signal for indoor positioning.
+          required:
+            - latitude
+            - longitude
+          properties:
+            latitude:
+              type: number
+              description: Latitude in decimal degrees (WGS84)
+              example: 39.1653
+            longitude:
+              type: number
+              description: Longitude in decimal degrees (WGS84)
+              example: -86.5264
+            altitude:
+              type: number
+              nullable: true
+              description: Altitude in meters above sea level (may be null if unavailable)
+              example: 230.5
+            accuracy:
+              type: number
+              nullable: true
+              description: Horizontal accuracy radius in meters (may be null if unavailable)
+              example: 5.0
+            altitude_accuracy:
+              type: number
+              nullable: true
+              description: Vertical accuracy in meters (may be null if unavailable)
+              example: 10.0
+            speed:
+              type: number
+              nullable: true
+              description: Speed in meters per second (may be null if unavailable)
+              example: 1.2
+        accelerometer:
+          type: object
+          description: |
+            Raw accelerometer readings from `expo-sensors` (`Accelerometer`).
+            Measures acceleration force along three axes including gravity.
+          required:
+            - x
+            - y
+            - z
+          properties:
+            x:
+              type: number
+              description: Acceleration on X axis (m/s²)
+              example: 0.1
+            y:
+              type: number
+              description: Acceleration on Y axis (m/s²)
+              example: 0.0
+            z:
+              type: number
+              description: Acceleration on Z axis (m/s²)
+              example: 9.8
+        gyroscope:
+          type: object
+          description: |
+            Raw gyroscope readings from `expo-sensors` (`Gyroscope`).
+            Measures rotation rate around three axes in radians per second.
+          required:
+            - x
+            - y
+            - z
+          properties:
+            x:
+              type: number
+              description: Rotation rate around X axis (rad/s)
+              example: 0.01
+            y:
+              type: number
+              description: Rotation rate around Y axis (rad/s)
+              example: -0.02
+            z:
+              type: number
+              description: Rotation rate around Z axis (rad/s)
+              example: 0.005
+        timestamp_ms:
+          type: integer
+          description: Client-side timestamp in milliseconds since epoch
+          example: 1739052345123
+        request_id:
+          type: integer
+          description: |
+            Unique request identifier for latency tracking. Generated by the client
+            and echoed back by the server in the response. Used to match request/response
+            pairs and calculate round-trip latency.
+          example: 42
+
+    NavigationUpdateMessage:
+      type: object
+      description: |
+        Server → Client WebSocket message containing an updated estimate of the
+        user's location and the remaining navigation instructions.
+      required:
+        - type
+        - session_id
+        - current_step
+        - remaining_instructions
+      properties:
+        type:
+          type: string
+          description: Message type
+          enum:
+            - navigation_update
+          example: "navigation_update"
+        session_id:
+          type: string
+          description: Navigation session ID
+          example: "nav_session_abc123"
+        current_step:
+          type: integer
+          description: Index (1-based) of the step the user is currently on
+          example: 2
+        remaining_instructions:
+          type: array
+          description: Updated instructions from the current step onward
+          items:
+            $ref: '#/components/schemas/NavigationInstruction'
+        estimated_position:
+          type: object
+          description: Backend's best estimate of the user's current position
+          required:
+            - node_id
+            - coordinates
+          properties:
+            node_id:
+              type: string
+              description: Closest navigation node to the estimated position
+              example: "stair_west_corner"
+            coordinates:
+              type: object
+              required:
+                - x_feet
+                - y_feet
+              properties:
+                x_feet:
+                  type: number
+                  description: Estimated X coordinate in feet
+                  example: -13
+                y_feet:
+                  type: number
+                  description: Estimated Y coordinate in feet
+                  example: 0
+        confidence:
+          type: number
+          description: Confidence in the localization result (0–1)
+          example: 0.87
+        request_id:
+          type: integer
+          description: |
+            Echoed request identifier from the client's NavigationFrameMessage.
+            Used by the client to match request/response pairs and calculate latency.
+          example: 42
+        message:
+          type: string
+          description: Optional text summary for debugging or logging
+          example: "You are near the west staircase intersection"
+
+    NavigationErrorMessage:
+      type: object
+      description: Server → Client WebSocket error message for navigation sessions.
+      required:
+        - type
+        - session_id
+        - error
+      properties:
+        type:
+          type: string
+          enum:
+            - navigation_error
+          example: "navigation_error"
+        session_id:
+          type: string
+          description: Navigation session ID associated with the error
+          example: "nav_session_abc123"
+        error:
+          type: string
+          description: Error message describing what went wrong
+          example: "Invalid or expired session_id"
+
+    NavigationCompleteMessage:
+      type: object
+      description: Server → Client WebSocket message indicating navigation is complete.
+      required:
+        - type
+        - session_id
+      properties:
+        type:
+          type: string
+          enum:
+            - navigation_complete
+          example: "navigation_complete"
+        session_id:
+          type: string
+          description: Navigation session ID
+          example: "nav_session_abc123"
+        message:
+          type: string
+          description: Optional human-readable completion message
+          example: "You have arrived at Room 226"

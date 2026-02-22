@@ -581,6 +581,8 @@ class AuthHandlerTest {
         // If not 400, that's fine - normalization passed
     }
 
+    // Normalization tests (whitespace trimming)
+
     @Test
     @DisplayName("Register with phoneNumber having whitespace is trimmed")
     fun `register phoneNumber with whitespace is trimmed`(envVars: EnvironmentVariables) {

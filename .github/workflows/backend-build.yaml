@@ -195,5 +195,6 @@ jobs:
     uses: ./.github/workflows/infrastructure-deploy.yaml
     with:
       jar_artifact_name: ${{ needs.build.outputs.artifact_name }}
+      branch_name: ${{ github.head_ref || github.ref_name }}
     secrets: inherit
   

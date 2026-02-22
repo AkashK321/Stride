@@ -205,41 +205,98 @@ class ObjectDetectionHandler (
             return APIGatewayV2WebSocketResponse().apply { statusCode = 400 }
         }
 
+        // Default focal length — overridden by payload if provided
+        var focalLength = 800.0
+        var requestId: Int
+
         try {
             logger.log("Parsing JSON body...")
             val jsonMap = mapper.readValue(rawData, Map::class.java)
-            val imageBase64 = jsonMap["body"] as? String ?: ""
+
+            // Validate required request_id field FIRST
+            val requestIdValue = (jsonMap["request_id"] as? Number)?.toInt()
+            if (requestIdValue == null) {
+                logger.log("ERROR: Missing required field 'request_id'")
+                val errorResponse = mapper.writeValueAsString(
+                    mapOf("error" to "Missing required field: request_id")
+                )
+                val postRequest = PostToConnectionRequest.builder()
+                    .connectionId(connectionId)
+                    .data(SdkBytes.fromByteArray(errorResponse.toByteArray()))
+                    .build()
+                apiClient.postToConnection(postRequest)
+                return APIGatewayV2WebSocketResponse().apply { statusCode = 400 }
+            }
+            requestId = requestIdValue
+            logger.log("Request ID: $requestId")
+
+            // Support new schema (image_base64) with fallback to legacy (body)
+            val imageBase64 = (jsonMap["image_base64"] as? String)
+                ?: (jsonMap["body"] as? String)
+                ?: ""
+
+            // Extract focal_length_pixels from new payload schema
+            val payloadFocalLength = (jsonMap["focal_length_pixels"] as? Number)?.toDouble()
+            if (payloadFocalLength != null && payloadFocalLength > 0) {
+                focalLength = payloadFocalLength
+                logger.log("Using focal length from payload: $focalLength")
+            } else {
+                logger.log("Using default focal length: $focalLength")
+            }
+
+            // Log optional sensor data for debugging (don't fail if missing)
+            val sessionId = jsonMap["session_id"] as? String
+            val headingDegrees = (jsonMap["heading_degrees"] as? Number)?.toDouble()
+            val timestampMs = (jsonMap["timestamp_ms"] as? Number)?.toLong()
+            if (sessionId != null) logger.log("Session: $sessionId")
+            if (headingDegrees != null) logger.log("Heading: ${headingDegrees}°")
+            if (timestampMs != null) logger.log("Client timestamp: $timestampMs")
+
             logger.log("Base64 string length: ${imageBase64.length}")
 
             if (imageBase64.isNotEmpty()) {
-                logger.log("Decoding base64...")
-                imageBytes = Base64.getDecoder().decode(imageBase64)
-                logger.log("Decoded image size: ${imageBytes.size} bytes")
+                try {
+                    logger.log("Decoding base64...")
+                    imageBytes = Base64.getDecoder().decode(imageBase64)
+                    logger.log("Decoded image size: ${imageBytes.size} bytes")
 
-                // Check Magic Bytes for JPEG (First 2 bytes are FF D8)
-                val isJpeg = imageBytes.size > 2 && 
-                    imageBytes[0] == 0xFF.toByte() && 
-                    imageBytes[1] == 0xD8.toByte()
-                
-                // Check Magic Bytes for PNG (First 8 bytes are 89 50 4E 47 0D 0A 1A 0A)
-                val isPng = imageBytes.size > 8 &&
-                    imageBytes[0] == 0x89.toByte() &&
-                    imageBytes[1] == 0x50.toByte() &&  // P
-                    imageBytes[2] == 0x4E.toByte() &&  // N
-                    imageBytes[3] == 0x47.toByte()     // G
+                    // Check Magic Bytes for JPEG (First 2 bytes are FF D8)
+                    val isJpeg = imageBytes.size > 2 && 
+                        imageBytes[0] == 0xFF.toByte() && 
+                        imageBytes[1] == 0xD8.toByte()
+                    
+                    // Check Magic Bytes for PNG (First 8 bytes are 89 50 4E 47 0D 0A 1A 0A)
+                    val isPng = imageBytes.size > 8 &&
+                        imageBytes[0] == 0x89.toByte() &&
+                        imageBytes[1] == 0x50.toByte() &&  // P
+                        imageBytes[2] == 0x4E.toByte() &&  // N
+                        imageBytes[3] == 0x47.toByte()     // G
 
-                if (isJpeg) {
-                    logger.log("Valid JPEG Frame detected. Size: ${imageBytes.size}")
-                    validImage = true
-                } else if (isPng) {
-                    logger.log("Valid PNG Frame detected. Size: ${imageBytes.size}")
-                    validImage = true
-                } else {
-                    logger.log("Data received, but header is not JPEG or PNG.")
+                    if (isJpeg) {
+                        logger.log("Valid JPEG Frame detected. Size: ${imageBytes.size}")
+                        validImage = true
+                    } else if (isPng) {
+                        logger.log("Valid PNG Frame detected. Size: ${imageBytes.size}")
+                        validImage = true
+                    } else {
+                        logger.log("Data received, but header is not JPEG or PNG.")
+                    }
+                } catch (e: IllegalArgumentException) {
+                    logger.log("Error: Payload is not valid Base64. ${e.message}")
                 }
             }
-        } catch (e: IllegalArgumentException) {
-            logger.log("Error: Payload is not valid Base64. ${e.message}")
+        } catch (e: Exception) {
+            // If JSON parsing fails, we can't validate request_id, so return error
+            logger.log("Error: Failed to parse JSON body. ${e.message}")
+            val errorResponse = mapper.writeValueAsString(
+                mapOf("error" to "Invalid JSON payload")
+            )
+            val postRequest = PostToConnectionRequest.builder()
+                .connectionId(connectionId)
+                .data(SdkBytes.fromByteArray(errorResponse.toByteArray()))
+                .build()
+            apiClient.postToConnection(postRequest)
+            return APIGatewayV2WebSocketResponse().apply { statusCode = 400 }
         }
 
         if (featureFlagsTableClient.getStringItem(itemName = "enable_sagemaker_inference") == true) {
@@ -259,10 +316,12 @@ class ObjectDetectionHandler (
                 )
             }
 
+            // Build response payload, always including request_id
             val responsePayload = mapOf(
                 "frameSize" to imageBytes.size,
                 "valid" to validImage,
-                "estimatedDistances" to distancesList
+                "estimatedDistances" to distancesList,
+                "request_id" to requestId
             )
 
             val responseMessage = mapper.writeValueAsString(responsePayload)
