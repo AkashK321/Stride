@@ -2,7 +2,7 @@
 
 This directory contains the CDK app for a two-stack architecture:
 
-- `StrideSharedStack`: persistent shared infrastructure (SageMaker now, RDS later)
+- `StrideSharedStack`: persistent shared infrastructure (SageMaker + RDS)
 - `StrideStack-{branch}`: branch-specific app infrastructure (Lambda/API/Cognito/DynamoDB)
 
 ## One-time setup
@@ -101,3 +101,4 @@ BRANCH_NAME=main cdk -a "python3 app.py" synth StrideSharedStack
 - Do not destroy `StrideSharedStack` from CI/CD.
 - Avoid `cdk deploy --all` for automated pipelines.
 - Shared SageMaker endpoint incurs cost while running.
+- Shared RDS instance incurs cost while running.
