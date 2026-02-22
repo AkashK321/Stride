@@ -92,6 +92,7 @@ cdk -a "python3 app.py" ls
 
 Synthesize one stack:
 
+
 ```bash
 BRANCH_NAME=main cdk -a "python3 app.py" synth StrideSharedStack
 ```
