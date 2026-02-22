@@ -1,5 +1,6 @@
-// Extend expect with RNTL matchers
-require("@testing-library/jest-native/extend-expect");
+// Note: @testing-library/jest-native is deprecated.
+// Matchers are built into @testing-library/react-native v12.4+
+// No need to extend expect - matchers are available automatically
 
 // --- Native module mocks ---
 
