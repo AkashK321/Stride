@@ -3,26 +3,27 @@
 # ============================================================================
 #
 # PURPOSE:
-#   Run frontend unit tests on pull requests. This workflow runs independently
-#   from pr-validation.yaml to keep test execution separate from static analysis.
+#   Run frontend unit tests on push events to branches. This workflow runs
+#   on pushes to provide fast feedback during development. PR validation
+#   is handled by pr-validation.yaml.
 #
 # TRIGGERS:
-#   1. Pull request events:
-#      - Types: opened, synchronize, reopened
-#      - Paths: frontend/**
+#   1. Push events:
+#      - Branches: all branches
+#      - Paths: frontend/**, .github/workflows/**
 #      - Runs: Frontend Unit Tests
 #
 # WORKFLOW FLOW:
-#   Pull Request Event (opened/updated)
+#   Push Event (to any branch)
 #       ↓
 #   frontend-tests runs
 #       ↓
 #   [Install Dependencies] → [Run Unit Tests] → [Publish Test Results]
 #       ↓
-#   [Test results visible on PR]
+#   [Test results visible on commit]
 #
 # OUTPUTS:
-#   - Test results (published to GitHub PR checks)
+#   - Test results (published to GitHub commit checks)
 #   - Coverage reports (if configured)
 #
 # DEPENDENCIES:
@@ -39,11 +40,6 @@ on:
     paths:
       - 'frontend/**'
       - '.github/workflows/**'
-  pull_request:
-    types: [opened, synchronize, reopened]
-    paths:
-      - 'frontend/**'
-      - '.github/workflows/**'
 
 # Permissions required for test-reporter
 permissions:
@@ -51,9 +47,9 @@ permissions:
   checks: write      # Required for test-reporter to create check runs
   pull-requests: write  # Required for PR comments (if test-reporter adds them)
 
-# Prevent multiple concurrent runs on the same PR
+# Prevent multiple concurrent runs on the same branch
 concurrency:
-  group: frontend-tests-${{ github.event.pull_request.number }}
+  group: frontend-tests-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -66,10 +62,6 @@ jobs:
       # Step 1: Checkout the repository code
       - name: Checkout code
         uses: actions/checkout@v4
-        # Checkout the PR branch (head ref), not the merge commit
-        # This ensures we test the PR code, not merged code
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
       
       # Step 2: Set up Node.js 20 with npm cache
       - name: Set up Node.js
