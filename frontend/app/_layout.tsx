@@ -23,11 +23,11 @@ import { colors } from "../theme/colors";
 function AppContent() {
   const { isLoading } = useAuth();
 
-  // Setup automatic token refresh
-  React.useEffect(() => {
-    const cleanup = setupAutoRefresh(5); // Check every 5 minutes
-    return cleanup;
-  }, []);
+  // TODO: Re-enable automatic token refresh once the /refresh endpoint is implemented.
+  // React.useEffect(() => {
+  //   const cleanup = setupAutoRefresh(5); // Check every 5 minutes
+  //   return cleanup;
+  // }, []);
 
   // Show loading screen while checking authentication
   if (isLoading) {

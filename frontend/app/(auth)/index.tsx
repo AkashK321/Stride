@@ -24,7 +24,7 @@ import { useAuth } from "../../contexts/AuthContext";
 
 export default function Landing() {
   const router = useRouter();
-  const { login: authLogin } = useAuth();
+  const { login: authLogin, devBypass } = useAuth();
   const usernameRef = React.useRef<TextInput>(null);
   const passwordRef = React.useRef<TextInput>(null);
   const [username, setUsername] = React.useState("");
@@ -83,6 +83,25 @@ export default function Landing() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleDevBypass = () => {
+    Alert.alert(
+      "Developer Mode Active",
+      "You are in developer bypass mode. There is no live backend endpoint configured.\n\n" +
+        "To test with a live backend, you must:\n" +
+        "1. Deploy the backend stack\n" +
+        "2. Log in with valid credentials\n\n" +
+        "Frontend-only features can be tested without a backend.",
+      [
+        {
+          text: "OK",
+          onPress: () => {
+            devBypass();
+          },
+        },
+      ]
+    );
   };
 
   return React.createElement(
@@ -229,7 +248,47 @@ export default function Landing() {
           accessibilityLabel: "Create an account",
           accessibilityRole: "button",
           accessibilityHint: "Navigate to the registration screen to create a new account",
-        })
+        }),
+        // Developer bypass button - only visible in development builds
+        __DEV__ && React.createElement(
+          View,
+          {
+            style: {
+              marginTop: spacing.xl * 2,
+              width: "100%",
+              borderTopWidth: 1,
+              borderTopColor: colors.placeholder,
+              paddingTop: spacing.lg,
+              alignItems: "center",
+            },
+          },
+          React.createElement(
+            Text,
+            {
+              style: {
+                ...typography.body,
+                color: colors.textSecondary,
+                marginBottom: spacing.sm,
+                fontSize: 12,
+              },
+            },
+            "Development Only"
+          ),
+          React.createElement(Button, {
+            onPress: handleDevBypass,
+            title: "Developer Bypass",
+            variant: "secondary",
+            size: "small",
+            style: {
+              borderStyle: "dashed" as any,
+              borderWidth: 1,
+              borderColor: colors.secondary,
+            },
+            accessibilityLabel: "Developer bypass login",
+            accessibilityRole: "button",
+            accessibilityHint: "Skip authentication and enter the app in developer mode. No backend endpoints will be available.",
+          }),
+        ),
       )
     ),
   );

@@ -209,6 +209,11 @@ jobs:
 
           echo "Destroying stack: $STACK_NAME"
 
+          if [ "$STACK_NAME" == "StrideSharedStack" ]; then
+            echo "ERROR: Cannot destroy shared persistent stack!"
+            exit 1
+          fi
+
           # Use AWS CLI to delete the stack directly (avoids CDK app.py issues)
           # This is more reliable since we already know the exact stack name
           if aws cloudformation delete-stack \

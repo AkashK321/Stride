@@ -87,7 +87,7 @@ class ObjectDetectionHandlerTest {
                 domainName = "test.api"
                 stage = "prod"
             }
-            body = """{"action":"frame", "body":"$base64Image"}"""
+            body = """{"action":"frame", "body":"$base64Image", "request_id": 1}"""
         }
 
         // --- WHEN ---
@@ -104,5 +104,33 @@ class ObjectDetectionHandlerTest {
 
         // Distance Formula: (RealHeight(1.7) * Focal(800)) / PixelHeight(640) = 2.125
         assertTrue(resultJson.contains("2.125"), "Expected distance 2.125 not found in response")
+        assertTrue(resultJson.contains("\"request_id\":1"), "Expected request_id in response")
+    }
+
+    @Test
+    fun `handleRequest should return error when request_id is missing`() {
+        val event = APIGatewayV2WebSocketEvent().apply {
+            requestContext = RequestContext().apply {
+                connectionId = "test-conn-id"
+                domainName = "test.api"
+                stage = "prod"
+                routeKey = "frame"
+            }
+            body = """{"action":"frame", "body":"dGVzdA=="}"""
+        }
+
+        // --- WHEN ---
+        val response = handler.handleRequest(event, mockContext)
+
+        // --- THEN ---
+        assertTrue(response.statusCode == 400, "Expected 400 status code for missing request_id")
+        
+        // Verify error response was sent
+        val apiSlot = slot<PostToConnectionRequest>()
+        verify { mockApiGateway.postToConnection(capture(apiSlot)) }
+        
+        val resultJson = apiSlot.captured.data().asUtf8String()
+        assertTrue(resultJson.contains("Missing required field: request_id"), 
+            "Expected error message about missing request_id")
     }
 }

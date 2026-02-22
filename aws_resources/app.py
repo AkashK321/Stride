@@ -7,6 +7,7 @@ import sys
 import aws_cdk as cdk
 
 from cdk.cdk_stack import CdkStack
+from cdk.shared_stack import SharedPersistentStack
 
 
 def get_current_branch():
@@ -63,6 +64,14 @@ def get_current_branch():
         sys.exit(1)
 
 
+def get_branch_for_stack_name():
+    """Resolve branch from env first, then fallback to git."""
+    branch_from_env = os.getenv("BRANCH_NAME")
+    if branch_from_env:
+        return branch_from_env
+    return get_current_branch()
+
+
 def sanitize_branch_name(branch_name):
     """
     Sanitize branch name for CloudFormation stack naming.
@@ -74,7 +83,7 @@ def sanitize_branch_name(branch_name):
     branch_lower = branch_name.lower()
 
     # Special handling for main branch: use production stack name
-    if branch_lower in ("main"):
+    if branch_lower in ("main", "master"):
         return "StrideStack"
 
     # Enforce branch naming convention: <tag>/<issue-number>-<description>
@@ -100,9 +109,7 @@ def sanitize_branch_name(branch_name):
         print("  4. Have a hyphen '-'")
         print("  5. Have a description (at least one character)")
         print()
-        print(
-            "Exception: 'main' or 'master' branch is allowed for production deployments."
-        )
+        print("Exception: 'main' or 'master' branch is allowed for production deployments.")
         sys.exit(1)
 
     tag, issue_num, description = match.groups()
@@ -131,17 +138,22 @@ def sanitize_branch_name(branch_name):
     return f"StrideStack-{sanitized}"
 
 
-app = cdk.App()
+def main():
+    app = cdk.App()
 
-# Get branch name from git
-branch_name = get_current_branch()
-stack_name = sanitize_branch_name(branch_name)
-print(f"Branch Name: {branch_name}")
-print(f"Stack Name: {stack_name}")
+    branch_name = get_branch_for_stack_name()
+    stack_name = sanitize_branch_name(branch_name)
+    print(f"Branch Name: {branch_name}")
+    print(f"Stack Name: {stack_name}")
 
-# Use AWS standard environment variables with fallback
-region = os.getenv("AWS_DEFAULT_REGION") or os.getenv("AWS_REGION") or "us-east-1"
+    region = os.getenv("AWS_DEFAULT_REGION") or os.getenv("AWS_REGION") or "us-east-1"
+    env = cdk.Environment(account=os.getenv("CDK_DEFAULT_ACCOUNT"), region=region)
 
-CdkStack(app, stack_name, env=cdk.Environment(account=os.getenv("CDK_DEFAULT_ACCOUNT"), region=region))
+    SharedPersistentStack(app, "StrideSharedStack", env=env)
+    CdkStack(app, stack_name, env=env)
 
-app.synth()
+    app.synth()
+
+
+if __name__ == "__main__":
+    main()

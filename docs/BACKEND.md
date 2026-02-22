@@ -15,7 +15,7 @@ To install python dependencies, run:
 ```bash
 pip install -r requirements.txt
 ```
-Note: you should notice files from the pg8000 package installed to ../aws_resources/schema_initializer, this is because the lambda environment can't install this package at runtime.
+Note: Make sure to install the schema_intializer requirements to the schema_initializer directory if you are trying to run a manual aws deployment.
 
 Note: gradle -version should show something like this:  
 Launcher JVM:  21.0.9 (Microsoft 21.0.9+10-LTS)  

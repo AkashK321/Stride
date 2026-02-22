@@ -1,6 +1,6 @@
 """
 Integration tests for the authentication API endpoints.
-Tests the deployed login endpoint.
+Tests the deployed login and register endpoints.
 """
 import os
 import pytest

@@ -101,6 +101,8 @@ Stride/
 
 Our frontend is built using React Native with Expo. We follow the file structure detailed by Expo Router for organizing screens and navigation. For more information, refer to the [Expo Router Documentation](https://docs.expo.dev/router/introduction/).
 
+For frontend setup instructions, environment variable configuration, connecting to a live backend, and the developer bypass feature, see [FRONTEND.md](./FRONTEND.md).
+
 #### Backend
 
 The backend infrastructure is created using AWS CDK in Python with the core backend lambda handler created in Kotlin to achieve better runtime performance.
