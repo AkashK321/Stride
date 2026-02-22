@@ -156,6 +156,63 @@ This allows frontend developers to iterate on UI/UX without deploying a backend 
 - **Linting:** `npm run lint`
 - **Type checking:** TypeScript is configured and will show errors in your IDE
 
+<<<<<<< app/129-setup-jest-react-native-testing
+## Testing
+
+The frontend uses **Jest** and **React Native Testing Library** for unit and component testing.
+
+### Running Tests
+
+```bash
+cd frontend
+npm test              # Run all tests once
+npm run test:watch    # Run tests in watch mode (auto-reruns on file changes)
+npm run test:coverage # Run tests with coverage report
+```
+
+### Writing Tests
+
+**Test files should be placed in the `__tests__/` directory** at the root of the `frontend/` folder:
+
+- `frontend/__tests__/` directory (e.g., `frontend/__tests__/Button.test.tsx`, `frontend/__tests__/tokenStorage.test.ts`)
+
+This keeps all tests organized in one location and makes it easy to find and maintain test files.
+
+**Example component test:**
+```typescript
+import { render, screen, fireEvent } from '@testing-library/react-native';
+import { Button } from '@/components/Button';
+
+describe('Button', () => {
+  it('calls onPress when pressed', () => {
+    const onPress = jest.fn();
+    render(<Button title="Test" onPress={onPress} />);
+    fireEvent.press(screen.getByText('Test'));
+    expect(onPress).toHaveBeenCalled();
+  });
+});
+```
+
+**Example service test:**
+```typescript
+import { storeTokens, getAccessToken } from '@/services/tokenStorage';
+
+describe('tokenStorage', () => {
+  it('stores and retrieves tokens', async () => {
+    await storeTokens({ accessToken: 'token123', idToken: 'id123', refreshToken: 'refresh123' });
+    const token = await getAccessToken();
+    expect(token).toBe('token123');
+  });
+});
+```
+
+### What's Already Configured
+
+- Native modules are automatically mocked (`expo-secure-store`, `expo-router`, `react-native-reanimated`, etc.)
+- React Native components can be tested without a device/simulator
+- Path aliases (`@/`) work in test files
+- TypeScript and JSX are automatically transformed
+=======
 ### Development CSV Logger
 
 The dev logger is a development-only tool that logs WebSocket responses to CSV files on your laptop for analysis. This is useful for debugging latency, response patterns, and object detection results.
@@ -253,6 +310,7 @@ Both tabs use syntax-highlighted JSON formatting with color-coded keys, strings,
 #### Frame Counter
 
 A header displays the total number of frames sent during the current session.
+>>>>>>> main
 
 ## Building
 
