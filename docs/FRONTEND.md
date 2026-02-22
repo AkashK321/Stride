@@ -158,9 +158,11 @@ npm run test:coverage # Run tests with coverage report
 
 ### Writing Tests
 
-Test files can be placed in two locations:
-- `__tests__/` directory (e.g., `__tests__/Button.test.tsx`)
-- Next to source files with `.test.ts` or `.test.tsx` extension (e.g., `components/Button/Button.test.tsx`)
+**Test files should be placed in the `__tests__/` directory** at the root of the `frontend/` folder:
+
+- `frontend/__tests__/` directory (e.g., `frontend/__tests__/Button.test.tsx`, `frontend/__tests__/tokenStorage.test.ts`)
+
+This keeps all tests organized in one location and makes it easy to find and maintain test files.
 
 **Example component test:**
 ```typescript
