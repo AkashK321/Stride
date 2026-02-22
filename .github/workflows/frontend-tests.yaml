@@ -38,6 +38,7 @@ on:
       - '**'
     paths:
       - 'frontend/**'
+      - '.github/workflows/**'
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
