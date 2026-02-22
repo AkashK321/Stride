@@ -143,6 +143,60 @@ This allows frontend developers to iterate on UI/UX without deploying a backend 
 - **Linting:** `npm run lint`
 - **Type checking:** TypeScript is configured and will show errors in your IDE
 
+## Testing
+
+The frontend uses **Jest** and **React Native Testing Library** for unit and component testing.
+
+### Running Tests
+
+```bash
+cd frontend
+npm test              # Run all tests once
+npm run test:watch    # Run tests in watch mode (auto-reruns on file changes)
+npm run test:coverage # Run tests with coverage report
+```
+
+### Writing Tests
+
+Test files can be placed in two locations:
+- `__tests__/` directory (e.g., `__tests__/Button.test.tsx`)
+- Next to source files with `.test.ts` or `.test.tsx` extension (e.g., `components/Button/Button.test.tsx`)
+
+**Example component test:**
+```typescript
+import { render, screen, fireEvent } from '@testing-library/react-native';
+import { Button } from '@/components/Button';
+
+describe('Button', () => {
+  it('calls onPress when pressed', () => {
+    const onPress = jest.fn();
+    render(<Button title="Test" onPress={onPress} />);
+    fireEvent.press(screen.getByText('Test'));
+    expect(onPress).toHaveBeenCalled();
+  });
+});
+```
+
+**Example service test:**
+```typescript
+import { storeTokens, getAccessToken } from '@/services/tokenStorage';
+
+describe('tokenStorage', () => {
+  it('stores and retrieves tokens', async () => {
+    await storeTokens({ accessToken: 'token123', idToken: 'id123', refreshToken: 'refresh123' });
+    const token = await getAccessToken();
+    expect(token).toBe('token123');
+  });
+});
+```
+
+### What's Already Configured
+
+- Native modules are automatically mocked (`expo-secure-store`, `expo-router`, `react-native-reanimated`, etc.)
+- React Native components can be tested without a device/simulator
+- Path aliases (`@/`) work in test files
+- TypeScript and JSX are automatically transformed
+
 ## Building
 
 For production builds, see the [Expo documentation](https://docs.expo.dev/build/introduction/).
