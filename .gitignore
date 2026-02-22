@@ -79,6 +79,8 @@ aws_resources/schema_initializer/*.dist-info/
 aws_resources/schema_initializer/__pycache__/
 aws_resources/schema_initializer/cfnresponse/
 aws_resources/schema_initializer/urllib3/
+aws_resources/sagemaker/scripts/images_in
+aws_resources/sagemaker/scripts/images_pixelated
 
 # Ignore metadata and cache files in that folder
 aws_resources/schema_initializer/*.dist-info/

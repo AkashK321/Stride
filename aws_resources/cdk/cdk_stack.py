@@ -30,7 +30,7 @@ class CdkStack(Stack):
 
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
-        default_vpc = ec2.Vpc.from_lookup(self, "DefaultVPC", is_default=True)
+        # default_vpc = ec2.Vpc.from_lookup(self, "DefaultVPC", is_default=True)
 
         # Path to the Kotlin backend project
         this_dir = os.path.dirname(__file__)
