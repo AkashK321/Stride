@@ -2,10 +2,12 @@
 
 ## Overview
 
-This project uses **separate, independent workflows** for different deployment concerns:
+This project uses **separate, independent workflows** for different concerns:
 
-1. **Backend + Infrastructure** (existing) - Runs on every push
-2. **SageMaker Docker Image** (new) - Runs only when inference code changes
+1. **PR Validation** - Fast CI checks on pull requests (no deployment)
+2. **Backend + Infrastructure** - Runs on every push, deploys to AWS
+3. **Frontend Tests** - Runs on push events for fast development feedback
+4. **SageMaker Docker Image** - Runs only when inference code changes
 
 ---
 
@@ -22,7 +24,55 @@ This project uses **separate, independent workflows** for different deployment c
 
 ## Workflow Details
 
-### 1. Backend Build & Infrastructure Deploy (Existing)
+### 1. PR Validation
+
+**File:**
+- `.github/workflows/pr-validation.yaml`
+
+**Trigger:** Pull request events (opened, synchronize, reopened) when files in `aws_resources/**`, `frontend/**`, or `.github/workflows/**` change
+
+**What it does:**
+```
+Pull Request Event
+    ↓
+pr-validation.yaml
+    ├─ Backend Build (if aws_resources/** changed)
+    │   └─ Builds Kotlin JAR
+    ├─ Backend Unit Tests (if aws_resources/** changed)
+    │   └─ Runs JUnit tests, publishes results
+    ├─ Frontend Static Analysis (if frontend/** changed)
+    │   ├─ TypeScript type-check (tsc --noEmit)
+    │   └─ ESLint (expo lint)
+    └─ Frontend Unit Tests (if frontend/** changed)
+        └─ Runs Jest tests with coverage, publishes results
+```
+
+**Key Point:** This workflow provides fast feedback on PRs without any deployment. All validation runs in parallel for quick results.
+
+---
+
+### 2. Frontend Tests (Push Events)
+
+**File:**
+- `.github/workflows/frontend-tests.yaml`
+
+**Trigger:** Push events to any branch when files in `frontend/**` or `.github/workflows/**` change
+
+**What it does:**
+```
+Push Event (to any branch)
+    ↓
+frontend-tests.yaml
+    ├─ Install dependencies (npm ci)
+    ├─ Run unit tests (Jest with coverage)
+    └─ Publish test results
+```
+
+**Key Point:** Provides fast feedback during development. PR validation is handled separately by `pr-validation.yaml`.
+
+---
+
+### 3. Backend Build & Infrastructure Deploy
 
 **Files:**
 - `.github/workflows/backend-build.yaml`
@@ -51,7 +101,7 @@ infrastructure-deploy.yaml
 
 ---
 
-### 2. SageMaker Docker Image Build (New)
+### 4. SageMaker Docker Image Build
 
 **File:**
 - `.github/workflows/build-sagemaker-image.yaml`
@@ -162,15 +212,30 @@ git push
 
 ## Workflow Triggers Summary
 
-| Workflow | Manual | Auto on Push | Files Watched |
-|----------|--------|--------------|---------------|
-| backend-build.yaml | ✅ | ✅ All pushes | All files |
-| infrastructure-deploy.yaml | ✅ | ✅ (via backend-build) | - |
-| build-sagemaker-image.yaml | ✅ | ✅ | `sagemaker/**` only |
+| Workflow | Manual | Auto on Push | Auto on PR | Files Watched |
+|----------|--------|--------------|------------|---------------|
+| pr-validation.yaml | ❌ | ❌ | ✅ | `aws_resources/**`, `frontend/**`, `.github/workflows/**` |
+| frontend-tests.yaml | ❌ | ✅ | ❌ | `frontend/**`, `.github/workflows/**` |
+| backend-build.yaml | ✅ | ✅ | ❌ | All files |
+| infrastructure-deploy.yaml | ✅ | ✅ (via backend-build) | ❌ | - |
+| build-sagemaker-image.yaml | ✅ | ✅ | ❌ | `sagemaker/**` only |
 
 ---
 
 ## Best Practices for Team
+
+### For Frontend Developers
+```bash
+# Normal workflow - push and get fast feedback
+git add frontend/
+git commit -m "Add new component"
+git push
+# ✅ Frontend tests run automatically on push
+
+# Create PR
+gh pr create
+# ✅ PR validation runs: TypeScript check, ESLint, unit tests
+```
 
 ### For Backend Developers
 ```bash
@@ -206,6 +271,12 @@ git push
 ---
 
 ## Common Questions
+
+### Q: What's the difference between frontend-tests.yaml and pr-validation.yaml?
+**A:** 
+- `frontend-tests.yaml` runs on **push events** for fast feedback during development
+- `pr-validation.yaml` runs on **pull request events** and includes both static analysis (TypeScript/ESLint) and unit tests
+- Both workflows can run the same tests, but PR validation is more comprehensive
 
 ### Q: Will Docker build slow down my backend deployments?
 **A:** No! Docker build only runs when `sagemaker/` files change. Regular backend pushes skip it entirely.
@@ -276,11 +347,11 @@ git push
 
 ## Summary
 
-✅ **Two independent workflows**
-✅ **Docker builds only when needed**
-✅ **CDK deploys on every push**
-✅ **No interference between workflows**
-✅ **Fast feedback for backend changes**
-✅ **Flexible for inference updates**
+✅ **PR validation workflow** - Fast CI checks without deployment  
+✅ **Frontend testing** - Separate workflows for push (dev feedback) and PR (validation)  
+✅ **Backend + Infrastructure** - Automated deployment on push  
+✅ **Docker builds only when needed** - SageMaker image builds independently  
+✅ **No interference between workflows** - Each runs independently  
+✅ **Fast feedback** - Parallel execution for quick results  
 
-**Result:** Clean separation of concerns with no conflicts!
+**Result:** Clean separation of concerns with comprehensive CI/CD coverage!
