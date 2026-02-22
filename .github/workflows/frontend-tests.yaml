@@ -42,6 +42,7 @@ on:
     types: [opened, synchronize, reopened]
     paths:
       - 'frontend/**'
+      - '.github/workflows/**'
 
 # Permissions required for test-reporter
 permissions:
