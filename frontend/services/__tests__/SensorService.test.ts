@@ -703,7 +703,7 @@ describe("SensorService", () => {
       (service as any).processUpdate();
 
       // Wait for async write
-      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(() => resolve()));
 
       expect(mockFileSystem.writeAsStringAsync.mock.calls.length).toBeGreaterThan(callCountBefore);
     });

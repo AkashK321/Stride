@@ -165,7 +165,7 @@ describe("NavigationWebSocket", () => {
     it("connects successfully and resolves promise", async () => {
       const connectPromise = ws.connect();
       // Wait for setImmediate to execute
-      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(() => resolve()));
       await connectPromise;
       expect(ws.status).toBe("connected");
       expect(ws.isConnected()).toBe(true);
@@ -178,7 +178,7 @@ describe("NavigationWebSocket", () => {
 
     it("resolves immediately if already connected", async () => {
       await ws.connect();
-      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(() => resolve()));
       const connectPromise2 = ws.connect();
       await connectPromise2;
       expect(ws.status).toBe("connected");
@@ -186,12 +186,12 @@ describe("NavigationWebSocket", () => {
 
     it("closes existing non-OPEN socket before connecting", async () => {
       await ws.connect();
-      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(() => resolve()));
       const mockWs = (ws as any).ws as MockWebSocket;
       mockWs.readyState = MockWebSocket.CLOSING;
       
       const connectPromise2 = ws.connect();
-      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(() => resolve()));
       await connectPromise2;
       expect(ws.status).toBe("connected");
     });
@@ -208,7 +208,7 @@ describe("NavigationWebSocket", () => {
       mockWs.simulateError();
       
       await expect(connectPromise).rejects.toThrow("WebSocket connection error");
-      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(() => resolve()));
       // After error, onclose is also called, which sets status to disconnected
       expect(errorWs.status).toBe("disconnected");
       errorWs.disconnect();
@@ -227,7 +227,7 @@ describe("NavigationWebSocket", () => {
   describe("message handling", () => {
     beforeEach(async () => {
       await ws.connect();
-      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(() => resolve()));
     });
 
     it("calls message handler when message received", () => {
@@ -314,7 +314,7 @@ describe("NavigationWebSocket", () => {
       ws.setStatusHandler(handler);
 
       await ws.connect();
-      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(() => resolve()));
 
       expect(handler).toHaveBeenCalledWith("connecting");
       expect(handler).toHaveBeenCalledWith("connected");
@@ -324,7 +324,7 @@ describe("NavigationWebSocket", () => {
   describe("sendFrame", () => {
     beforeEach(async () => {
       await ws.connect();
-      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(() => resolve()));
     });
 
     const createTestFrame = (imageSize: number = 1000): NavigationFrameMessage => ({
@@ -421,7 +421,7 @@ describe("NavigationWebSocket", () => {
   describe("auto-reconnect", () => {
     beforeEach(async () => {
       await ws.connect();
-      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(() => resolve()));
       ws.autoReconnect = true;
     });
 
@@ -431,7 +431,7 @@ describe("NavigationWebSocket", () => {
 
       // Wait for reconnect delay
       await new Promise((resolve) => setTimeout(resolve, 2100));
-      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(() => resolve()));
 
       expect(ws.status).toBe("connected");
     });
@@ -446,7 +446,7 @@ describe("NavigationWebSocket", () => {
       // Simulate a disconnect that should trigger reconnect
       mockWs.simulateClose(1006, "Abnormal closure", false);
       await new Promise((resolve) => setTimeout(resolve, 2200));
-      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(() => resolve()));
       
       // Should have attempted to reconnect
       expect(ws.status).toBe("connected");
@@ -460,7 +460,7 @@ describe("NavigationWebSocket", () => {
       }
 
       await new Promise((resolve) => setTimeout(resolve, 100));
-      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(() => resolve()));
 
       expect(ws.status).toBe("disconnected");
     });
@@ -473,7 +473,7 @@ describe("NavigationWebSocket", () => {
       }
 
       await new Promise((resolve) => setTimeout(resolve, 100));
-      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(() => resolve()));
 
       expect(ws.status).toBe("disconnected");
     });
@@ -482,7 +482,7 @@ describe("NavigationWebSocket", () => {
       const mockWs = (ws as any).ws as MockWebSocket;
       mockWs.simulateClose(1006, "Abnormal closure", false);
       await new Promise((resolve) => setTimeout(resolve, 2100));
-      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(() => resolve()));
 
       const reconnectAttempts = (ws as any)._reconnectAttempts;
       expect(reconnectAttempts).toBe(0);
@@ -492,7 +492,7 @@ describe("NavigationWebSocket", () => {
   describe("disconnect", () => {
     beforeEach(async () => {
       await ws.connect();
-      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(() => resolve()));
     });
 
     it("closes WebSocket connection", () => {
@@ -563,7 +563,7 @@ describe("NavigationWebSocket", () => {
 
     it("returns true when connected", async () => {
       await ws.connect();
-      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(() => resolve()));
       expect(ws.isConnected()).toBe(true);
     });
   });
