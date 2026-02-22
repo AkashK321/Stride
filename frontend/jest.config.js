@@ -62,6 +62,20 @@ module.exports = {
   // File extensions to recognize
   moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json", "node"],
 
+  // Reporters: default for local, JUnit XML for CI
+  reporters: process.env.CI
+    ? [
+        "default",
+        [
+          "jest-junit",
+          {
+            outputDirectory: "coverage",
+            outputName: "junit.xml",
+          },
+        ],
+      ]
+    : ["default"],
+
   // Collect coverage from source files, ignoring test files and config
   collectCoverageFrom: [
     "**/*.{ts,tsx}",

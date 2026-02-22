@@ -21,6 +21,16 @@ export const typography = {
         fontWeight: "700" as const,
         fontFamily: fontFamily.bold,
     },
+    h2: {
+        fontSize: 24,
+        fontWeight: "700" as const,
+        fontFamily: fontFamily.bold,
+    },
+    h3: {
+        fontSize: 20,
+        fontWeight: "700" as const,
+        fontFamily: fontFamily.bold,
+    },
     medium: {
         fontSize: 18,
         fontWeight: "400" as const,
@@ -33,6 +43,11 @@ export const typography = {
     },
     label: { 
         fontSize: 12, 
+        fontWeight: "400" as const,
+        fontFamily: fontFamily.regular,
+    },
+    caption: {
+        fontSize: 10,
         fontWeight: "400" as const,
         fontFamily: fontFamily.regular,
     },
