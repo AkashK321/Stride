@@ -101,3 +101,28 @@ BRANCH_NAME=main cdk -a "python3 app.py" synth StrideSharedStack
 - Do not destroy `StrideSharedStack` from CI/CD.
 - Avoid `cdk deploy --all` for automated pipelines.
 - Shared SageMaker endpoint incurs cost while running.
+
+## SageMaker idle auto-decommission
+
+`StrideSharedStack` now includes an automated idle cleanup flow for the shared
+SageMaker endpoint:
+
+- Metric: `AWS/SageMaker` `Invocations` (`Sum`)
+- Scope: endpoint `stride-yolov11-nano-endpoint`, variant `AllTraffic`
+- Window: 30 minutes (6 periods x 5 minutes)
+- Trigger condition: all datapoints remain below 1 invocation
+- Missing datapoints are treated as idle (`BREACHING`)
+- Action: CloudWatch Alarm -> SNS Topic -> Lambda -> `DeleteEndpoint`
+
+### Resources added
+
+- CloudWatch Alarm: `SageMakerEndpointNoInvocations30MinAlarm`
+- Lambda: `SageMakerIdleDecommissionHandler`
+- Lambda code: `cdk/lambdas/sagemaker_idle_decommission.py`
+
+### Operational notes
+
+- This workflow deletes the endpoint after sustained inactivity.
+- New inference requests will fail until the endpoint is recreated.
+- Use this carefully for persistent/shared environments; it is best suited for
+  development and ephemeral testing endpoints.
