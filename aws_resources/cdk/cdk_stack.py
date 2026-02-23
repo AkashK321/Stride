@@ -465,7 +465,3 @@ class CdkStack(Stack):
                 )
             ])
         )
-<<<<<<< HEAD
-=======
-
->>>>>>> f5a0f32 (ec2 import fixed)
