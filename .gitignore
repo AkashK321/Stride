@@ -3,6 +3,9 @@
 # Vibe coding
 AGENTS.md
 
+# Coverage
+coverage/
+
 # dependencies
 node_modules/
 
