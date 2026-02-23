@@ -378,8 +378,4 @@ class CdkStack(Stack):
                     resources=[schema_lambda.function_arn]
                 )
             ])
-<<<<<<< HEAD
         )
-=======
-        )
->>>>>>> d240ac2 (fixed merge issues in cdk and global error in frontend tests)
