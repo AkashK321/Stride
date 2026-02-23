@@ -12,6 +12,9 @@ import Landing from "../app/(auth)/index";
 import { login as apiLogin } from "../services/api";
 import { useAuth } from "../contexts/AuthContext";
 
+// Provide a typed global reference for Jest test environment
+declare const global: any;
+
 // Mock expo-router
 const mockPush = jest.fn();
 jest.mock("expo-router", () => ({
