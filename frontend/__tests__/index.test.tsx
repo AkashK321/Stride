@@ -12,9 +12,6 @@ import Landing from "../app/(auth)/index";
 import { login as apiLogin } from "../services/api";
 import { useAuth } from "../contexts/AuthContext";
 
-// Provide a typed global reference for Jest test environment
-declare const global: any;
-
 // Mock expo-router
 const mockPush = jest.fn();
 jest.mock("expo-router", () => ({
@@ -48,12 +45,12 @@ jest.mock("../contexts/AuthContext", () => ({
 }));
 
 // Mock __DEV__ global
-const originalDev = (global as any).__DEV__;
+const originalDev = (globalThis as any).__DEV__;
 beforeAll(() => {
-  (global as any).__DEV__ = true;
+  (globalThis as any).__DEV__ = true;
 });
 afterAll(() => {
-  (global as any).__DEV__ = originalDev;
+  (globalThis as any).__DEV__ = originalDev;
 });
 
 // Mock Alert.alert - will be set up in beforeEach
@@ -107,13 +104,13 @@ describe("Login Screen (app/(auth)/index.tsx)", () => {
     });
 
     it("renders the 'Developer Bypass' button when __DEV__ is true", () => {
-      (global as any).__DEV__ = true;
+      (globalThis as any).__DEV__ = true;
       render(<Landing />);
       expect(screen.getByText("Developer Bypass")).toBeTruthy();
     });
 
     it("does not render the 'Developer Bypass' button when __DEV__ is false", () => {
-      (global as any).__DEV__ = false;
+      (globalThis as any).__DEV__ = false;
       const { queryByText } = render(<Landing />);
       expect(queryByText("Developer Bypass")).toBeNull();
     });
@@ -455,7 +452,7 @@ describe("Login Screen (app/(auth)/index.tsx)", () => {
 
   describe("Developer bypass", () => {
     beforeEach(() => {
-      (global as any).__DEV__ = true;
+      (globalThis as any).__DEV__ = true;
     });
 
     it("tapping 'Developer Bypass' shows Alert.alert with 'Developer Mode Active'", () => {
