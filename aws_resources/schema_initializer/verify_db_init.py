@@ -39,12 +39,27 @@ try:
     else:
         print("✅ Success! Found the following tables:")
         for table in tables:
-            print(f" - {table[0]}")
+            table_name = table[0]
+            print(f"\n- {table_name.upper()} -")
             
-            # Optional: Print columns for each table to verify structure
-            cursor.execute(f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table[0]}'")
+            # Print columns for each table to verify structure
+            cursor.execute(f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name}'")
             cols = [row[0] for row in cursor.fetchall()]
             print(f"   └── Columns: {cols}")
+            
+            # Fetch the first 5 rows
+            try:
+                cursor.execute(f"SELECT * FROM {table_name} LIMIT 5")
+                rows = cursor.fetchall()
+                if rows:
+                    print(f"   └── Data Head ({len(rows)} rows):")
+                    for row in rows:
+                        print(f"       {row}")
+                else:
+                    print("   └── Data Head: (Table is empty)")
+            except Exception as row_e:
+                # If there's a permissions issue or other error reading the table
+                print(f"   └── Error reading data: {row_e}")
 
     conn.close()
 

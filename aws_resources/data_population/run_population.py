@@ -9,7 +9,7 @@ import logging
 
 from dotenv import load_dotenv
 
-load_dotenv('../.env')
+load_dotenv()
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,

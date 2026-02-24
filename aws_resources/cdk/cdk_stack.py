@@ -342,6 +342,13 @@ class CdkStack(Stack):
             publicly_accessible=True, # Allows Lambda to connect via standard internet
             removal_policy=RemovalPolicy.DESTROY, # For dev/testing only
         )
+        
+        static_navigation_handler.add_environment("DB_HOST", db_instance.db_instance_endpoint_address)
+        static_navigation_handler.add_environment("DB_PORT", db_instance.db_instance_endpoint_port)
+        # Match this to the database name you created in RDS
+        static_navigation_handler.add_environment("DB_NAME", "StrideCore")
+        static_navigation_handler.add_environment("DB_SECRET_ARN", db_instance.secret.secret_arn)
+        db_instance.secret.grant_read(static_navigation_handler)
 
         db_instance.connections.allow_from_any_ipv4(ec2.Port.tcp(5432), "Allow public access for Lambda")
 
