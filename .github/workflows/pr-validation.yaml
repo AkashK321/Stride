@@ -139,7 +139,6 @@ jobs:
           fail-on-error: false
           list-suites: all
           list-tests: all
-
       # Step 6: Set up Python for database tests
       - name: Set up Python
         uses: actions/setup-python@v4

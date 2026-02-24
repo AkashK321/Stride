@@ -56,6 +56,27 @@ jest.mock("@expo-google-fonts/roboto", () => ({
   useFonts: jest.fn(() => [true, null]),
 }));
 
+// react-native-safe-area-context: mock SafeAreaView
+jest.mock("react-native-safe-area-context", () => {
+  const React = require("react");
+  const { View } = require("react-native");
+  return {
+    SafeAreaView: (props: any) => React.createElement(View, props, props.children),
+    useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+  };
+});
+
+// @expo/vector-icons: mock Ionicons
+jest.mock("@expo/vector-icons", () => ({
+  Ionicons: (props: any) => {
+    const React = require("react");
+    const { Text } = require("react-native");
+    return React.createElement(Text, { testID: `icon-${props.name}` }, props.name);
+  },
+}));
+
+// Alert.alert is already mocked in jest.setup-early.js
+
 // Silence noisy RN warnings in test output (optional)
 const originalWarn = console.warn;
 console.warn = (...args) => {

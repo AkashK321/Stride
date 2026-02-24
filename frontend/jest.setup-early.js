@@ -72,5 +72,20 @@ jest.mock("react-native", () => {
       timing: jest.fn(),
       spring: jest.fn(),
     },
+    Alert: {
+      alert: jest.fn(),
+    },
+    Keyboard: {
+      dismiss: jest.fn(),
+      addListener: jest.fn(() => ({ remove: jest.fn() })),
+    },
+    KeyboardAvoidingView: createMockComponent("KeyboardAvoidingView"),
+    Platform: {
+      OS: "ios",
+      select: jest.fn((obj) => obj.ios || obj.default),
+    },
+    Dimensions: {
+      get: jest.fn(() => ({ width: 375, height: 812 })),
+    },
   };
 });
