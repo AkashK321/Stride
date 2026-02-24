@@ -1,5 +1,9 @@
 package com.handlers
 
+import software.amazon.awssdk.regions.Region
+import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient
+import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueRequest
+import com.fasterxml.jackson.module.kotlin.readValue
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent
 import com.amazonaws.services.lambda.runtime.Context
@@ -64,8 +68,33 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
         val dbHost = System.getenv("DB_HOST") ?: "localhost"
         val dbPort = System.getenv("DB_PORT") ?: "5432"
         val dbName = System.getenv("DB_NAME") ?: "stride_db"
-        val dbUser = System.getenv("DB_USER") ?: "postgres"
-        val dbPassword = System.getenv("DB_PASSWORD") ?: "password"
+        val secretArn = System.getenv("DB_SECRET_ARN")
+        
+        val dbUser: String
+        val dbPassword: String
+
+        // If a Secret ARN is provided (Production/AWS Env), fetch the credentials securely
+        if (!secretArn.isNullOrBlank()) {
+            val secretsClient = SecretsManagerClient.builder()
+                .region(Region.US_EAST_1)
+                .build()
+
+            val valueRequest = GetSecretValueRequest.builder()
+                .secretId(secretArn)
+                .build()
+
+            val secretString = secretsClient.getSecretValue(valueRequest).secretString()
+
+            // Parse the JSON secret payload AWS creates automatically for RDS
+            val secretMap: Map<String, String> = mapper.readValue(secretString)
+            dbUser = secretMap["username"] ?: "postgres"
+            dbPassword = secretMap["password"] ?: "password"
+            
+            secretsClient.close()
+        } else {
+            dbUser = System.getenv("DB_USER") ?: "postgres"
+            dbPassword = System.getenv("DB_PASSWORD") ?: "password"
+        }
 
         val url = "jdbc:postgresql://$dbHost:$dbPort/$dbName"
         return DriverManager.getConnection(url, dbUser, dbPassword)

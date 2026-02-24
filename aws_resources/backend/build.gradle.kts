@@ -32,6 +32,7 @@ dependencies {
     implementation("com.fasterxml.jackson.core:jackson-databind:2.14.2")
     implementation(kotlin("stdlib"))
     implementation("org.postgresql:postgresql:42.6.0")
+    implementation("software.amazon.awssdk:secretsmanager")
 
     // Test dependencies
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5:1.9.23")
