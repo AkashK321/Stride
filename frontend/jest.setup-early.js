@@ -1,5 +1,6 @@
 // Mock react-native early to prevent Flow syntax parsing issues
 // This runs before any other setup files
+// @testing-library/react-native will provide proper component implementations
 const React = require("react");
 
 // Create proper React component mocks (not just strings)

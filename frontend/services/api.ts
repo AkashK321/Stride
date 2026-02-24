@@ -18,7 +18,7 @@ if (!API_BASE_URL) {
  * Called at the start of each API function so the app can still
  * load and render (e.g. for Developer Bypass) even without a backend URL.
  */
-function requireApiUrl(): string {
+export function requireApiUrl(): string {
   if (!API_BASE_URL) {
     throw new Error(
       "No backend URL configured. Set EXPO_PUBLIC_API_BASE_URL in your .env file to use live endpoints."
