@@ -159,15 +159,100 @@ class StaticNavigationHandlerTest {
 
 	@Test
 	fun `search endpoint with valid query returns 200 and results`() {
+		// 1. Mock the search SQL query result
+		val mockSearchStmt = mockk<PreparedStatement>(relaxed = true)
+		every { mockSearchStmt.executeQuery() } returns mockResultSet(listOf(
+			mapOf(
+				"Name" to "Room 226",
+				"FloorNumber" to 2,
+				"NearestNodeID" to 42
+			),
+			mapOf(
+				"Name" to "Room 224",
+				"FloorNumber" to 2,
+				"NearestNodeID" to 43
+			)
+		))
+
+		// 2. Route prepareStatement to our mock when the query is a search
+		every { mockConn.prepareStatement(any<String>()) } answers {
+			val sql = firstArg<String>()
+			if (sql.contains("ILIKE")) mockSearchStmt else mockk<PreparedStatement>(relaxed = true)
+		}
+
+		// 3. Trigger the handler
 		val event = APIGatewayProxyRequestEvent().apply {
 			httpMethod = "GET"
 			path = "/search"
 			queryStringParameters = mapOf("query" to "Room 2")
 		}
 		val response = handler.handleRequest(event, mockContext)
+        println("Search response: ${response.body}")
+		
+		// 4. Assert response payload
 		assertEquals(200, response.statusCode)
+		val body = response.body ?: ""
+		assertTrue(body.contains("Room 226"))
+		assertTrue(body.contains("Room 224"))
+		assertTrue(body.contains("\"floor_number\":2"))
+		assertTrue(body.contains("\"nearest_node\":\"42\"")) // Validates Int was parsed to String
+
+		// 5. Verify SQL parameters were bound correctly
+		verify { mockSearchStmt.setString(1, "%Room 2%") } // Verify % wrapped for ILIKE
+		verify { mockSearchStmt.setInt(2, 10) } // Default limit is 10
 	}
 
+	@Test
+	fun `search endpoint respects limit query parameter`() {
+		val mockSearchStmt = mockk<PreparedStatement>(relaxed = true)
+		every { mockSearchStmt.executeQuery() } returns mockResultSet(emptyList())
+
+		every { mockConn.prepareStatement(any<String>()) } answers {
+			val sql = firstArg<String>()
+			if (sql.contains("ILIKE")) mockSearchStmt else mockk<PreparedStatement>(relaxed = true)
+		}
+
+		val event = APIGatewayProxyRequestEvent().apply {
+			httpMethod = "GET"
+			path = "/search"
+			queryStringParameters = mapOf("query" to "Restroom", "limit" to "3")
+		}
+		val response = handler.handleRequest(event, mockContext)
+		
+		assertEquals(200, response.statusCode)
+		verify { mockSearchStmt.setString(1, "%Restroom%") }
+		verify { mockSearchStmt.setInt(2, 3) } // Limit properly parsed from request
+	}
+
+    @Test
+    fun `search endpoint properly formats query for a 'contains' search`() {
+        // Setup a basic mock that returns empty results
+        val mockSearchStmt = mockk<PreparedStatement>(relaxed = true)
+        every { mockSearchStmt.executeQuery() } returns mockResultSet(emptyList())
+
+        // Capture the exact SQL string passed to prepareStatement
+        val capturedSql = slot<String>()
+        every { mockConn.prepareStatement(capture(capturedSql)) } returns mockSearchStmt
+        
+        val searchTerm = "Restroom"
+        val event = APIGatewayProxyRequestEvent().apply {
+            httpMethod = "GET"
+            path = "/search"
+            queryStringParameters = mapOf("query" to searchTerm)
+        }
+        handler.handleRequest(event, mockContext)
+
+        // 3. Verify the SQL query uses ILIKE for case-insensitive matching
+        assertTrue(
+            capturedSql.captured.contains("ILIKE ?"), 
+            "The SQL query should use ILIKE for case-insensitive searching"
+        )
+
+        // Verify the parameter was wrapped in % wildcards for a 'contains' match
+        verify { 
+            mockSearchStmt.setString(1, "%$searchTerm%") 
+        }
+    }
 
 	@Test
 	fun `navigation start with missing body returns 400`() {
