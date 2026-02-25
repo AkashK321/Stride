@@ -113,14 +113,24 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
         // /search endpoint (GET)
         if (path == "/search" && method == "GET") {
             val query = input.queryStringParameters?.get("query")
-            if (query == null || query.length < 1) {
-                return createErrorResponse(400, "Missing or invalid 'query' parameter (min 1 character)")
+            if (query == null || query.trim().isEmpty()) {
+                return createErrorResponse(400, "Query parameter 'query' is required and must be at least 1 character")
             }
-            val response = handleSearch(query, logger)
-            return APIGatewayProxyResponseEvent()
-                .withStatusCode(200)
-                .withHeaders(mapOf("Content-Type" to "application/json"))
-                .withBody(mapper.writeValueAsString(response))
+            
+            // Parse the optional limit parameter, default to 10 if missing or invalid
+            val limitStr = input.queryStringParameters?.get("limit")
+            val limit = limitStr?.toIntOrNull() ?: 10
+
+            return try {
+                val response = handleSearch(query.trim(), limit, logger)
+                APIGatewayProxyResponseEvent()
+                    .withStatusCode(200)
+                    .withHeaders(mapOf("Content-Type" to "application/json"))
+                    .withBody(mapper.writeValueAsString(response))
+            } catch (e: Exception) {
+                logger.log("Search error: ${e.message}")
+                createErrorResponse(500, "Internal server error")
+            }
         }
 
         // /navigation/start endpoint (POST)
@@ -148,15 +158,40 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
         return createErrorResponse(404, "Endpoint not found")
     }
 
-    private fun handleSearch(query: String, logger: LambdaLogger): SearchResponse {
-        // Placeholder for search logic
-        val response = SearchResponse(
-            results = listOf(
-                LandmarkResult("Room 226", 2, "r226_door"),
-                LandmarkResult("Room 224", 2, "r224_door")
-            )
-        )
-        return response
+    private fun handleSearch(query: String, limit: Int, logger: LambdaLogger): SearchResponse {
+        val results = mutableListOf<LandmarkResult>()
+
+        getDbConnection().use { conn ->
+            // Join Landmarks and Floors to get the floor number.
+            val sql = """
+                SELECT l.Name, f.FloorNumber, l.NearestNodeID
+                FROM Landmarks l
+                JOIN Floors f ON l.FloorID = f.FloorID
+                WHERE l.Name ILIKE ?
+                LIMIT ?
+            """.trimIndent()
+
+            conn.prepareStatement(sql).use { stmt ->
+                // Wrap the query in % for a "contains" search
+                stmt.setString(1, "%$query%")
+                stmt.setInt(2, limit)
+
+                val rs = stmt.executeQuery()
+                while (rs.next()) {
+                    results.add(
+                        LandmarkResult(
+                            name = rs.getString("Name"),
+                            floor_number = rs.getInt("FloorNumber"),
+                            // The data class expects a String, but the DB stores an INT
+                            nearest_node = rs.getInt("NearestNodeID").toString()
+                        )
+                    )
+                }
+            }
+        }
+        
+        logger.log("Found ${results.size} results for query: $query")
+        return SearchResponse(results)
     }
 
     private fun handleNavigationStart(request: NavigationStartRequest, logger: LambdaLogger): NavigationStartResponse {

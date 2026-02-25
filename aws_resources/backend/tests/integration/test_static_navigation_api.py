@@ -27,7 +27,7 @@ def test_search_missing_query(api_base_url):
     assert response.status_code == 400, f"Expected 400, got {response.status_code}"
     data = response.json()
     assert "error" in data
-    assert "Missing or invalid 'query' parameter" in data["error"]
+    assert "Query parameter 'query' is required" in data["error"]
 
 def test_search_valid_query(api_base_url):
     """
