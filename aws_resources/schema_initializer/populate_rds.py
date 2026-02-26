@@ -85,7 +85,8 @@ def handler(event, context):
                 BuildingID VARCHAR(50) REFERENCES Buildings(BuildingID),
                 CoordinateX INT NOT NULL,
                 CoordinateY INT NOT NULL,
-                NodeType VARCHAR(20) CHECK (NodeType IN ('Intersection', 'Corner', 'Elevator', 'Stairwell', 'Door'))
+                NodeType VARCHAR(20) CHECK (NodeType IN ('Intersection', 'Corner', 'Elevator', 'Stairwell', 'Door')),
+                NodeIDString VARCHAR(255)
             );
             """,
             

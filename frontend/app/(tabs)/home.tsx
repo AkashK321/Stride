@@ -5,7 +5,12 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import SearchSheet from "../../components/SearchSheet";
 import type { SearchSheetRef } from "../../components/SearchSheet";
-import { LandmarkResult } from "../../services/api";
+import NavigationInstructionsDropdown from "../../components/NavigationInstructionsDropdown";
+import {
+  LandmarkResult,
+  NavigationInstruction,
+  startNavigation,
+} from "../../services/api";
 import { colors } from "../../theme/colors";
 import { typography } from "../../theme/typography";
 import { spacing } from "../../theme/spacing";
@@ -15,13 +20,43 @@ export default function Home() {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [selectedDestination, setSelectedDestination] =
     React.useState<LandmarkResult | null>(null);
+  const [navigationInstructions, setNavigationInstructions] =
+    React.useState<NavigationInstruction[] | null>(null);
+  const [navigationError, setNavigationError] = React.useState<string | null>(
+    null,
+  );
+  const [navigationLoading, setNavigationLoading] = React.useState(false);
 
   const handleSelectDestination = React.useCallback(
-    (landmark: LandmarkResult) => {
+    async (landmark: LandmarkResult) => {
       setSelectedDestination(landmark);
+      setNavigationLoading(true);
+      setNavigationError(null);
+
+      try {
+        const response = await startNavigation({
+          destination: { landmark_id: String(landmark.landmark_id) },
+          start_location: { node_id: "staircase_main_2S01" },
+        });
+        setNavigationInstructions(response.instructions);
+      } catch (err) {
+        setNavigationInstructions(null);
+        setNavigationError(
+          err instanceof Error ? err.message : "Failed to start navigation",
+        );
+      } finally {
+        setNavigationLoading(false);
+      }
     },
     [],
   );
+
+  const handleExitNavigation = React.useCallback(() => {
+    setNavigationInstructions(null);
+    setNavigationError(null);
+    setSelectedDestination(null);
+    sheetRef.current?.collapse?.();
+  }, []);
 
   if (!cameraPermission) {
     return React.createElement(
@@ -89,12 +124,45 @@ export default function Home() {
             selectedDestination.name,
           ),
         ),
+
+      navigationLoading &&
+        React.createElement(
+          View,
+          { style: styles.loadingBanner },
+          React.createElement(ActivityIndicator, {
+            size: "small",
+            color: colors.buttonPrimaryText,
+          }),
+          React.createElement(
+            Text,
+            { style: styles.loadingText },
+            "Calculating route…",
+          ),
+        ),
+
+      navigationError &&
+        React.createElement(
+          View,
+          { style: styles.errorBanner },
+          React.createElement(
+            Text,
+            { style: styles.errorText },
+            navigationError,
+          ),
+        ),
+
+      navigationInstructions &&
+        React.createElement(NavigationInstructionsDropdown, {
+          instructions: navigationInstructions,
+          onExit: handleExitNavigation,
+        }),
     ),
 
-    React.createElement(SearchSheet, {
-      ref: sheetRef,
-      onSelectDestination: handleSelectDestination,
-    }),
+    !navigationInstructions &&
+      React.createElement(SearchSheet, {
+        ref: sheetRef,
+        onSelectDestination: handleSelectDestination,
+      }),
   );
 }
 
@@ -137,5 +205,26 @@ const styles = StyleSheet.create({
   destinationName: {
     ...typography.h3,
     color: colors.buttonPrimaryText,
+  },
+  loadingBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.secondary,
+  },
+  loadingText: {
+    ...typography.label,
+    color: colors.buttonPrimaryText,
+    marginLeft: spacing.sm,
+  },
+  errorBanner: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: "#FEF2F2",
+  },
+  errorText: {
+    ...typography.label,
+    color: colors.danger,
   },
 });

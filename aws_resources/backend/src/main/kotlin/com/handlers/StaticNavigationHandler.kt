@@ -25,6 +25,7 @@ data class LandmarkDetails(
 )
 
 data class LandmarkResult(
+    val landmark_id: Int,
     val name: String,
     val floor_number: Int,
     val nearest_node: String
@@ -162,17 +163,18 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
         val results = mutableListOf<LandmarkResult>()
 
         getDbConnection().use { conn ->
-            // Join Landmarks and Floors to get the floor number.
+            // Join Landmarks, Floors, and MapNodes to get floor number and the node's string ID.
             val sql = """
-                SELECT l.Name, f.FloorNumber, l.NearestNodeID
+                SELECT l.LandmarkID, l.Name, f.FloorNumber,
+                       COALESCE(n.NodeIDString, CAST(l.NearestNodeID AS VARCHAR)) AS NearestNodeDisplay
                 FROM Landmarks l
                 JOIN Floors f ON l.FloorID = f.FloorID
+                LEFT JOIN MapNodes n ON l.NearestNodeID = n.NodeID
                 WHERE l.Name ILIKE ?
                 LIMIT ?
             """.trimIndent()
 
             conn.prepareStatement(sql).use { stmt ->
-                // Wrap the query in % for a "contains" search
                 stmt.setString(1, "%$query%")
                 stmt.setInt(2, limit)
 
@@ -180,16 +182,16 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
                 while (rs.next()) {
                     results.add(
                         LandmarkResult(
+                            landmark_id = rs.getInt("LandmarkID"),
                             name = rs.getString("Name"),
                             floor_number = rs.getInt("FloorNumber"),
-                            // The data class expects a String, but the DB stores an INT
-                            nearest_node = rs.getInt("NearestNodeID").toString()
+                            nearest_node = rs.getString("NearestNodeDisplay")
                         )
-                    )
+                    }
                 }
             }
         }
-        
+
         logger.log("Found ${results.size} results for query: $query")
         return SearchResponse(results)
     }

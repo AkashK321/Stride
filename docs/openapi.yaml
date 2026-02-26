@@ -1413,10 +1413,15 @@ components:
     LandmarkResult:
       type: object
       required:
+        - landmark_id
         - name
         - floor_number
         - nearest_node
       properties:
+        landmark_id:
+          type: integer
+          description: Primary key of the landmark (use as destination.landmark_id when calling /navigation/start)
+          example: 1
         name:
           type: string
           description: Landmark name (e.g., "Room 226", "Men's Restroom 219")
@@ -1427,7 +1432,7 @@ components:
           example: 2
         nearest_node:
           type: string
-          description: Node ID of the nearest navigation node (used for pathfinding)
+          description: String ID of the nearest navigation node (e.g. "r226_door"). Used for display; use landmark_id for navigation/start.
           example: "r226_door"
 
     NavigationStartRequest:

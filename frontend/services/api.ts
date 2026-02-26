@@ -72,6 +72,7 @@ export interface RegisterResponse {
 }
 
 export interface LandmarkResult {
+  landmark_id: number;
   name: string;
   floor_number: number;
   nearest_node: string;
@@ -256,20 +257,41 @@ export async function startNavigation(
   request: NavigationStartRequest
 ): Promise<NavigationStartResponse> {
   const base = requireApiUrl();
-  const response = await fetch(`${base}/navigation/start`, {
+  const url = `${base}/navigation/start`;
+  const body = JSON.stringify(request);
+  console.log("[API] navigation/start request:", { url, body: request });
+
+  const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(request),
+    body,
   });
 
-  const data = await response.json();
+  const responseText = await response.text();
+  console.log("[API] navigation/start response raw:", {
+    status: response.status,
+    statusText: response.statusText,
+    ok: response.ok,
+    bodyLength: responseText.length,
+    bodyPreview: responseText.slice(0, 300),
+  });
+
+  let data: unknown;
+  try {
+    data = responseText.length > 0 ? JSON.parse(responseText) : {};
+  } catch (parseErr) {
+    console.log("[API] navigation/start response not JSON:", responseText.slice(0, 500));
+    throw new Error(`Navigation failed: response was not JSON (${response.status})`);
+  }
 
   if (!response.ok) {
-    const error: ApiError = data;
+    const error: ApiError = data as ApiError;
+    console.log("[API] navigation/start response (error):", { status: response.status, data });
     throw new Error(
       error.error || `Navigation failed: ${response.statusText}`
     );
   }
 
+  console.log("[API] navigation/start response:", data);
   return data as NavigationStartResponse;
 }

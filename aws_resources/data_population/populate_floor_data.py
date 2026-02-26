@@ -110,8 +110,8 @@ def populate_database(conn, building_data):
                 
                 cursor.execute(
                     """
-                    INSERT INTO MapNodes (FloorID, BuildingID, CoordinateX, CoordinateY, NodeType)
-                    VALUES (%s, %s, %s, %s, %s)
+                    INSERT INTO MapNodes (FloorID, BuildingID, CoordinateX, CoordinateY, NodeType, NodeIDString)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     RETURNING NodeID
                     """,
                     (
@@ -119,7 +119,8 @@ def populate_database(conn, building_data):
                         building_data['building_id'],
                         x_pixels,
                         y_pixels,
-                        node['type']
+                        node['type'],
+                        node.get('id'),
                     )
                 )
                 node_id = cursor.fetchone()[0]

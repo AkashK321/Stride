@@ -159,18 +159,20 @@ class StaticNavigationHandlerTest {
 
 	@Test
 	fun `search endpoint with valid query returns 200 and results`() {
-		// 1. Mock the search SQL query result
+		// 1. Mock the search SQL query result (JOIN returns LandmarkID, Name, FloorNumber, NearestNodeDisplay)
 		val mockSearchStmt = mockk<PreparedStatement>(relaxed = true)
 		every { mockSearchStmt.executeQuery() } returns mockResultSet(listOf(
 			mapOf(
+				"LandmarkID" to 1,
 				"Name" to "Room 226",
 				"FloorNumber" to 2,
-				"NearestNodeID" to 42
+				"NearestNodeDisplay" to "r226_door"
 			),
 			mapOf(
+				"LandmarkID" to 2,
 				"Name" to "Room 224",
 				"FloorNumber" to 2,
-				"NearestNodeID" to 43
+				"NearestNodeDisplay" to "r224_door"
 			)
 		))
 
@@ -188,18 +190,21 @@ class StaticNavigationHandlerTest {
 		}
 		val response = handler.handleRequest(event, mockContext)
         println("Search response: ${response.body}")
-		
-		// 4. Assert response payload
+
+		// 4. Assert response payload: landmark_id, name, floor_number, nearest_node (string id)
 		assertEquals(200, response.statusCode)
 		val body = response.body ?: ""
+		assertTrue(body.contains("\"landmark_id\":1"))
+		assertTrue(body.contains("\"landmark_id\":2"))
 		assertTrue(body.contains("Room 226"))
 		assertTrue(body.contains("Room 224"))
 		assertTrue(body.contains("\"floor_number\":2"))
-		assertTrue(body.contains("\"nearest_node\":\"42\"")) // Validates Int was parsed to String
+		assertTrue(body.contains("\"nearest_node\":\"r226_door\""))
+		assertTrue(body.contains("\"nearest_node\":\"r224_door\""))
 
 		// 5. Verify SQL parameters were bound correctly
-		verify { mockSearchStmt.setString(1, "%Room 2%") } // Verify % wrapped for ILIKE
-		verify { mockSearchStmt.setInt(2, 10) } // Default limit is 10
+		verify { mockSearchStmt.setString(1, "%Room 2%") }
+		verify { mockSearchStmt.setInt(2, 10) }
 	}
 
 	@Test
