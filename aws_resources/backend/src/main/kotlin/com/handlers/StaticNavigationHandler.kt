@@ -187,7 +187,7 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
                             floor_number = rs.getInt("FloorNumber"),
                             nearest_node = rs.getString("NearestNodeDisplay")
                         )
-                    }
+                    )
                 }
             }
         }
