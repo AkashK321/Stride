@@ -100,11 +100,15 @@ class StaticNavigationHandlerTest {
             mapOf("StartNodeID" to 2, "EndNodeID" to 3, "DistanceMeters" to 5.0, "Bearing" to 0.0, "IsBidirectional" to true)   // 0 = North
         ))
 
+        val mockNodeIdStringStmt = mockk<PreparedStatement>(relaxed = true)
+        every { mockNodeIdStringStmt.executeQuery() } returns mockResultSet(listOf(mapOf("NodeID" to 1)))
+
         every { mockConn.prepareStatement(any<String>()) } answers {
             val sql = firstArg<String>()
             when {
                 sql.contains("FROM Landmarks") -> mockLandmarkStmt
                 sql.contains("BuildingID FROM MapNodes") -> mockBuildingStmt
+                sql.contains("NodeIDString = ?") -> mockNodeIdStringStmt
                 sql.contains("FROM MapEdges e") -> mockGraphStmt
                 sql.contains("FROM MapNodes WHERE NodeID IN") -> mockNodesStmt
                 sql.contains("WHERE StartNodeID IN") -> mockPathEdgesStmt
@@ -114,7 +118,7 @@ class StaticNavigationHandlerTest {
 
         val requestBody = """
             {
-                "start_location": { "node_id": "1" },
+                "start_location": { "node_id": "staircase_main_2S01" },
                 "destination": { "landmark_id": "2" }
             }
         """.trimIndent()
@@ -143,6 +147,75 @@ class StaticNavigationHandlerTest {
         // Assert Step 3: Final arrival at Landmark
         assertTrue(responseBody.contains("Room 205"))
         assertTrue(responseBody.contains("arrive"))
+    }
+
+    @Test
+    fun `handleNavigationStart accepts string node_id (NodeIDString) and returns 200`() {
+        val mockLandmarkStmt = mockk<PreparedStatement>(relaxed = true)
+        every { mockLandmarkStmt.executeQuery() } returns mockResultSet(listOf(
+            mapOf(
+                "Name" to "Room 226",
+                "NearestNodeID" to 2,
+                "DistanceToNode" to 1.5,
+                "BearingFromNode" to "North",
+                "MapCoordinateX" to 10,
+                "MapCoordinateY" to 5
+            )
+        ))
+
+        val mockBuildingStmt = mockk<PreparedStatement>(relaxed = true)
+        every { mockBuildingStmt.executeQuery() } returns mockResultSet(listOf(mapOf("BuildingID" to "BHEE")))
+
+        val mockNodeIdStringStmt = mockk<PreparedStatement>(relaxed = true)
+        every { mockNodeIdStringStmt.executeQuery() } returns mockResultSet(listOf(mapOf("NodeID" to 1)))
+
+        val mockGraphStmt = mockk<PreparedStatement>(relaxed = true)
+        every { mockGraphStmt.executeQuery() } returns mockResultSet(listOf(
+            mapOf("StartNodeID" to 1, "EndNodeID" to 2, "DistanceMeters" to 10.0, "IsBidirectional" to true)
+        ))
+
+        val mockNodesStmt = mockk<PreparedStatement>(relaxed = true)
+        every { mockNodesStmt.executeQuery() } returns mockResultSet(listOf(
+            mapOf("NodeID" to 1, "CoordinateX" to 0, "CoordinateY" to 0),
+            mapOf("NodeID" to 2, "CoordinateX" to 10, "CoordinateY" to 0)
+        ))
+
+        val mockPathEdgesStmt = mockk<PreparedStatement>(relaxed = true)
+        every { mockPathEdgesStmt.executeQuery() } returns mockResultSet(listOf(
+            mapOf("StartNodeID" to 1, "EndNodeID" to 2, "DistanceMeters" to 10.0, "Bearing" to 90.0, "IsBidirectional" to true)
+        ))
+
+        every { mockConn.prepareStatement(any<String>()) } answers {
+            val sql = firstArg<String>()
+            when {
+                sql.contains("FROM Landmarks") -> mockLandmarkStmt
+                sql.contains("BuildingID FROM MapNodes") -> mockBuildingStmt
+                sql.contains("NodeIDString = ?") -> mockNodeIdStringStmt
+                sql.contains("FROM MapEdges e") -> mockGraphStmt
+                sql.contains("FROM MapNodes WHERE NodeID IN") -> mockNodesStmt
+                sql.contains("WHERE StartNodeID IN") -> mockPathEdgesStmt
+                else -> mockk<PreparedStatement>(relaxed = true)
+            }
+        }
+
+        val requestBody = """
+            {
+                "start_location": { "node_id": "staircase_main_2S01" },
+                "destination": { "landmark_id": "1" }
+            }
+        """.trimIndent()
+
+        val event = APIGatewayProxyRequestEvent().apply {
+            path = "/navigation/start"
+            httpMethod = "POST"
+            body = requestBody
+        }
+
+        val response = handler.handleRequest(event, mockContext)
+
+        assertEquals(200, response.statusCode)
+        assertTrue(response.body?.contains("session_id") == true)
+        assertTrue(response.body?.contains("instructions") == true)
     }
 
 	@Test

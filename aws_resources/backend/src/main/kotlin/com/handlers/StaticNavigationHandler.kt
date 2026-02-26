@@ -197,12 +197,14 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
     }
 
     private fun handleNavigationStart(request: NavigationStartRequest, logger: LambdaLogger): NavigationStartResponse {
-        val startNodeId = request.start_location.node_id.toIntOrNull()
-            ?: throw IllegalArgumentException("Invalid start_location.node_id")
         val destLandmarkId = request.destination.landmark_id.toIntOrNull()
             ?: throw IllegalArgumentException("Invalid destination.landmark_id")
 
         getDbConnection().use { conn ->
+            // Resolve start node: accept integer string or NodeIDString (e.g. "staircase_main_2S01")
+            val startNodeId = resolveStartNodeId(conn, request.start_location.node_id)
+                ?: throw IllegalArgumentException("Invalid start_location.node_id")
+
             // 1. Resolve Landmark to Nearest Node
             val landmark = getLandmarkDetails(destLandmarkId, conn)
                 ?: throw IllegalArgumentException("Landmark not found or has no associated node.")
@@ -262,6 +264,26 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
             if (rs.next()) {
                 return rs.getString("BuildingID")
             }
+        }
+        return null
+    }
+
+    /**
+     * Resolves start_location.node_id (NodeIDString) to MapNodes.NodeID.
+     * Only accepts the string node id from floor data (e.g. "staircase_main_2S01").
+     */
+    private fun resolveStartNodeId(conn: Connection, nodeIdRaw: String): Int? {
+        val trimmed = nodeIdRaw.trim()
+        if (trimmed.isEmpty()) return null
+        return getNodeIdByNodeIDString(conn, trimmed)
+    }
+
+    private fun getNodeIdByNodeIDString(conn: Connection, nodeIDString: String): Int? {
+        val query = "SELECT NodeID FROM MapNodes WHERE NodeIDString = ?"
+        conn.prepareStatement(query).use { stmt ->
+            stmt.setString(1, nodeIDString)
+            val rs = stmt.executeQuery()
+            if (rs.next()) return rs.getInt("NodeID")
         }
         return null
     }
