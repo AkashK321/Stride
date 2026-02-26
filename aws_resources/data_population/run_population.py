@@ -5,6 +5,7 @@ Run this after schema initialization is complete.
 
 import os
 import sys
+import ssl
 import logging
 
 from dotenv import load_dotenv
@@ -40,12 +41,16 @@ def main():
         # Connect to database
         logger.info("📡 Connecting to database...")
         creds = get_db_secret()
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
         conn = pg8000.connect(
             user=creds['username'],
             password=creds['password'],
             host=creds['host'],
             port=int(creds['port']),
-            database=creds['dbname']
+            database=creds['dbname'],
+            ssl_context=ssl_context,
         )
         logger.info("✓ Connected to database successfully")
         

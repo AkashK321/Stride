@@ -207,18 +207,44 @@ export async function searchLandmarks(
 ): Promise<SearchResponse> {
   const base = requireApiUrl();
   const params = new URLSearchParams({ query, limit: String(limit) });
-  const response = await fetch(`${base}/search?${params}`, {
-    method: "GET",
-    headers: { "Content-Type": "application/json" },
+  const url = `${base}/search?${params}`;
+  console.log("[API] search request:", { query, limit, url });
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (err) {
+    console.log("[API] search fetch failed (network error):", err);
+    throw err;
+  }
+
+  const responseText = await response.text();
+  console.log("[API] search response raw:", {
+    status: response.status,
+    statusText: response.statusText,
+    ok: response.ok,
+    bodyLength: responseText.length,
+    bodyPreview: responseText.slice(0, 200),
   });
 
-  const data = await response.json();
+  let data: unknown;
+  try {
+    data = responseText.length > 0 ? JSON.parse(responseText) : {};
+  } catch (parseErr) {
+    console.log("[API] search response not JSON:", responseText.slice(0, 500));
+    throw new Error(`Search failed: response was not JSON (${response.status})`);
+  }
 
   if (!response.ok) {
-    const error: ApiError = data;
+    const error: ApiError = data as ApiError;
+    console.log("[API] search response (error):", { status: response.status, data });
     throw new Error(error.error || `Search failed: ${response.statusText}`);
   }
 
+  console.log("[API] search response:", data);
   return data as SearchResponse;
 }
 
