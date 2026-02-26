@@ -1,6 +1,6 @@
 ### Database Schema Report: Navigation & Search
 
-This report documents what we found in the original indoor-navigation database schema, the changes we made, and how the new schema aligns with the floor data used for search and navigation.
+This report documents what I found in the original indoor-navigation database schema, the changes I made, and how the new schema aligns with the floor data used for search and navigation.
 
 ---
 
