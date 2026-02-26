@@ -71,6 +71,34 @@ export interface RegisterResponse {
   username: string;
 }
 
+export interface LandmarkResult {
+  name: string;
+  floor_number: number;
+  nearest_node: string;
+}
+
+export interface SearchResponse {
+  results: LandmarkResult[];
+}
+
+export interface NavigationStartRequest {
+  destination: { landmark_id: string };
+  start_location: { node_id: string };
+}
+
+export interface NavigationInstruction {
+  step: number;
+  distance_feet: number;
+  direction: "north" | "south" | "east" | "west" | null;
+  node_id: string;
+  coordinates: { x_feet: number; y_feet: number };
+}
+
+export interface NavigationStartResponse {
+  session_id: string;
+  instructions: NavigationInstruction[];
+}
+
 /**
  * Makes a POST request to the login endpoint.
  */
@@ -167,4 +195,55 @@ export async function register(userData: RegisterRequest): Promise<RegisterRespo
     // Otherwise wrap it
     throw new Error(`Registration failed: ${String(error)}`);
   }
+}
+
+/**
+ * Searches landmarks (rooms, facilities) by name.
+ * Uses case-insensitive partial matching on the Landmarks table.
+ */
+export async function searchLandmarks(
+  query: string,
+  limit: number = 10
+): Promise<SearchResponse> {
+  const base = requireApiUrl();
+  const params = new URLSearchParams({ query, limit: String(limit) });
+  const response = await fetch(`${base}/search?${params}`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    const error: ApiError = data;
+    throw new Error(error.error || `Search failed: ${response.statusText}`);
+  }
+
+  return data as SearchResponse;
+}
+
+/**
+ * Starts a navigation session by calculating the path from a start node
+ * to the destination landmark using A* pathfinding.
+ */
+export async function startNavigation(
+  request: NavigationStartRequest
+): Promise<NavigationStartResponse> {
+  const base = requireApiUrl();
+  const response = await fetch(`${base}/navigation/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    const error: ApiError = data;
+    throw new Error(
+      error.error || `Navigation failed: ${response.statusText}`
+    );
+  }
+
+  return data as NavigationStartResponse;
 }
