@@ -7,16 +7,14 @@ from aws_cdk import (
     Stack,
     Duration,
     CfnOutput,
+    Fn,
     aws_lambda as _lambda,
     aws_apigateway as apigw,
     aws_apigatewayv2 as apigw_v2,
     aws_apigatewayv2_integrations as integrations,
-    aws_ec2 as ec2,  
-    aws_rds as rds,  
     aws_dynamodb as ddb,
     RemovalPolicy,
     aws_cognito as cognito,
-    custom_resources as cr,
     BundlingOptions,
     aws_iam as iam,
     CustomResource,
@@ -25,12 +23,12 @@ from constructs import Construct
 import os
 import subprocess
 import platform
+from cdk.shared_stack import SharedPersistentStack
 
 class CdkStack(Stack):
 
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
-        default_vpc = ec2.Vpc.from_lookup(self, "DefaultVPC", is_default=True)
 
         # Path to the Kotlin backend project
         this_dir = os.path.dirname(__file__)
@@ -191,6 +189,24 @@ class CdkStack(Stack):
             region
         )
 
+        # Keep static navigation env var contract stable; values come from shared stack exports.
+        shared_rds_host = Fn.import_value(SharedPersistentStack.EXPORT_RDS_ENDPOINT_ADDRESS)
+        shared_rds_port = Fn.import_value(SharedPersistentStack.EXPORT_RDS_ENDPOINT_PORT)
+        shared_rds_name = Fn.import_value(SharedPersistentStack.EXPORT_RDS_DATABASE_NAME)
+        shared_rds_secret_arn = Fn.import_value(SharedPersistentStack.EXPORT_RDS_SECRET_ARN)
+
+        static_navigation_handler.add_environment("DB_HOST", shared_rds_host)
+        static_navigation_handler.add_environment("DB_PORT", shared_rds_port)
+        static_navigation_handler.add_environment("DB_NAME", shared_rds_name)
+        static_navigation_handler.add_environment("DB_SECRET_ARN", shared_rds_secret_arn)
+        static_navigation_handler.add_to_role_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
+                resources=[shared_rds_secret_arn],
+            )
+        )
+
         # Define the API Gateway REST API
         api = apigw.LambdaRestApi(
             self, "BusinessApi",
@@ -324,65 +340,3 @@ class CdkStack(Stack):
             description="Cognito User Pool Client ID"
         )
 
-        # TODO: RDS setup disabled for now - to be re-enabled when ready
-        # Define RDS Resource
-        db_instance = rds.DatabaseInstance(
-            self, "StrideDB",
-            engine=rds.DatabaseInstanceEngine.postgres(
-                version=rds.PostgresEngineVersion.VER_16_3
-            ),
-            vpc=default_vpc,  # Mandatory, but now using the free default one
-            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
-            instance_type=ec2.InstanceType.of(
-                ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.MICRO
-            ),
-            allocated_storage=20,
-            max_allocated_storage=50, # Autoscaling storage
-            database_name="StrideCore",
-            publicly_accessible=True, # Allows Lambda to connect via standard internet
-            removal_policy=RemovalPolicy.DESTROY, # For dev/testing only
-        )
-        
-        static_navigation_handler.add_environment("DB_HOST", db_instance.db_instance_endpoint_address)
-        static_navigation_handler.add_environment("DB_PORT", db_instance.db_instance_endpoint_port)
-        # Match this to the database name you created in RDS
-        static_navigation_handler.add_environment("DB_NAME", "StrideCore")
-        static_navigation_handler.add_environment("DB_SECRET_ARN", db_instance.secret.secret_arn)
-        db_instance.secret.grant_read(static_navigation_handler)
-
-        db_instance.connections.allow_from_any_ipv4(ec2.Port.tcp(5432), "Allow public access for Lambda")
-
-        # Define the lambda to initialize the DB schema
-        schema_lambda = _lambda.Function(
-            self, "SchemaInitializer",
-            runtime=_lambda.Runtime.PYTHON_3_9,
-            handler="populate_rds.handler",
-            code=_lambda.Code.from_asset("schema_initializer"),
-            timeout=Duration.seconds(30),
-            environment={
-                # Retrieve connection details from the secret
-                "DB_SECRET_ARN": db_instance.secret.secret_arn
-            }
-        )
-        db_instance.secret.grant_read(schema_lambda)
-
-        # Trigger the schema initialization during deployment
-        invoke_schema_lambda = cr.AwsSdkCall(
-            service="Lambda",
-            action="invoke",
-            parameters={
-                "FunctionName": schema_lambda.function_name
-            },
-            physical_resource_id=cr.PhysicalResourceId.of("SchemaInit_Update")
-        )
-        cr.AwsCustomResource(
-            self, "InitDBSchema",
-            on_create=invoke_schema_lambda,
-            on_update=invoke_schema_lambda,
-            policy=cr.AwsCustomResourcePolicy.from_statements([
-                iam.PolicyStatement(
-                    actions=["lambda:InvokeFunction"],
-                    resources=[schema_lambda.function_arn]
-                )
-            ])
-        )
