@@ -104,5 +104,7 @@ BRANCH_NAME=main cdk -a "python3 app.py" synth StrideSharedStack
 
 - Do not destroy `StrideSharedStack` from CI/CD.
 - Avoid `cdk deploy --all` for automated pipelines.
-- Shared SageMaker endpoint incurs cost while running.
+- Shared SageMaker endpoint now has an idle-decommission watcher (every 1 minute).
+- If there are zero endpoint invocations for a continuous 30-minute window,
+  the watcher triggers `DeleteEndpoint` and attempts `DeleteEndpointConfig`.
 - Shared RDS instance incurs cost while running.

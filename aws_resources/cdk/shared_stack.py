@@ -10,6 +10,8 @@ from aws_cdk import (
     Stack,
     aws_ec2 as ec2,
     aws_ecr as ecr,
+    aws_events as events,
+    aws_events_targets as events_targets,
     aws_iam as iam,
     aws_lambda as _lambda,
     aws_rds as rds,
@@ -101,6 +103,43 @@ class SharedPersistentStack(Stack):
         )
         sagemaker_endpoint.apply_removal_policy(RemovalPolicy.RETAIN)
         sagemaker_endpoint.add_dependency(endpoint_config)
+
+        sagemaker_idle_decommission_lambda = _lambda.Function(
+            self,
+            "SageMakerIdleDecommission",
+            runtime=_lambda.Runtime.PYTHON_3_10,
+            handler="sagemaker_idle_decommission.handler",
+            code=_lambda.Code.from_asset("cdk/lambdas"),
+            timeout=Duration.seconds(60),
+            environment={
+                "SAGEMAKER_ENDPOINT_NAME": self.SAGEMAKER_ENDPOINT_NAME,
+                "IDLE_WINDOW_MINUTES": "30",
+            },
+        )
+        sagemaker_idle_decommission_lambda.add_to_role_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=[
+                    "sagemaker:DescribeEndpoint",
+                    "sagemaker:DeleteEndpoint",
+                    "sagemaker:DeleteEndpointConfig",
+                    "cloudwatch:GetMetricStatistics",
+                    "sqs:GetQueueAttributes",
+                ],
+                resources=["*"],
+            )
+        )
+
+        events.Rule(
+            self,
+            "SageMakerIdleDecommissionSchedule",
+            schedule=events.Schedule.rate(Duration.minutes(1)),
+            targets=[
+                events_targets.LambdaFunction(
+                    sagemaker_idle_decommission_lambda
+                )
+            ],
+        )
 
         CfnOutput(
             self,
