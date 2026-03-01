@@ -42,6 +42,7 @@ BRANCH_NAME=main cdk -a "python3 app.py" deploy StrideSharedStack --require-appr
 Shared deploy provisions infrastructure only. Schema initialization and floor
 data population are run by the `Shared Stack Deploy` GitHub Actions workflow
 as post-deploy steps.
+The workflow also verifies required tables and non-zero seed counts.
 
 Preview changes before deploy:
 
