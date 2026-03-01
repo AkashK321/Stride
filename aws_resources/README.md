@@ -39,9 +39,9 @@ source .venv/bin/activate
 BRANCH_NAME=main cdk -a "python3 app.py" deploy StrideSharedStack --require-approval never
 ```
 
-Shared deploy also triggers:
-- RDS schema initialization (`schema_initializer/populate_rds.py`)
-- Floor data population (`data_population/populate_floor_data_lambda.py`)
+Shared deploy provisions infrastructure only. Schema initialization and floor
+data population are run by the `Shared Stack Deploy` GitHub Actions workflow
+as post-deploy steps.
 
 Preview changes before deploy:
 
@@ -108,3 +108,5 @@ BRANCH_NAME=main cdk -a "python3 app.py" synth StrideSharedStack
 - If there are zero endpoint invocations for a continuous 30-minute window,
   the watcher triggers `DeleteEndpoint` and attempts `DeleteEndpointConfig`.
 - Shared RDS instance incurs cost while running.
+- Shared DB initialization scripts are destructive (`DROP TABLE IF EXISTS ...`)
+  and should only be run intentionally via the shared deploy workflow.

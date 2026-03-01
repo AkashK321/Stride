@@ -3,7 +3,6 @@ Persistent shared infrastructure stack.
 """
 
 from aws_cdk import (
-    BundlingOptions,
     CfnOutput,
     Duration,
     RemovalPolicy,
@@ -16,7 +15,6 @@ from aws_cdk import (
     aws_lambda as _lambda,
     aws_rds as rds,
     aws_sagemaker as sagemaker,
-    custom_resources as cr,
 )
 from constructs import Construct
 
@@ -239,90 +237,5 @@ class SharedPersistentStack(Stack):
             export_name=self.EXPORT_RDS_SECRET_ARN,
         )
 
-        # Shared-stack deploy: initialize schema and populate floor data.
-        schema_init_code = _lambda.Code.from_asset(
-            "schema_initializer",
-            bundling=BundlingOptions(
-                image=_lambda.Runtime.PYTHON_3_10.bundling_image,
-                command=[
-                    "bash",
-                    "-lc",
-                    "pip install -r requirements.txt -t /asset-output && cp -au . /asset-output",
-                ],
-            ),
-        )
-        schema_lambda = _lambda.Function(
-            self,
-            "SchemaInitializer",
-            runtime=_lambda.Runtime.PYTHON_3_10,
-            handler="populate_rds.handler",
-            code=schema_init_code,
-            timeout=Duration.seconds(60),
-            environment={"DB_SECRET_ARN": rds_instance.secret.secret_arn},
-        )
-        rds_instance.secret.grant_read(schema_lambda)
-
-        data_population_code = _lambda.Code.from_asset(
-            "data_population",
-            bundling=BundlingOptions(
-                image=_lambda.Runtime.PYTHON_3_10.bundling_image,
-                command=[
-                    "bash",
-                    "-lc",
-                    "pip install -r requirements.txt -t /asset-output && cp -au . /asset-output",
-                ],
-            ),
-        )
-        data_population_lambda = _lambda.Function(
-            self,
-            "FloorDataPopulation",
-            runtime=_lambda.Runtime.PYTHON_3_10,
-            handler="populate_floor_data_lambda.handler",
-            code=data_population_code,
-            timeout=Duration.seconds(120),
-            environment={"DB_SECRET_ARN": rds_instance.secret.secret_arn},
-        )
-        rds_instance.secret.grant_read(data_population_lambda)
-
-        invoke_schema_lambda = cr.AwsSdkCall(
-            service="Lambda",
-            action="invoke",
-            parameters={"FunctionName": schema_lambda.function_name},
-            physical_resource_id=cr.PhysicalResourceId.of("StrideSharedSchemaInit"),
-        )
-        schema_init_custom_resource = cr.AwsCustomResource(
-            self,
-            "InitRdsSchema",
-            on_create=invoke_schema_lambda,
-            on_update=invoke_schema_lambda,
-            policy=cr.AwsCustomResourcePolicy.from_statements(
-                [
-                    iam.PolicyStatement(
-                        actions=["lambda:InvokeFunction"],
-                        resources=[schema_lambda.function_arn],
-                    )
-                ]
-            ),
-        )
-
-        invoke_data_population_lambda = cr.AwsSdkCall(
-            service="Lambda",
-            action="invoke",
-            parameters={"FunctionName": data_population_lambda.function_name},
-            physical_resource_id=cr.PhysicalResourceId.of("StrideSharedFloorDataPopulation"),
-        )
-        data_population_custom_resource = cr.AwsCustomResource(
-            self,
-            "PopulateRdsFloorData",
-            on_create=invoke_data_population_lambda,
-            on_update=invoke_data_population_lambda,
-            policy=cr.AwsCustomResourcePolicy.from_statements(
-                [
-                    iam.PolicyStatement(
-                        actions=["lambda:InvokeFunction"],
-                        resources=[data_population_lambda.function_arn],
-                    )
-                ]
-            ),
-        )
-        data_population_custom_resource.node.add_dependency(schema_init_custom_resource)
+        # Schema initialization and floor-data population are executed in CI/CD
+        # as post-deploy scripts, not as deploy-time custom resources.
