@@ -351,7 +351,13 @@ class CdkStack(Stack):
         # static_navigation_handler.add_environment("DB_SECRET_ARN", db_instance.secret.secret_arn)
         # db_instance.secret.grant_read(static_navigation_handler)
 
-        # db_instance.connections.allow_from_any_ipv4(ec2.Port.tcp(5432), "Allow public access for Lambda")
+        live_navigation_handler.add_environment("DB_HOST", db_instance.db_instance_endpoint_address)
+        live_navigation_handler.add_environment("DB_PORT", db_instance.db_instance_endpoint_port)
+        live_navigation_handler.add_environment("DB_NAME", "StrideCore")
+        live_navigation_handler.add_environment("DB_SECRET_ARN", db_instance.secret.secret_arn)
+        db_instance.secret.grant_read(live_navigation_handler)
+
+        db_instance.connections.allow_from_any_ipv4(ec2.Port.tcp(5432), "Allow public access for Lambda")
 
         # # Define the lambda to initialize the DB schema
         # schema_lambda = _lambda.Function(
