@@ -13,6 +13,8 @@ export interface SearchResultsListProps {
   searched: boolean;
   onSelectResult: (landmark: LandmarkResult) => void;
   onRetry: () => void;
+  recentResults?: LandmarkResult[];
+  showRecents?: boolean;
 }
 
 export default function SearchResultsList({
@@ -22,6 +24,8 @@ export default function SearchResultsList({
   searched,
   onSelectResult,
   onRetry,
+  recentResults,
+  showRecents,
 }: SearchResultsListProps) {
   const renderItem = React.useCallback(
     ({ item }: { item: LandmarkResult }) =>
@@ -77,12 +81,51 @@ export default function SearchResultsList({
     return null;
   }, [loading, error, searched, onRetry]);
 
-  return React.createElement(BottomSheetFlatList, {
-    data: results,
-    keyExtractor,
-    renderItem,
-    ListEmptyComponent: renderEmpty,
-    contentContainerStyle: styles.listContent,
-    keyboardShouldPersistTaps: "handled",
-  });
+  return React.createElement(
+    React.Fragment,
+    null,
+    showRecents &&
+      recentResults &&
+      recentResults.length > 0 &&
+      React.createElement(
+        View,
+        { style: styles.recentsContainer },
+        React.createElement(
+          View,
+          { style: styles.recentsSection },
+          React.createElement(
+            Text,
+            { style: styles.recentsHeader },
+            "Recents",
+          ),
+          recentResults.map((item, index) =>
+            React.createElement(
+              View,
+              { key: `${item.nearest_node}-recent-${index}` },
+              React.createElement(SearchResultItem, {
+                landmark: item,
+                onPress: onSelectResult,
+              }),
+              index < recentResults.length - 1 &&
+                React.createElement(View, { style: styles.separator }),
+            ),
+          ),
+        ),
+      ),
+    results.length > 0 &&
+      React.createElement(
+        View,
+        { style: styles.resultsContainer },
+        React.createElement(BottomSheetFlatList, {
+          data: results,
+          keyExtractor,
+          renderItem,
+          ListEmptyComponent: renderEmpty,
+          contentContainerStyle: styles.listContent,
+          keyboardShouldPersistTaps: "handled",
+          ItemSeparatorComponent: () =>
+            React.createElement(View, { style: styles.separator }),
+        }),
+      ),
+  );
 }

@@ -1,14 +1,11 @@
 import * as React from "react";
 import { View, Text, StyleSheet, ActivityIndicator, Pressable } from "react-native";
-import { useNavigation, router } from "expo-router";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import SearchSheet from "../../components/SearchSheet";
-import type { SearchSheetRef } from "../../components/SearchSheet";
+import { router, useLocalSearchParams } from "expo-router";
 import NavigationInstructionsDropdown from "../../components/NavigationInstructions/NavigationInstructionsDropdown";
 import {
-  LandmarkResult,
   NavigationInstruction,
   startNavigation,
   aggregateNavigationInstructions,
@@ -17,12 +14,11 @@ import { colors } from "../../theme/colors";
 import { typography } from "../../theme/typography";
 import { spacing } from "../../theme/spacing";
 
-export default function Home() {
-  const sheetRef = React.useRef<SearchSheetRef>(null);
-  const navigation = useNavigation();
+
+export default function NavigationSession() {
+  const params = useLocalSearchParams();
+  const insets = useSafeAreaInsets();
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-  const [selectedDestination, setSelectedDestination] =
-    React.useState<LandmarkResult | null>(null);
   const [navigationInstructions, setNavigationInstructions] =
     React.useState<NavigationInstruction[] | null>(null);
   const [navigationError, setNavigationError] = React.useState<string | null>(
@@ -30,44 +26,50 @@ export default function Home() {
   );
   const [navigationLoading, setNavigationLoading] = React.useState(false);
 
-  const handleSelectDestination = React.useCallback(
-    (landmark: LandmarkResult) => {
-      router.push({
-        pathname: "/navigation/navigation",
-        params: {
-          landmark_id: String(landmark.landmark_id),
-          name: landmark.name,
-          floor_number: String(landmark.floor_number),
-        },
-      });
-    },
-    [],
-  );
-
-  const handleExitNavigation = React.useCallback(() => {
-    setNavigationInstructions(null);
-    setNavigationError(null);
-    setSelectedDestination(null);
-    sheetRef.current?.collapse?.();
-  }, []);
-
+  // Kick off navigation when the screen mounts
   React.useEffect(() => {
-    const parent = navigation.getParent?.();
-    if (!parent) {
+    if (!params.landmark_id) {
+      setNavigationError("No destination provided.");
       return;
     }
 
-    if (navigationInstructions && navigationInstructions.length > 0) {
-      parent.setOptions({
-        tabBarStyle: { display: "none" },
-      });
-    } else {
-      // Restore default tab bar style from layout by clearing override
-      parent.setOptions({
-        tabBarStyle: undefined,
-      });
-    }
-  }, [navigation, navigationInstructions]);
+    let cancelled = false;
+
+    const run = async () => {
+      setNavigationLoading(true);
+      setNavigationError(null);
+      try {
+        const response = await startNavigation({
+          destination: { landmark_id: String(params.landmark_id) },
+          start_location: { node_id: "r208_door" },
+        });
+        if (cancelled) return;
+        setNavigationInstructions(
+          aggregateNavigationInstructions(response.instructions),
+        );
+      } catch (err) {
+        if (cancelled) return;
+        setNavigationInstructions(null);
+        setNavigationError(
+          err instanceof Error ? err.message : "Failed to start navigation",
+        );
+      } finally {
+        if (!cancelled) {
+          setNavigationLoading(false);
+        }
+      }
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [params.landmark_id]);
+
+  const handleExitNavigation = React.useCallback(() => {
+    router.back();
+  }, []);
 
   const totalDistanceFeet = React.useMemo(() => {
     if (!navigationInstructions || navigationInstructions.length === 0) {
@@ -101,7 +103,7 @@ export default function Home() {
         React.createElement(
           Text,
           { style: styles.permissionText },
-          "Camera permission is required to use the home screen.",
+          "Camera permission is required to use navigation.",
         ),
         React.createElement(
           Text,
@@ -161,28 +163,32 @@ export default function Home() {
         React.createElement(NavigationInstructionsDropdown, {
           instructions: navigationInstructions,
           onExit: handleExitNavigation,
-          // style: styles.navigationInstructionsDropdown,
         }),
     ),
 
-    selectedDestination &&
+    params.name &&
       navigationInstructions &&
       React.createElement(
         View,
-        { style: styles.bottomNavBar },
+        {
+          style: [
+            styles.bottomNavBar,
+            { paddingBottom: insets.bottom || spacing.sm },
+          ],
+        },
         React.createElement(
           View,
           { style: styles.bottomNavTextContainer },
           React.createElement(
             Text,
-            { style: styles.bottomNavDestination },
-            selectedDestination.name,
+            { style: styles.bottomNavDestination, numberOfLines: 1 },
+            params.name,
           ),
           totalDistanceFeet !== null &&
             React.createElement(
               Text,
               { style: styles.bottomNavDistance },
-              `${totalDistanceFeet} ft remaining`,
+              `${totalDistanceFeet} ft`,
             ),
         ),
         React.createElement(
@@ -196,16 +202,10 @@ export default function Home() {
           React.createElement(
             Text,
             { style: styles.bottomNavEndButtonText },
-            "End",
+            "End navigation",
           ),
         ),
       ),
-
-    !navigationInstructions &&
-      React.createElement(SearchSheet, {
-        ref: sheetRef,
-        onSelectDestination: handleSelectDestination,
-      }),
   );
 }
 
@@ -261,37 +261,43 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    flexDirection: "column",
+    alignItems: "stretch",
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingTop: spacing.sm,
     backgroundColor: colors.background,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.backgroundSecondary,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: "hidden",
   },
   bottomNavTextContainer: {
-    flex: 1,
-    marginRight: spacing.sm,
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
   },
   bottomNavDestination: {
     ...typography.h3,
-    fontSize: 18,
+    fontSize: 22,
     color: colors.text,
   },
   bottomNavDistance: {
     ...typography.label,
-    marginTop: 2,
+    marginTop: 4,
+    fontSize: 18,
     color: colors.textSecondary,
   },
   bottomNavEndButton: {
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: 999,
+    paddingVertical: spacing.md,
+    borderRadius: 16,
+    alignItems: "center",
+    alignSelf: "stretch",
     backgroundColor: colors.danger,
   },
   bottomNavEndButtonText: {
     ...typography.button,
+    fontSize: 16,
     color: colors.buttonPrimaryText,
   },
 });
+

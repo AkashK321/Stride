@@ -32,6 +32,9 @@ const SearchSheet = React.forwardRef<SearchSheetRef, SearchSheetProps>(
 
     const [query, setQuery] = React.useState("");
     const [results, setResults] = React.useState<LandmarkResult[]>([]);
+    const [recentResults, setRecentResults] = React.useState<LandmarkResult[]>(
+      [],
+    );
     const [loading, setLoading] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
     const [searched, setSearched] = React.useState(false);
@@ -63,6 +66,32 @@ const SearchSheet = React.forwardRef<SearchSheetRef, SearchSheetProps>(
       try {
         const response = await searchLandmarks(text.trim());
         setResults(response.results);
+        setRecentResults((prev) => {
+          if (!response.results || response.results.length === 0) {
+            return prev;
+          }
+          const seen = new Set<number>();
+          const merged: LandmarkResult[] = [];
+
+          // New results first
+          for (const item of response.results) {
+            if (!seen.has(item.landmark_id)) {
+              seen.add(item.landmark_id);
+              merged.push(item);
+            }
+          }
+
+          // Then existing recents that weren't in this batch
+          for (const item of prev) {
+            if (!seen.has(item.landmark_id)) {
+              seen.add(item.landmark_id);
+              merged.push(item);
+            }
+          }
+
+          // Keep only a reasonable number of recents
+          return merged.slice(0, 10);
+        });
         setSearched(true);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Search failed");
@@ -119,6 +148,14 @@ const SearchSheet = React.forwardRef<SearchSheetRef, SearchSheetProps>(
 
         onSelectDestination(landmark);
 
+         // Move selected destination to the front of recent results
+        setRecentResults((prev) => {
+          const filtered = prev.filter(
+            (item) => item.landmark_id !== landmark.landmark_id,
+          );
+          return [landmark, ...filtered].slice(0, 10);
+        });
+
         setQuery("");
         setResults([]);
         setSearched(false);
@@ -163,7 +200,11 @@ const SearchSheet = React.forwardRef<SearchSheetRef, SearchSheetProps>(
         />
 
         <SearchResultsList
-          results={results}
+          results={query.trim().length === 0 ? [] : results}
+          recentResults={
+            query.trim().length === 0 ? recentResults.slice(0, 3) : []
+          }
+          showRecents={query.trim().length === 0 && recentResults.length > 0}
           loading={loading}
           error={error}
           searched={searched}

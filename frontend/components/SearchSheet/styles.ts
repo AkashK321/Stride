@@ -1,8 +1,10 @@
-import { StyleSheet } from "react-native";
+import { StyleSheet, Dimensions } from "react-native";
 import { colors } from "../../theme/colors";
 import { radii } from "../../theme/radius";
 import { spacing } from "../../theme/spacing";
 import { typography } from "../../theme/typography";
+
+const RESULTS_MAX_HEIGHT = Dimensions.get("window").height * 0.68;
 
 export const sheetStyles = StyleSheet.create({
   background: {
@@ -52,8 +54,6 @@ export const resultItemStyles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: spacing.md - 2,
     paddingHorizontal: spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.backgroundSecondary,
   },
   pressed: {
     backgroundColor: colors.backgroundSecondary,
@@ -82,8 +82,47 @@ export const resultItemStyles = StyleSheet.create({
 });
 
 export const resultsListStyles = StyleSheet.create({
+  recentsContainer: {
+    marginHorizontal: spacing.md,
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: radii.medium,
+    overflow: "hidden",
+  },
+  resultsContainer: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.xl,
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: radii.medium,
+    overflow: "hidden",
+    maxHeight: RESULTS_MAX_HEIGHT,
+  },
   listContent: {
-    paddingBottom: spacing.xl,
+    paddingBottom: 0,
+    paddingTop: 0,
+  },
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.secondary,
+    marginHorizontal: spacing.md,
+  },
+  recentsSection: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  recentsHeader: {
+    ...typography.h3,
+    fontSize: 18,
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  recentsFooterSeparator: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.secondary,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.sm,
   },
   centered: {
     alignItems: "center",
