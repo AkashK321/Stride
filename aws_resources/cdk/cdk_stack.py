@@ -121,6 +121,17 @@ class CdkStack(Stack):
             snap_start=_lambda.SnapStartConf.ON_PUBLISHED_VERSIONS,
         )
 
+        # Define the Live Navigation Lambda function (WebSocket route: navigation)
+        live_navigation_handler = _lambda.Function(
+            self, "LiveNavigationHandler",
+            runtime=_lambda.Runtime.JAVA_21,
+            handler="com.handlers.LiveNavigationHandler",
+            code=code_asset,
+            memory_size=3008,
+            timeout=Duration.seconds(29),
+            snap_start=_lambda.SnapStartConf.ON_PUBLISHED_VERSIONS,
+        )
+
         # Define Cognito User Pool
         user_pool = cognito.UserPool(
             self, "StrideUserPool",
@@ -234,12 +245,17 @@ class CdkStack(Stack):
             route_key="frame",
             integration=integrations.WebSocketLambdaIntegration("FrameIntegration", object_detection_handler)
         )
+        ws_api.add_route(
+            route_key="navigation",
+            integration=integrations.WebSocketLambdaIntegration("NavigationIntegration", live_navigation_handler)
+        )
         # Add $default route to catch unmatched messages (for debugging)
         ws_api.add_route(
             route_key="$default",
             integration=integrations.WebSocketLambdaIntegration("DefaultIntegration", object_detection_handler)
         )
         ws_api.grant_manage_connections(object_detection_handler)
+        ws_api.grant_manage_connections(live_navigation_handler)
 
         # Add stack outputs for reporting to CICD
         CfnOutput(self, "RestAPIEndpointURL",
@@ -349,6 +365,12 @@ class CdkStack(Stack):
         static_navigation_handler.add_environment("DB_NAME", "StrideCore")
         static_navigation_handler.add_environment("DB_SECRET_ARN", db_instance.secret.secret_arn)
         db_instance.secret.grant_read(static_navigation_handler)
+
+        live_navigation_handler.add_environment("DB_HOST", db_instance.db_instance_endpoint_address)
+        live_navigation_handler.add_environment("DB_PORT", db_instance.db_instance_endpoint_port)
+        live_navigation_handler.add_environment("DB_NAME", "StrideCore")
+        live_navigation_handler.add_environment("DB_SECRET_ARN", db_instance.secret.secret_arn)
+        db_instance.secret.grant_read(live_navigation_handler)
 
         db_instance.connections.allow_from_any_ipv4(ec2.Port.tcp(5432), "Allow public access for Lambda")
 
