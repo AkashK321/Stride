@@ -101,6 +101,9 @@ export default function NavigationInstructionsDropdown({
 
 function formatInstruction(instruction: NavigationInstruction): string {
   const { direction, distance_feet } = instruction;
+  if (direction === "arrive") {
+    return "You have arrived";
+  }
   if (!direction) {
     return `Continue for ${distance_feet.toFixed(1)} ft`;
   }

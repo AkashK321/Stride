@@ -10,6 +10,7 @@ import {
   LandmarkResult,
   NavigationInstruction,
   startNavigation,
+  aggregateNavigationInstructions,
 } from "../../services/api";
 import { colors } from "../../theme/colors";
 import { typography } from "../../theme/typography";
@@ -36,9 +37,11 @@ export default function Home() {
       try {
         const response = await startNavigation({
           destination: { landmark_id: String(landmark.landmark_id) },
-          start_location: { node_id: "staircase_main_2S01" },
+          start_location: { node_id: "r208_door" },
         });
-        setNavigationInstructions(response.instructions);
+        setNavigationInstructions(
+          aggregateNavigationInstructions(response.instructions),
+        );
       } catch (err) {
         setNavigationInstructions(null);
         setNavigationError(
