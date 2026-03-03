@@ -1,7 +1,6 @@
 import * as React from "react";
 import { View, TextInput, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { searchInputStyles as styles } from "./styles";
 import { colors } from "../../theme/colors";
 
@@ -27,7 +26,7 @@ export default function SearchInput({
       style: styles.icon,
     }),
 
-    React.createElement(BottomSheetTextInput, {
+    React.createElement(TextInput, {
       value,
       onChangeText,
       onFocus,

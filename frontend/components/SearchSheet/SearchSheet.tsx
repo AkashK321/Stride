@@ -1,6 +1,12 @@
 import * as React from "react";
-import { Keyboard } from "react-native";
-import BottomSheet from "@gorhom/bottom-sheet";
+import {
+  Animated,
+  Dimensions,
+  Keyboard,
+  PanResponder,
+  StyleSheet,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import SearchInput from "./SearchInput";
 import SearchResultsList from "./SearchResultsList";
@@ -8,8 +14,10 @@ import { sheetStyles as styles } from "./styles";
 import { searchLandmarks, LandmarkResult } from "../../services/api";
 
 const DEBOUNCE_MS = 300;
-const SNAP_REST = 1;
-const SNAP_FULL = 3;
+
+const REST_HEIGHT = 80;
+const MID_HEIGHT_FRACTION = 0.5;
+const FULL_HEIGHT_FRACTION = 0.8;
 
 export interface SearchSheetProps {
   onSelectDestination: (landmark: LandmarkResult) => void;
@@ -21,14 +29,20 @@ export interface SearchSheetRef {
 
 const SearchSheet = React.forwardRef<SearchSheetRef, SearchSheetProps>(
   ({ onSelectDestination }, ref) => {
-    const bottomSheetRef = React.useRef<BottomSheet>(null);
-    const currentIndexRef = React.useRef<number>(SNAP_REST);
-
     const insets = useSafeAreaInsets();
-    const snapPoints = React.useMemo(
-      () => [90, "50%", "95%"],
-      [],
-    );
+    const screenHeight = Dimensions.get("window").height;
+    const snapHeights = React.useMemo(() => {
+      const mid = Math.round(screenHeight * MID_HEIGHT_FRACTION);
+      const full = Math.round(screenHeight * FULL_HEIGHT_FRACTION);
+      return {
+        rest: REST_HEIGHT,
+        mid,
+        full,
+      };
+    }, [screenHeight]);
+
+    const sheetHeight = React.useRef(new Animated.Value(snapHeights.rest)).current;
+    const dragStartHeightRef = React.useRef(snapHeights.rest);
 
     const [query, setQuery] = React.useState("");
     const [results, setResults] = React.useState<LandmarkResult[]>([]);
@@ -45,7 +59,10 @@ const SearchSheet = React.forwardRef<SearchSheetRef, SearchSheetProps>(
     // Expose collapse method
     React.useImperativeHandle(ref, () => ({
       collapse: () => {
-        bottomSheetRef.current?.snapToIndex(SNAP_REST);
+        Animated.spring(sheetHeight, {
+          toValue: snapHeights.rest,
+          useNativeDriver: false,
+        }).start();
       },
     }));
 
@@ -132,11 +149,19 @@ const SearchSheet = React.forwardRef<SearchSheetRef, SearchSheetProps>(
     // KEYBOARD-SAFE SNAP LOGIC
     // ------------------------
 
+    const snapTo = React.useCallback(
+      (target: number) => {
+        Animated.spring(sheetHeight, {
+          toValue: target,
+          useNativeDriver: false,
+        }).start();
+      },
+      [sheetHeight],
+    );
+
     const expandToFull = React.useCallback(() => {
-      if (currentIndexRef.current !== SNAP_FULL) {
-        bottomSheetRef.current?.snapToIndex(SNAP_FULL);
-      }
-    }, []);
+      snapTo(snapHeights.full);
+    }, [snapHeights.full, snapTo]);
 
     const handleFocus = React.useCallback(() => {
       expandToFull();
@@ -160,61 +185,100 @@ const SearchSheet = React.forwardRef<SearchSheetRef, SearchSheetProps>(
         setResults([]);
         setSearched(false);
         setError(null);
-
-        bottomSheetRef.current?.snapToIndex(SNAP_REST);
+        snapTo(snapHeights.rest);
       },
-      [onSelectDestination],
+      [onSelectDestination, snapHeights.rest, snapTo],
     );
 
     const handleRetry = React.useCallback(() => {
       performSearch(query);
     }, [performSearch, query]);
 
-    const handleSheetChange = React.useCallback((index: number) => {
-      currentIndexRef.current = index;
-    }, []);
+    const clampHeight = React.useCallback(
+      (height: number) =>
+        Math.max(snapHeights.rest, Math.min(snapHeights.full, height)),
+      [snapHeights.full, snapHeights.rest],
+    );
+
+    const panResponder = React.useMemo(
+      () =>
+        PanResponder.create({
+          onMoveShouldSetPanResponder: (_, gesture) =>
+            Math.abs(gesture.dy) > 4,
+          onPanResponderGrant: () => {
+            sheetHeight.stopAnimation((value: number) => {
+              dragStartHeightRef.current = value;
+            });
+          },
+          onPanResponderMove: (_, gesture) => {
+            const next = clampHeight(dragStartHeightRef.current - gesture.dy);
+            sheetHeight.setValue(next);
+          },
+          onPanResponderRelease: () => {
+            sheetHeight.stopAnimation((value: number) => {
+              const distances = [
+                { target: snapHeights.rest, d: Math.abs(value - snapHeights.rest) },
+                { target: snapHeights.mid, d: Math.abs(value - snapHeights.mid) },
+                { target: snapHeights.full, d: Math.abs(value - snapHeights.full) },
+              ];
+              distances.sort((a, b) => a.d - b.d);
+              snapTo(distances[0].target);
+            });
+          },
+        }),
+      [clampHeight, sheetHeight, snapHeights.full, snapHeights.mid, snapHeights.rest, snapTo],
+    );
 
     // ------------------------
     // RENDER
     // ------------------------
 
-    return (
-      <BottomSheet
-        ref={bottomSheetRef}
-        index={SNAP_REST}
-        snapPoints={snapPoints}
-        onChange={handleSheetChange}
-        topInset={insets.top}
-        backgroundStyle={styles.background}
-        handleIndicatorStyle={styles.handleIndicator}
-        enablePanDownToClose={false}
-        enableOverDrag={false}
-        keyboardBehavior="extend"        // CRITICAL
-        keyboardBlurBehavior="none"      // CRITICAL
-        android_keyboardInputMode="adjustResize"
-      >
-        <SearchInput
-          value={query}
-          onChangeText={handleChangeText}
-          onFocus={handleFocus}
-        />
-
-        <SearchResultsList
-          results={query.trim().length === 0 ? [] : results}
-          recentResults={
-            query.trim().length === 0 ? recentResults.slice(0, 3) : []
-          }
-          showRecents={query.trim().length === 0 && recentResults.length > 0}
-          loading={loading}
-          error={error}
-          searched={searched}
-          onSelectResult={handleSelectResult}
-          onRetry={handleRetry}
-        />
-      </BottomSheet>
+    return React.createElement(
+      Animated.View,
+      {
+        style: [
+          sheetLocalStyles.sheet,
+          styles.background,
+          { height: sheetHeight, paddingBottom: insets.bottom },
+        ],
+      },
+      React.createElement(
+        View,
+        { style: sheetLocalStyles.handleArea, ...panResponder.panHandlers },
+        React.createElement(View, { style: styles.handleIndicator }),
+      ),
+      React.createElement(SearchInput, {
+        value: query,
+        onChangeText: handleChangeText,
+        onFocus: handleFocus,
+      }),
+      React.createElement(SearchResultsList, {
+        results: query.trim().length === 0 ? [] : results,
+        recentResults: query.trim().length === 0 ? recentResults.slice(0, 3) : [],
+        showRecents: query.trim().length === 0 && recentResults.length > 0,
+        loading,
+        error,
+        searched,
+        onSelectResult: handleSelectResult,
+        onRetry: handleRetry,
+      }),
     );
   },
 );
 
 SearchSheet.displayName = "SearchSheet";
 export default SearchSheet;
+
+const sheetLocalStyles = StyleSheet.create({
+  sheet: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  handleArea: {
+    alignItems: "center",
+    paddingTop: 10,
+    paddingBottom: 8,
+  },
+});

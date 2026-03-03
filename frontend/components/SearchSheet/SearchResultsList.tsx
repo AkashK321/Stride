@@ -1,6 +1,11 @@
 import * as React from "react";
-import { View, Text, Pressable, ActivityIndicator } from "react-native";
-import { BottomSheetFlatList } from "@gorhom/bottom-sheet";
+import {
+  View,
+  Text,
+  Pressable,
+  ActivityIndicator,
+  FlatList,
+} from "react-native";
 import SearchResultItem from "./SearchResultItem";
 import { resultsListStyles as styles } from "./styles";
 import { colors } from "../../theme/colors";
@@ -116,7 +121,7 @@ export default function SearchResultsList({
       React.createElement(
         View,
         { style: styles.resultsContainer },
-        React.createElement(BottomSheetFlatList, {
+      React.createElement(FlatList<LandmarkResult>, {
           data: results,
           keyExtractor,
           renderItem,

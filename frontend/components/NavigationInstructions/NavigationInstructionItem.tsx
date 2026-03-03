@@ -41,8 +41,6 @@ function getRelativeTurn(
   const order = ["north", "east", "south", "west"] as const;
   const fromIdx = order.indexOf(current as (typeof order)[number]);
   const toIdx = order.indexOf(next as (typeof order)[number]);
-  console.log("fromIdx", fromIdx);
-  console.log("toIdx", toIdx);
   if (fromIdx === -1 || toIdx === -1) return null;
 
   const delta = (toIdx - fromIdx + order.length) % order.length;
