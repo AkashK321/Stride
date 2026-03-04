@@ -68,6 +68,21 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
             return APIGatewayV2WebSocketResponse().apply { statusCode = 200 }
         }
 
+        // Defensive guard: this handler should only process the dedicated live-nav route.
+        if (routeKey != "navigation") {
+            postJsonToConnection(
+                apiClient = apiClient,
+                connectionId = connectionId,
+                payload = mapOf(
+                    "type" to "navigation_error",
+                    "session_id" to "unknown",
+                    "error" to "Unsupported route '$routeKey'. Use 'navigation'."
+                ),
+                logger = logger
+            )
+            return APIGatewayV2WebSocketResponse().apply { statusCode = 400 }
+        }
+
         val payload = try {
             mapper.readValue<Map<String, Any?>>(rawBody)
         } catch (e: Exception) {
@@ -109,7 +124,8 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         val sessionId = payload["session_id"] as String
         val requestId = (payload["request_id"] as Number).toInt()
 
-        // TODO(business-logic): resolve session context and current step from persistent session store.
+        // TODO(business-logic): resolve and persist per-session user navigation state by session_id
+        // (e.g., current step, last estimated node, and route progress).
         // TODO(business-logic): run live localization using image + sensor signals.
         // TODO(business-logic): compute remaining instructions, estimated position, and completion state.
         val responsePayload = mapOf(
