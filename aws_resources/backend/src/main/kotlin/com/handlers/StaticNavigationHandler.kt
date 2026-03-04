@@ -403,24 +403,18 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
             val nodeId = path[i]
             val coords = nodeData[nodeId] ?: Pair(0, 0)
             
-            var distFeet = 0.0
-            var directionStr = ""
-            
-            if (i < path.size - 1) {
+            val (distFeet, directionStr) = if (i < path.size - 1) {
                 // Not at the last node yet, lookup edge to the next node
                 val nextNodeId = path[i + 1]
                 val edgeInfo = edgeMap[Pair(nodeId, nextNodeId)]
-                
                 if (edgeInfo != null) {
-                    distFeet = edgeInfo.first * 3.28084
-                    directionStr = bearingToDirectionString(edgeInfo.second)
+                    Pair(edgeInfo.first * 3.28084, bearingToDirectionString(edgeInfo.second))
                 } else {
-                    directionStr = "continue"
+                    Pair(0.0, "continue")
                 }
             } else {
                 // At the final node. Look towards the actual Landmark destination.
-                distFeet = landmark.distanceToNode * 3.28084
-                directionStr = "Head ${landmark.bearingFromNode}"
+                Pair(landmark.distanceToNode * 3.28084, "Head ${landmark.bearingFromNode}")
             }
             
             instructions.add(
