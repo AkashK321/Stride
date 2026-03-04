@@ -147,6 +147,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Install Schema Initializer dependencies
+        working-directory: aws_resources/schema_initializer
+        run: |
+          pip install -r requirements.txt -t .
+
       # Step 6: Install jq (required for parsing stack outputs)
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
