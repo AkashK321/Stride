@@ -17,7 +17,7 @@ import java.util.PriorityQueue
 data class LandmarkDetails(
     val id: Int,
     val name: String,
-    val nearestNodeId: Int,
+    val nearestNodeId: String,
     val distanceToNode: Double,
     val bearingFromNode: String,
     val coordX: Int,
@@ -163,13 +163,12 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
         val results = mutableListOf<LandmarkResult>()
 
         getDbConnection().use { conn ->
-            // Join Landmarks, Floors, and MapNodes to get floor number and the node's string ID.
+            // Join Landmarks and Floors; Landmarks.NearestNodeID now stores the canonical string node ID.
             val sql = """
                 SELECT l.LandmarkID, l.Name, f.FloorNumber,
-                       COALESCE(n.NodeIDString, CAST(l.NearestNodeID AS VARCHAR)) AS NearestNodeDisplay
+                       l.NearestNodeID AS NearestNodeDisplay
                 FROM Landmarks l
                 JOIN Floors f ON l.FloorID = f.FloorID
-                LEFT JOIN MapNodes n ON l.NearestNodeID = n.NodeID
                 WHERE l.Name ILIKE ?
                 LIMIT ?
             """.trimIndent()
@@ -245,7 +244,7 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
                 return LandmarkDetails(
                     id = landmarkId,
                     name = rs.getString("Name"),
-                    nearestNodeId = rs.getInt("NearestNodeID"),
+                    nearestNodeId = rs.getString("NearestNodeID"),
                     distanceToNode = rs.getDouble("DistanceToNode"),
                     bearingFromNode = rs.getString("BearingFromNode") ?: "continue",
                     coordX = rs.getInt("MapCoordinateX"),
@@ -256,10 +255,10 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
         return null
     }
 
-    private fun getBuildingIdForNode(nodeId: Int, conn: Connection): String? {
-        val query = "SELECT BuildingID FROM MapNodes WHERE NodeID = ?"
+    private fun getBuildingIdForNode(nodeId: String, conn: Connection): String? {
+        val query = "SELECT BuildingID FROM MapNodes WHERE NodeIDString = ?"
         conn.prepareStatement(query).use { stmt -> 
-            stmt.setInt(1, nodeId)
+            stmt.setString(1, nodeId)
             val rs = stmt.executeQuery()
             if (rs.next()) {
                 return rs.getString("BuildingID")
@@ -269,40 +268,36 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
     }
 
     /**
-     * Resolves start_location.node_id (NodeIDString) to MapNodes.NodeID.
+     * Resolves start_location.node_id (NodeIDString) and verifies it exists.
      * Only accepts the string node id from floor data (e.g. "staircase_main_2S01").
      */
-    private fun resolveStartNodeId(conn: Connection, nodeIdRaw: String): Int? {
+    private fun resolveStartNodeId(conn: Connection, nodeIdRaw: String): String? {
         val trimmed = nodeIdRaw.trim()
         if (trimmed.isEmpty()) return null
-        return getNodeIdByNodeIDString(conn, trimmed)
-    }
-
-    private fun getNodeIdByNodeIDString(conn: Connection, nodeIDString: String): Int? {
-        val query = "SELECT NodeID FROM MapNodes WHERE NodeIDString = ?"
+        val query = "SELECT NodeIDString FROM MapNodes WHERE NodeIDString = ?"
         conn.prepareStatement(query).use { stmt ->
-            stmt.setString(1, nodeIDString)
+            stmt.setString(1, trimmed)
             val rs = stmt.executeQuery()
-            if (rs.next()) return rs.getInt("NodeID")
+            if (rs.next()) return trimmed
         }
         return null
     }
 
-    private fun calculateShortestPath(buildingId: String, startNode: Int, endNode: Int, conn: Connection): Pair<List<Int>, Double> {
+    private fun calculateShortestPath(buildingId: String, startNode: String, endNode: String, conn: Connection): Pair<List<String>, Double> {
         val query = """
             SELECT e.StartNodeID, e.EndNodeID, e.DistanceMeters, e.IsBidirectional
             FROM MapEdges e
-            JOIN MapNodes n ON e.StartNodeID = n.NodeID
+            JOIN MapNodes n ON e.StartNodeID = n.NodeIDString
             WHERE n.BuildingID = ?
         """
         // Building adjacency list
-        val graph = mutableMapOf<Int, MutableList<Pair<Int, Double>>>()
+        val graph = mutableMapOf<String, MutableList<Pair<String, Double>>>()
         conn.prepareStatement(query).use { stmt -> 
             stmt.setString(1, buildingId)
             val rs = stmt.executeQuery()
             while (rs.next()) {
-                val u = rs.getInt("StartNodeID")
-                val v = rs.getInt("EndNodeID")
+                val u = rs.getString("StartNodeID")
+                val v = rs.getString("EndNodeID")
                 val weight = rs.getDouble("DistanceMeters")
                 val isBidi = rs.getBoolean("IsBidirectional")
 
@@ -314,10 +309,10 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
         }
 
         // Dijkstra setup
-        val distances = mutableMapOf<Int, Double>().withDefault { Double.POSITIVE_INFINITY }
-        val previous = mutableMapOf<Int, Int?>()
+        val distances = mutableMapOf<String, Double>().withDefault { Double.POSITIVE_INFINITY }
+        val previous = mutableMapOf<String, String?>()
         // Priority queue, ordered by shortest distance
-        val pq = PriorityQueue<Pair<Double, Int>>(compareBy { it.first })
+        val pq = PriorityQueue<Pair<Double, String>>(compareBy { it.first })
 
         distances[startNode] = 0.0
         pq.add(Pair(0.0, startNode))
@@ -342,8 +337,8 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
             throw IllegalArgumentException("No path found between start and destination")
         }
 
-        val path = mutableListOf<Int>()
-        var curr: Int? = endNode
+        val path = mutableListOf<String>()
+        var curr: String? = endNode
         while (curr != null) {
             path.add(curr)
             curr = previous[curr]
@@ -357,18 +352,18 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
      * Converts a raw list of NodeIDs into the structured payload expected by the frontend.
      * Fetches exact distances and bearings from the MapEdges table.
      */
-    private fun buildInstructions(conn: Connection, path: List<Int>, landmark: LandmarkDetails): List<NavigationInstruction> {
+    private fun buildInstructions(conn: Connection, path: List<String>, landmark: LandmarkDetails): List<NavigationInstruction> {
         if (path.isEmpty()) return emptyList()
 
         val placeholders = path.joinToString(",") { "?" }
-        val nodeQuery = "SELECT NodeID, CoordinateX, CoordinateY FROM MapNodes WHERE NodeID IN ($placeholders)"
-        val nodeData = mutableMapOf<Int, Pair<Int, Int>>()
+        val nodeQuery = "SELECT NodeIDString, CoordinateX, CoordinateY FROM MapNodes WHERE NodeIDString IN ($placeholders)"
+        val nodeData = mutableMapOf<String, Pair<Int, Int>>()
         
         conn.prepareStatement(nodeQuery).use { stmt ->
-            path.forEachIndexed { index, id -> stmt.setInt(index + 1, id) }
+            path.forEachIndexed { index, id -> stmt.setString(index + 1, id) }
             val rs = stmt.executeQuery()
             while (rs.next()) {
-                nodeData[rs.getInt("NodeID")] = Pair(rs.getInt("CoordinateX"), rs.getInt("CoordinateY"))
+                nodeData[rs.getString("NodeIDString")] = Pair(rs.getInt("CoordinateX"), rs.getInt("CoordinateY"))
             }
         }
 
@@ -376,17 +371,17 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
             SELECT StartNodeID, EndNodeID, DistanceMeters, Bearing, IsBidirectional
             FROM MapEdges WHERE StartNodeID IN ($placeholders) AND EndNodeID IN ($placeholders)
         """
-        val edgeMap = mutableMapOf<Pair<Int, Int>, Pair<Double, Double?>>()
+        val edgeMap = mutableMapOf<Pair<String, String>, Pair<Double, Double?>>()
         
         if (path.size > 1) {
             conn.prepareStatement(edgeQuery).use { stmt ->
                 var paramIndex = 1
-                path.forEach { stmt.setInt(paramIndex++, it) }
-                path.forEach { stmt.setInt(paramIndex++, it) }
+                path.forEach { stmt.setString(paramIndex++, it) }
+                path.forEach { stmt.setString(paramIndex++, it) }
                 val rs = stmt.executeQuery()
                 while (rs.next()) {
-                    val start = rs.getInt("StartNodeID")
-                    val end = rs.getInt("EndNodeID")
+                    val start = rs.getString("StartNodeID")
+                    val end = rs.getString("EndNodeID")
                     val dist = rs.getDouble("DistanceMeters")
                     val rawBearing = rs.getDouble("Bearing")
                     val bearing: Double? = if (rs.wasNull()) null else rawBearing
@@ -433,7 +428,7 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
                     step = i + 1,
                     distance_feet = distFeet,
                     direction = directionStr,
-                    node_id = nodeId.toString(),
+                        node_id = nodeId,
                     coordinates = mapOf("x" to coords.first.toDouble(), "y" to coords.second.toDouble())
                 )
             )

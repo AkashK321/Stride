@@ -49,20 +49,20 @@ Table MapNodes {
 }
 
 Table MapEdges {
-  EdgeID        serial [pk]
-  FloorID       int [ref: > Floors.FloorID]
-  StartNodeID   int [ref: > MapNodes.NodeID]
-  EndNodeID     int [ref: > MapNodes.NodeID]
+  EdgeID         serial [pk]
+  FloorID        int [ref: > Floors.FloorID]
+  StartNodeID    varchar(255) [ref: > MapNodes.NodeIDString]
+  EndNodeID      varchar(255) [ref: > MapNodes.NodeIDString]
   DistanceMeters double
-  Bearing       double
+  Bearing        double
   IsBidirectional boolean
 }
 
 Table Landmarks {
-  LandmarkID    serial [pk]
-  FloorID       int [ref: > Floors.FloorID]
-  Name          varchar(50)
-  NearestNodeID int [ref: > MapNodes.NodeID]
+  LandmarkID     serial [pk]
+  FloorID        int [ref: > Floors.FloorID]
+  Name           varchar(50)
+  NearestNodeID  varchar(255) [ref: > MapNodes.NodeIDString]
   DistanceToNode double
   BearingFromNode varchar(10)
   MapCoordinateX int
@@ -108,8 +108,8 @@ erDiagram
   MapEdges {
     serial EdgeID PK
     int FloorID FK
-    int StartNodeID FK
-    int EndNodeID FK
+    varchar StartNodeID FK
+    varchar EndNodeID FK
     double DistanceMeters
     double Bearing
     boolean IsBidirectional
@@ -119,7 +119,7 @@ erDiagram
     serial LandmarkID PK
     int FloorID FK
     varchar Name
-    int NearestNodeID FK
+    varchar NearestNodeID FK
     double DistanceToNode
     varchar BearingFromNode
     int MapCoordinateX
@@ -169,30 +169,30 @@ Table Floors {
 }
 
 Table MapNodes {
-  NodeID      serial [pk]
-  FloorID     int       [ref: > Floors.FloorID]
-  BuildingID  varchar(50) [ref: > Buildings.BuildingID]
-  CoordinateX int
-  CoordinateY int
-  NodeType    varchar(20)
-  NodeIDString varchar(255)
+  NodeIDString varchar(255) [pk]           // human-readable ID from floor data, e.g. "r226_door"
+  NodeID       serial [unique]             // internal numeric ID used by edges/landmarks
+  FloorID      int       [ref: > Floors.FloorID]
+  BuildingID   varchar(50) [ref: > Buildings.BuildingID]
+  CoordinateX  int
+  CoordinateY  int
+  NodeType     varchar(20)
 }
 
 Table MapEdges {
-  EdgeID        serial [pk]
-  FloorID       int [ref: > Floors.FloorID]
-  StartNodeID   int [ref: > MapNodes.NodeID]
-  EndNodeID     int [ref: > MapNodes.NodeID]
+  EdgeID         serial [pk]
+  FloorID        int [ref: > Floors.FloorID]
+  StartNodeID    varchar(255) [ref: > MapNodes.NodeIDString]
+  EndNodeID      varchar(255) [ref: > MapNodes.NodeIDString]
   DistanceMeters double
-  Bearing       double
+  Bearing        double
   IsBidirectional boolean
 }
 
 Table Landmarks {
-  LandmarkID    serial [pk]
-  FloorID       int [ref: > Floors.FloorID]
-  Name          varchar(50)
-  NearestNodeID int [ref: > MapNodes.NodeID]
+  LandmarkID     serial [pk]
+  FloorID        int [ref: > Floors.FloorID]
+  Name           varchar(50)
+  NearestNodeID  varchar(255) [ref: > MapNodes.NodeIDString]
   DistanceToNode double
   BearingFromNode varchar(10)
   MapCoordinateX int
@@ -227,20 +227,20 @@ erDiagram
   }
 
   MapNodes {
-    serial NodeID PK
+    varchar NodeIDString PK
+    serial NodeID
     int FloorID FK
     varchar BuildingID FK
     int CoordinateX
     int CoordinateY
     varchar NodeType
-    varchar NodeIDString
   }
 
   MapEdges {
     serial EdgeID PK
     int FloorID FK
-    int StartNodeID FK
-    int EndNodeID FK
+    varchar StartNodeID FK
+    varchar EndNodeID FK
     double DistanceMeters
     double Bearing
     boolean IsBidirectional
@@ -250,7 +250,7 @@ erDiagram
     serial LandmarkID PK
     int FloorID FK
     varchar Name
-    int NearestNodeID FK
+    varchar NearestNodeID FK
     double DistanceToNode
     varchar BearingFromNode
     int MapCoordinateX
