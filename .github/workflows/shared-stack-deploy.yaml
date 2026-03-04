@@ -1,0 +1,156 @@
+name: Shared Stack Deploy
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-shared:
+    name: Deploy Shared Stack + Initialize DB
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+
+      - name: Build backend JAR for CDK synth
+        working-directory: aws_resources/backend
+        run: |
+          chmod +x gradlew
+          ./gradlew shadowJar --no-daemon
+          if [ ! -f "build/libs/kotlin_app-1.0-all.jar" ]; then
+            echo "Error: JAR file not found after build"
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: |
+            aws_resources/requirements.txt
+            aws_resources/schema_initializer/requirements.txt
+            aws_resources/data_population/requirements.txt
+
+      - name: Install Python dependencies
+        working-directory: aws_resources
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r schema_initializer/requirements.txt
+          pip install -r data_population/requirements.txt
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install CDK
+        run: npm install -g aws-cdk
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Check CDK bootstrap
+        id: cdk-bootstrap
+        run: |
+          if aws cloudformation describe-stacks --stack-name CDKToolkit --region us-east-1 2>/dev/null | grep -q "CDKToolkit"; then
+            echo "bootstrapped=true" >> $GITHUB_OUTPUT
+          else
+            echo "bootstrapped=false" >> $GITHUB_OUTPUT
+          fi
+        continue-on-error: true
+
+      - name: Bootstrap CDK
+        if: steps.cdk-bootstrap.outcome == 'failure' || steps.cdk-bootstrap.outputs.bootstrapped == 'false'
+        working-directory: aws_resources
+        run: cdk bootstrap aws://${{ secrets.AWS_ACCOUNT_ID }}/us-east-1
+
+      - name: Deploy shared stack
+        id: deploy-shared
+        working-directory: aws_resources
+        env:
+          CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
+          BRANCH_NAME: main
+        run: |
+          cdk deploy StrideSharedStack --require-approval never --outputs-file cdk-outputs.json
+
+      - name: Read shared stack outputs
+        id: shared-outputs
+        working-directory: aws_resources
+        run: |
+          if [ ! -f "cdk-outputs.json" ]; then
+            echo "Error: cdk-outputs.json not found"
+            exit 1
+          fi
+
+          STACK_KEY=$(jq -r 'keys[0]' cdk-outputs.json 2>/dev/null || echo "")
+          if [ -z "$STACK_KEY" ] || [ "$STACK_KEY" == "null" ]; then
+            echo "Error: Could not extract stack key"
+            exit 1
+          fi
+
+          DB_SECRET_ARN=$(jq -r ".\"$STACK_KEY\".RdsSecretArn // empty" cdk-outputs.json 2>/dev/null || echo "")
+          if [ -z "$DB_SECRET_ARN" ] || [ "$DB_SECRET_ARN" == "null" ]; then
+            echo "Error: Could not extract RdsSecretArn from shared stack outputs"
+            exit 1
+          fi
+
+          echo "db_secret_arn=$DB_SECRET_ARN" >> $GITHUB_OUTPUT
+
+      - name: Initialize RDS schema
+        working-directory: aws_resources/schema_initializer
+        env:
+          DB_SECRET_ARN: ${{ steps.shared-outputs.outputs.db_secret_arn }}
+          AWS_REGION: us-east-1
+        run: |
+          python -c "from populate_rds import handler; handler({}, None)"
+
+      - name: Populate floor data
+        working-directory: aws_resources/data_population
+        env:
+          DB_SECRET_ARN: ${{ steps.shared-outputs.outputs.db_secret_arn }}
+          AWS_REGION: us-east-1
+        run: |
+          python -c "from populate_floor_data_lambda import handler; handler({}, None)"
+
+      - name: Verify shared DB schema and seed data
+        working-directory: aws_resources/data_population
+        env:
+          DB_SECRET_ARN: ${{ steps.shared-outputs.outputs.db_secret_arn }}
+          AWS_REGION: us-east-1
+        run: |
+          python verify_shared_db.py
+
+      - name: Deployment summary
+        if: always()
+        working-directory: aws_resources
+        run: |
+          DEPLOY_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          {
+            echo "## Shared Stack Deployment"
+            echo ""
+            echo "- **Stack**: \`StrideSharedStack\`"
+            echo "- **Region**: \`us-east-1\`"
+            echo "- **Schema init**: \`completed in workflow\`"
+            echo "- **Floor data population**: \`completed in workflow\`"
+            echo "- **DB verification**: \`required tables + minimum row counts\`"
+            echo "- **Time**: \`${DEPLOY_TIME}\`"
+          } >> $GITHUB_STEP_SUMMARY
