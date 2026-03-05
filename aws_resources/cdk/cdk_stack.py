@@ -291,7 +291,16 @@ class CdkStack(Stack):
             self, "ObjDetectionConfigLambda",
             runtime=_lambda.Runtime.PYTHON_3_10,
             handler="populate_obj_ddb.handler",
-            code=_lambda.Code.from_asset("schema_initializer"),
+            code=_lambda.Code.from_asset(
+                "schema_initializer",
+                bundling=BundlingOptions(
+                    image=_lambda.Runtime.PYTHON_3_10.bundling_image,
+                    command=[
+                        "bash", "-c",
+                        "pip install -r requirements.txt -t /asset-output && cp -au . /asset-output"
+                    ],
+                ),
+            ),
             timeout=Duration.seconds(30),
             environment={
                 "TABLE_NAME": coco_config_table.table_name

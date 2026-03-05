@@ -7,6 +7,8 @@ import cfnresponse
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+dynamodb = boto3.resource("dynamodb")
+
 # COCO DATASET (80 Classes) - Estimated Real World Heights (Meters)
 # -1.0 means "Variable/Unknown" (Use Ground Plane Algorithm)
 COCO_DATA = [
@@ -109,20 +111,16 @@ COCO_DATA = [
     {"id": 79, "name": "toothbrush", "h": 0.15},
 ]
 
-dynamodb = boto3.resource("dynamodb")
-
-dynamodb = boto3.resource("dynamodb")
-
 def handler(event, context):
-    print(f"Received event: {event}")
-    table_name = os.environ["TABLE_NAME"]
-    table = dynamodb.Table(table_name)
+    logger.info("Received event: %s", json.dumps(event))
     status = cfnresponse.SUCCESS
-    
+
     try:
-        # Check if this is a Create or Update event
+        table_name = os.environ["TABLE_NAME"]
+        table = dynamodb.Table(table_name)
+
         if event['RequestType'] in ['Create', 'Update']:
-            print(f"Populating table {table_name}...")
+            logger.info("Populating table %s...", table_name)
             with table.batch_writer() as batch:
                 for item in COCO_DATA:
                     batch.put_item(Item={
@@ -130,11 +128,10 @@ def handler(event, context):
                         "class_name": item["name"],
                         "avg_height_meters": str(item["h"])
                     })
-            print("✅ Data population complete!")
+            logger.info("Data population complete.")
 
     except Exception as e:
-        print(f"❌ Error: {e}")
+        logger.error("Handler failed: %s", e, exc_info=True)
         status = cfnresponse.FAILED
-    
-    # REQUIRED: Signal back to CloudFormation
-    cfnresponse.send(event, context, status, {}, None)
+    finally:
+        cfnresponse.send(event, context, status, {})
