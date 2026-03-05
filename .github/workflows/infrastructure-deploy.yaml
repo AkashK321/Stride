@@ -320,6 +320,11 @@ jobs:
             echo "feature_flag_table=$FEATURE_FLAG_TABLE" >> $GITHUB_OUTPUT
             echo "✅ Feature Flag Table: $FEATURE_FLAG_TABLE"
           fi
+
+          if [ -n "$COCO_CONFIG_TABLE" ]; then
+            echo "coco_config_table=$COCO_CONFIG_TABLE" >> $GITHUB_OUTPUT
+            echo "✅ COCO Config Table: $COCO_CONFIG_TABLE"
+          fi
           
           # Create job summary with formatted markdown (shows up in Actions UI summary tab)
           DEPLOY_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
