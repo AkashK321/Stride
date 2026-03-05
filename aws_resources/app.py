@@ -72,6 +72,18 @@ def get_branch_for_stack_name():
     return get_current_branch()
 
 
+def get_deploy_scope():
+    """Resolve which stack(s) to synth/deploy: shared, app, or all."""
+    scope = os.getenv("DEPLOY_SCOPE", "all").strip().lower()
+    valid_scopes = {"shared", "app", "all"}
+    if scope not in valid_scopes:
+        print("ERROR: Invalid DEPLOY_SCOPE value")
+        print(f"Received: {scope}")
+        print("Valid values: shared, app, all")
+        sys.exit(1)
+    return scope
+
+
 def sanitize_branch_name(branch_name):
     """
     Sanitize branch name for CloudFormation stack naming.
@@ -143,14 +155,19 @@ def main():
 
     branch_name = get_branch_for_stack_name()
     stack_name = sanitize_branch_name(branch_name)
+    deploy_scope = get_deploy_scope()
     print(f"Branch Name: {branch_name}")
     print(f"Stack Name: {stack_name}")
+    print(f"Deploy Scope: {deploy_scope}")
 
     region = os.getenv("AWS_DEFAULT_REGION") or os.getenv("AWS_REGION") or "us-east-1"
     env = cdk.Environment(account=os.getenv("CDK_DEFAULT_ACCOUNT"), region=region)
 
-    SharedPersistentStack(app, "StrideSharedStack", env=env)
-    CdkStack(app, stack_name, env=env)
+    if deploy_scope in ("shared", "all"):
+        SharedPersistentStack(app, "StrideSharedStack", env=env)
+
+    if deploy_scope in ("app", "all"):
+        CdkStack(app, stack_name, env=env)
 
     app.synth()
 
