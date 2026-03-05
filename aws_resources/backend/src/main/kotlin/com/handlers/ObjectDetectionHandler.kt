@@ -7,12 +7,9 @@ import com.amazonaws.services.lambda.runtime.LambdaLogger
 import software.amazon.awssdk.auth.credentials.EnvironmentVariableCredentialsProvider
 import software.amazon.awssdk.core.SdkBytes
 import software.amazon.awssdk.regions.Region
-import software.amazon.awssdk.services.sagemakerruntime.SageMakerRuntimeClient
 import software.amazon.awssdk.services.apigatewaymanagementapi.ApiGatewayManagementApiClient
 import software.amazon.awssdk.services.apigatewaymanagementapi.model.PostToConnectionRequest
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
-import software.amazon.awssdk.services.dynamodb.DynamoDbClient
-import software.amazon.awssdk.services.dynamodb.model.ScanRequest
 import java.net.URI
 import java.util.Base64
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -28,16 +25,6 @@ data class DetectedObject(
 )
 
 class ObjectDetectionHandler (
-    private val ddbClient: DynamoDbClient = DynamoDbClient.builder()
-        .region(Region.US_EAST_1)
-        .httpClient(UrlConnectionHttpClient.create())
-        .build(),
-    
-    private val sagemakerClient: SageMakerRuntimeClient = SageMakerRuntimeClient.builder()
-        .region(Region.US_EAST_1)
-        .httpClient(UrlConnectionHttpClient.create())
-        .build(),
-
     private val heightTableClient: DynamoDbTableClient = DynamoDbTableClient(
         System.getenv("HEIGHT_MAP_TABLE_NAME") ?: "default-height-table",
         primaryKeyName = "class_id"
