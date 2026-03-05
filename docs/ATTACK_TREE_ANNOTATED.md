@@ -1,6 +1,5 @@
 # Annotated Attack Tree: Stride Physical Harm Vectors
 
-
 ## Attack Tree Diagram
 
 ```mermaid
@@ -84,9 +83,6 @@ flowchart TB
     style AND_P2B fill:#666,color:#fff
     style AND_P2C fill:#666,color:#fff
 ```
-
-**Legend:** **OR** under ROOT = either Path 1 or Path 2 achieves the goal. **AND** = all child conditions must hold for the parent. **OR** under "Gain access to RDS database" = any one of the five avenues is enough. Gray nodes = AND/OR gates.
-
 ## Path 1: Map Data Injection → Physical Harm
 
 ### How the attack proceeds
