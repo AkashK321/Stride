@@ -81,6 +81,11 @@ aws_resources/schema_initializer/cfnresponse/
 aws_resources/schema_initializer/urllib3/
 aws_resources/sagemaker/scripts/images_in
 aws_resources/sagemaker/scripts/images_pixelated
+aws_resources/schema_initializer/boto3/
+aws_resources/schema_initializer/botocore/
+aws_resources/schema_initializer/jmespath/
+aws_resources/schema_initializer/s3transfer/
+aws_resources/schema_initializer/*.dist-info/
 
 # Ignore metadata and cache files in that folder
 aws_resources/schema_initializer/*.dist-info/
