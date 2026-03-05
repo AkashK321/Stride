@@ -237,6 +237,7 @@ jobs:
         env:
           CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
           BRANCH_NAME: ${{ steps.get-stack-name.outputs.branch_name }}
+          DEPLOY_SCOPE: app
         run: |
           if cdk deploy "${{ steps.get-stack-name.outputs.stack_name }}" --require-approval never --outputs-file cdk-outputs.json; then
             echo "✅ Deployment successful!"
