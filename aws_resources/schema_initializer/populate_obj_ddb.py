@@ -111,30 +111,29 @@ COCO_DATA = [
 
 dynamodb = boto3.resource("dynamodb")
 
-dynamodb = boto3.resource("dynamodb")
+def main():
+    table_name = os.environ.get("TABLE_NAME")
+    if not table_name:
+        print("❌ Error: TABLE_NAME environment variable is required.")
+        exit(1)
 
-def handler(event, context):
-    print(f"Received event: {event}")
-    table_name = os.environ["TABLE_NAME"]
+    print(f"Populating table {table_name}...")
+    dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
     table = dynamodb.Table(table_name)
-    status = cfnresponse.SUCCESS
     
     try:
-        # Check if this is a Create or Update event
-        if event['RequestType'] in ['Create', 'Update']:
-            print(f"Populating table {table_name}...")
-            with table.batch_writer() as batch:
-                for item in COCO_DATA:
-                    batch.put_item(Item={
-                        "class_id": item["id"],
-                        "class_name": item["name"],
-                        "avg_height_meters": str(item["h"])
-                    })
-            print("✅ Data population complete!")
+        with table.batch_writer() as batch:
+            for item in COCO_DATA:
+                batch.put_item(Item={
+                    "class_id": item["id"],
+                    "class_name": item["name"],
+                    "avg_height_meters": str(item["h"])
+                })
+        print("✅ Data population complete!")
 
     except Exception as e:
         print(f"❌ Error: {e}")
-        status = cfnresponse.FAILED
-    
-    # REQUIRED: Signal back to CloudFormation
-    cfnresponse.send(event, context, status, {}, None)
+        exit(1)
+
+if __name__ == "__main__":
+    main()
