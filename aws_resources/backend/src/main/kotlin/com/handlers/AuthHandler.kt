@@ -37,7 +37,7 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
         context.logger.log("AuthHandler: incoming request")
         context.logger.log("HTTP Method: ${input.httpMethod}")
         context.logger.log("Path: ${input.path}")
-        context.logger.log("Request payload: ${input.body}")
+        context.logger.log("Request payload (sanitized): ${sanitizePayloadForLogging(input.body)}")
 
         val path = input.path ?: ""
         val method = input.httpMethod ?: ""
@@ -52,6 +52,47 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
         context.logger.log("AuthHandler: response statusCode=${response.statusCode}")
 
         return response
+    }
+
+    /**
+     * Sanitizes request bodies before logging so that secrets (passwords) are never written
+     * to CloudWatch in plaintext. Any JSON field whose name contains \"password\" will be
+     * replaced with a fixed mask of 8 asterisks.
+     */
+    private fun sanitizePayloadForLogging(rawBody: String?): String {
+        if (rawBody.isNullOrBlank()) {
+            return "null"
+        }
+
+        return try {
+            val node = mapper.readTree(rawBody)
+
+            fun sanitizeNode(n: com.fasterxml.jackson.databind.JsonNode) {
+                if (n.isObject) {
+                    val obj = n as com.fasterxml.jackson.databind.node.ObjectNode
+                    val fieldNames = obj.fieldNames()
+                    while (fieldNames.hasNext()) {
+                        val fieldName = fieldNames.next()
+                        val child = obj.get(fieldName)
+                        if (fieldName.contains("password", ignoreCase = true) && child.isTextual) {
+                            obj.put(fieldName, "********")
+                        } else if (child.isObject || child.isArray) {
+                            sanitizeNode(child)
+                        }
+                    }
+                } else if (n.isArray) {
+                    n.forEach { child -> sanitizeNode(child) }
+                }
+            }
+
+            sanitizeNode(node)
+            mapper.writeValueAsString(node)
+        } catch (_: Exception) {
+            // Fallback: best-effort masking of common password fields in a non-JSON payload
+            rawBody
+                .replace(Regex("(\"password\"\\s*:\\s*\")[^\"]*(\")", RegexOption.IGNORE_CASE), "$1********$2")
+                .replace(Regex("(\"passwordConfirm\"\\s*:\\s*\")[^\"]*(\")", RegexOption.IGNORE_CASE), "$1********$2")
+        }
     }
 
     private fun handleLogin(
