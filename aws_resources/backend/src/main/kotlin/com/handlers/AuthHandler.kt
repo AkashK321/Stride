@@ -33,16 +33,25 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
         input: APIGatewayProxyRequestEvent,
         context: Context,
     ): APIGatewayProxyResponseEvent {
-        context.logger.log("Request: ${input.httpMethod} ${input.path}")
+        // High-level request logging for CloudWatch
+        context.logger.log("AuthHandler: incoming request")
+        context.logger.log("HTTP Method: ${input.httpMethod}")
+        context.logger.log("Path: ${input.path}")
+        context.logger.log("Request payload: ${input.body}")
 
         val path = input.path ?: ""
         val method = input.httpMethod ?: ""
 
-        return when {
+        val response = when {
             path == "/login" && method == "POST" -> handleLogin(input, context)
             path == "/register" && method == "POST" -> handleRegister(input, context)
             else -> createErrorResponse(404, "Not Found")
         }
+
+        // Log response status for CloudWatch visibility
+        context.logger.log("AuthHandler: response statusCode=${response.statusCode}")
+
+        return response
     }
 
     private fun handleLogin(
@@ -70,6 +79,8 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
                 context.logger.log("ERROR: Failed to parse request body: ${e.message}")
                 return createErrorResponse(400, "Invalid request format. Expected JSON with username and password")
             }
+
+            context.logger.log("Parsed login request username=${loginRequest.username}")
 
             // Normalize inputs (trim whitespace)
             val normalizedUsername = normalizeUsername(loginRequest.username)
