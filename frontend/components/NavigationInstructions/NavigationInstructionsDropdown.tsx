@@ -60,13 +60,32 @@ function getRelativeTurn(
 export interface NavigationInstructionsDropdownProps {
   instructions: NavigationInstruction[];
   onExit: () => void;
+  /** When provided, the dropdown is controlled: this is the current step index. */
+  selectedIndex?: number;
+  /** Called when the user selects a different step (e.g. by tapping in the list). Use to sync selection with parent. */
+  onSelectedIndexChange?: (index: number) => void;
 }
 
 export default function NavigationInstructionsDropdown({
   instructions,
+  selectedIndex: controlledSelectedIndex,
+  onSelectedIndexChange,
 }: NavigationInstructionsDropdownProps) {
   const [expanded, setExpanded] = React.useState(false);
-  const [selectedIndex, setSelectedIndex] = React.useState(0);
+  const [internalSelectedIndex, setInternalSelectedIndex] = React.useState(0);
+
+  const isControlled = controlledSelectedIndex !== undefined;
+  const selectedIndex = isControlled ? controlledSelectedIndex : internalSelectedIndex;
+
+  const handleSelectIndex = React.useCallback(
+    (index: number) => {
+      if (!isControlled) {
+        setInternalSelectedIndex(index);
+      }
+      onSelectedIndexChange?.(index);
+    },
+    [isControlled, onSelectedIndexChange],
+  );
   const animatedHeight = React.useRef(
     new Animated.Value(0),
   ).current;
@@ -198,7 +217,7 @@ export default function NavigationInstructionsDropdown({
             Pressable,
             {
               key: String(instruction.step),
-              onPress: () => setSelectedIndex(index),
+              onPress: () => handleSelectIndex(index),
               style: [
                 styles.listItemPressable,
                 index === safeSelectedIndex && styles.listItemSelected,

@@ -4,9 +4,12 @@ import { useNavigation, router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import * as Speech from "expo-speech";
+import { Ionicons } from "@expo/vector-icons";
 import SearchSheet from "../../components/SearchSheet";
 import type { SearchSheetRef } from "../../components/SearchSheet";
 import NavigationInstructionsDropdown from "../../components/NavigationInstructions/NavigationInstructionsDropdown";
+import { formatInstruction } from "../../components/NavigationInstructions/NavigationInstructionItem";
 import {
   LandmarkResult,
   NavigationInstruction,
@@ -29,6 +32,36 @@ export default function Home() {
     null,
   );
   const [navigationLoading, setNavigationLoading] = React.useState(false);
+  const [speakerMode, setSpeakerMode] = React.useState(false);
+  const lastSpokenTextRef = React.useRef<string | null>(null);
+
+  const toggleSpeakerMode = React.useCallback(() => {
+    setSpeakerMode((prev) => !prev);
+  }, []);
+
+  React.useEffect(() => {
+    if (!speakerMode || !navigationInstructions || navigationInstructions.length === 0) {
+      return;
+    }
+    const current = navigationInstructions[0];
+    const next = navigationInstructions[1] ?? null;
+    const text = formatInstruction(current, next);
+    if (text === lastSpokenTextRef.current) {
+      return;
+    }
+    lastSpokenTextRef.current = text;
+    Speech.speak(text, { language: "en" });
+    return () => {
+      Speech.stop();
+    };
+  }, [speakerMode, navigationInstructions]);
+
+  React.useEffect(() => {
+    if (!speakerMode) {
+      lastSpokenTextRef.current = null;
+      Speech.stop();
+    }
+  }, [speakerMode]);
 
   const handleSelectDestination = React.useCallback(
     (landmark: LandmarkResult) => {
@@ -169,34 +202,52 @@ export default function Home() {
       navigationInstructions &&
       React.createElement(
         View,
-        { style: styles.bottomNavBar },
-        React.createElement(
-          View,
-          { style: styles.bottomNavTextContainer },
-          React.createElement(
-            Text,
-            { style: styles.bottomNavDestination },
-            selectedDestination.name,
-          ),
-          totalDistanceFeet !== null &&
-            React.createElement(
-              Text,
-              { style: styles.bottomNavDistance },
-              `${totalDistanceFeet} ft remaining`,
-            ),
-        ),
+        { style: styles.bottomNavContainer },
         React.createElement(
           Pressable,
           {
-            style: styles.bottomNavEndButton,
-            onPress: handleExitNavigation,
+            style: styles.speakerButton,
+            onPress: toggleSpeakerMode,
             accessibilityRole: "button",
-            accessibilityLabel: "End navigation",
+            accessibilityLabel: speakerMode ? "Speaker on, tap to turn off" : "Speaker off, tap to turn on",
           },
+          React.createElement(Ionicons, {
+            name: speakerMode ? "volume-high" : "volume-mute-outline",
+            size: 28,
+            color: speakerMode ? colors.primary : colors.textSecondary,
+          }),
+        ),
+        React.createElement(
+          View,
+          { style: styles.bottomNavBar },
           React.createElement(
-            Text,
-            { style: styles.bottomNavEndButtonText },
-            "End",
+            View,
+            { style: styles.bottomNavTextContainer },
+            React.createElement(
+              Text,
+              { style: styles.bottomNavDestination },
+              selectedDestination.name,
+            ),
+            totalDistanceFeet !== null &&
+              React.createElement(
+                Text,
+                { style: styles.bottomNavDistance },
+                `${totalDistanceFeet} ft remaining`,
+              ),
+          ),
+          React.createElement(
+            Pressable,
+            {
+              style: styles.bottomNavEndButton,
+              onPress: handleExitNavigation,
+              accessibilityRole: "button",
+              accessibilityLabel: "End navigation",
+            },
+            React.createElement(
+              Text,
+              { style: styles.bottomNavEndButtonText },
+              "End",
+            ),
           ),
         ),
       ),
@@ -256,11 +307,32 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.danger,
   },
-  bottomNavBar: {
+  bottomNavContainer: {
     position: "absolute",
     left: 0,
     right: 0,
     bottom: 0,
+    alignItems: "center",
+  },
+  speakerButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.background,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.backgroundSecondary,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: spacing.sm,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  bottomNavBar: {
+    left: 0,
+    right: 0,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
