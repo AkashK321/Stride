@@ -69,7 +69,7 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         }
 
         // Defensive guard: this handler should only process the dedicated live-nav route.
-        if (routeKey != "navigation") {
+        if (routeKey != "navigation/frame") {
             postJsonToConnection(
                 apiClient = apiClient,
                 connectionId = connectionId,
