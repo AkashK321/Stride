@@ -104,6 +104,8 @@ jobs:
       api_endpoint: ${{ steps.stack-outputs.outputs.api_endpoint }}
       ws_api_endpoint: ${{ steps.stack-outputs.outputs.ws_api_endpoint }}
       feature_flag_table: ${{ steps.stack-outputs.outputs.feature_flag_table }}
+      coco_config_table: ${{ steps.stack-outputs.outputs.coco_config_table }}
+      stride_db_secret_arn: ${{ steps.stack-outputs.outputs.stride_db_secret_arn }}
     
     steps:
       # Step 1: Checkout the repository code
@@ -294,6 +296,16 @@ jobs:
           if [ -z "$FEATURE_FLAG_TABLE" ] || [ "$FEATURE_FLAG_TABLE" == "null" ]; then
             echo "Warning: Could not extract FeatureFlagsTableName from cdk-outputs.json"
           fi
+          
+          COCO_CONFIG_TABLE=$(jq -r ".\"$STACK_KEY\".CocoConfigTableName // empty" cdk-outputs.json 2>/dev/null || echo "")
+          if [ -z "$COCO_CONFIG_TABLE" ] || [ "$COCO_CONFIG_TABLE" == "null" ]; then
+            echo "Warning: Could not extract CocoConfigTableName from cdk-outputs.json"
+          fi
+
+          STRIDE_DB_ARN=$(jq -r ".\"$STACK_KEY\".DBSecretArn // empty" cdk-outputs.json 2>/dev/null || echo "")
+          if [ -z "$STRIDE_DB_ARN" ] || [ "$STRIDE_DB_ARN" == "null" ]; then
+            echo "Warning: Could not extract StrideDBArn from cdk-outputs.json"
+          fi
 
           echo "stack_name=$STACK_NAME" >> $GITHUB_OUTPUT
           echo "Deployed stack: $STACK_NAME"
@@ -313,6 +325,16 @@ jobs:
           if [ -n "$FEATURE_FLAG_TABLE" ]; then
             echo "feature_flag_table=$FEATURE_FLAG_TABLE" >> $GITHUB_OUTPUT
             echo "✅ Feature Flag Table: $FEATURE_FLAG_TABLE"
+          fi
+
+          if [ -n "$COCO_CONFIG_TABLE" ]; then
+            echo "coco_config_table=$COCO_CONFIG_TABLE" >> $GITHUB_OUTPUT
+            echo "✅ COCO Config Table: $COCO_CONFIG_TABLE"
+          fi
+
+          if [ -n "$STRIDE_DB_ARN" ]; then
+            echo "stride_db_secret_arn=$STRIDE_DB_ARN" >> $GITHUB_OUTPUT
+            echo "✅ Stride DB Secret ARN: $STRIDE_DB_ARN"
           fi
           
           # Create job summary with formatted markdown (shows up in Actions UI summary tab)
@@ -351,6 +373,28 @@ jobs:
           echo "📋 Stack Outputs:"
           jq ".\"$STACK_KEY\"" cdk-outputs.json
         continue-on-error: true
+
+        # Step 14: Populate COCO Config DynamoDB Table
+      - name: Populate COCO Config DynamoDB Table
+        if: steps.stack-outputs.outputs.coco_config_table != ''
+        working-directory: aws_resources/schema_initializer
+        env:
+          TABLE_NAME: ${{ steps.stack-outputs.outputs.coco_config_table }}
+          AWS_REGION: us-east-1
+        run: |
+          echo "Running schema population script..."
+          python populate_obj_ddb.py
+
+      # Step 15: Initialize RDS Database Schema
+      - name: Initialize RDS Database Schema
+        if: steps.stack-outputs.outputs.stride_db_secret_arn != ''
+        working-directory: aws_resources/schema_initializer
+        env:
+          DB_SECRET_ARN: ${{ steps.stack-outputs.outputs.stride_db_secret_arn }}
+          AWS_REGION: us-east-1
+        run: |
+          echo "Running RDS schema initialization script..."
+          python populate_rds.py
 
   integration-tests:
     name: Run Integration Tests

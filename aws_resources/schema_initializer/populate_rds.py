@@ -14,18 +14,23 @@ logger.setLevel(logging.INFO)
 
 def get_db_secret():
     """Retrieves database credentials from AWS Secrets Manager."""
-    secret_arn = os.environ['DB_SECRET_ARN']
+    secret_arn = os.environ.get('DB_SECRET_ARN')
+    if not secret_arn:
+        logger.error("DB_SECRET_ARN environment variable is not set.")
+        exit(1)
+        
     client = boto3.client('secretsmanager')
     response = client.get_secret_value(SecretId=secret_arn)
     return json.loads(response['SecretString'])
 
-def handler(event, context):
-    logger.info("Starting Schema Initialization...")
+def main():
+    print("Starting Schema Initialization...")
     
     # 1. Get Credentials
     creds = get_db_secret()
     
     # 2. Connect to the Database
+    conn = None
     try:
         conn = pg8000.connect(
             user=creds['username'],
@@ -136,15 +141,17 @@ def handler(event, context):
             cursor.execute(sql)
             
         conn.commit()
-        logger.info("Schema successfully initialized.")
+        print("Schema successfully initialized.")
         
     except Exception as e:
-        logger.info(f"Error initializing schema: {e}")
-        if conn:
-            conn.rollback()
-        raise e
+            logger.error(f"❌ Error initializing schema: {e}")
+            print(f"❌ Error initializing schema: {e}")
+            if conn:
+                conn.rollback()
+            exit(1)
     finally:
         if conn:
             conn.close()
-            
-    return {"status": "success"}
+
+if __name__ == "__main__":
+    main()
