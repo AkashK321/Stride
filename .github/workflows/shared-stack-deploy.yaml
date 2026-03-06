@@ -48,8 +48,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install -r schema_initializer/requirements.txt
-          pip install -r data_population/requirements.txt
+          # Install into each module directory so local imports always resolve.
+          pip install --upgrade --target schema_initializer -r schema_initializer/requirements.txt
+          pip install --upgrade --target data_population -r data_population/requirements.txt
 
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
