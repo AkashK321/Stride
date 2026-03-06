@@ -8,15 +8,8 @@ import io.mockk.*
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import software.amazon.awssdk.core.SdkBytes
 import software.amazon.awssdk.services.apigatewaymanagementapi.ApiGatewayManagementApiClient
 import software.amazon.awssdk.services.apigatewaymanagementapi.model.PostToConnectionRequest
-import software.amazon.awssdk.services.dynamodb.DynamoDbClient
-import software.amazon.awssdk.services.dynamodb.model.AttributeValue
-import software.amazon.awssdk.services.dynamodb.model.ScanRequest
-import software.amazon.awssdk.services.dynamodb.model.ScanResponse
-import software.amazon.awssdk.services.sagemakerruntime.SageMakerRuntimeClient
-import com.models.InferenceResult
 import com.models.BoundingBox
 import com.services.DynamoDbTableClient
 import java.util.Base64
@@ -24,7 +17,6 @@ import java.util.Base64
 class ObjectDetectionHandlerTest {
 
     // Mocks for dependencies
-    private val mockSageMaker = mockk<SageMakerRuntimeClient>()
     private val mockHeightDdb = mockk<DynamoDbTableClient>()
     private val mockFeatureDdb = mockk<DynamoDbTableClient>()
     private val mockApiGateway = mockk<ApiGatewayManagementApiClient>(relaxed = true)
@@ -45,7 +37,6 @@ class ObjectDetectionHandlerTest {
         val realHandler = ObjectDetectionHandler(
             heightTableClient = mockHeightDdb,
             featureFlagsTableClient = mockFeatureDdb,
-            sagemakerClient = mockSageMaker,
             apiGatewayFactory = { _ -> mockApiGateway }
         )
 
