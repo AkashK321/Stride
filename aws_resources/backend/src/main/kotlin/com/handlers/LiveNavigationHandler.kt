@@ -14,6 +14,12 @@ import software.amazon.awssdk.services.apigatewaymanagementapi.ApiGatewayManagem
 import software.amazon.awssdk.services.apigatewaymanagementapi.model.PostToConnectionRequest
 import java.net.URI
 import java.util.Base64
+import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient
+import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueRequest
+import java.sql.Connection
+import java.sql.DriverManager
+import kotlin.math.cos
+import kotlin.math.sin
 
 class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGatewayV2WebSocketResponse> {
 
@@ -26,6 +32,91 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
             .credentialsProvider(EnvironmentVariableCredentialsProvider.create())
             .httpClient(UrlConnectionHttpClient.create())
             .build()
+    }
+
+    private fun getDbConnection(): Connection {
+        val dbHost = System.getenv("DB_HOST") ?: "localhost"
+        val dbPort = System.getenv("DB_PORT") ?: "5432"
+        val dbName = System.getenv("DB_NAME") ?: "stride_db"
+        val secretArn = System.getenv("DB_SECRET_ARN")
+        
+        val dbUser: String
+        val dbPassword: String
+
+        if (!secretArn.isNullOrBlank()) {
+            val secretsClient = SecretsManagerClient.builder()
+                .region(Region.US_EAST_1)
+                .build()
+
+            val valueRequest = GetSecretValueRequest.builder().secretId(secretArn).build()
+            val secretString = secretsClient.getSecretValue(valueRequest).secretString()
+            val secretMap: Map<String, String> = mapper.readValue(secretString)
+            dbUser = secretMap["username"] ?: "postgres"
+            dbPassword = secretMap["password"] ?: "password"
+            
+            secretsClient.close()
+        } else {
+            dbUser = System.getenv("DB_USER") ?: "postgres"
+            dbPassword = System.getenv("DB_PASSWORD") ?: "password"
+        }
+
+        val url = "jdbc:postgresql://$dbHost:$dbPort/$dbName"
+        return DriverManager.getConnection(url, dbUser, dbPassword)
+    }
+
+    private fun getClosestMapNode(conn: Connection, x: Double, y: Double): Map<String, Any>? {
+        // Find the closest node using squared Euclidean distance (avoids expensive SQRT operation)
+        val query = """
+            SELECT NodeID, CoordinateX, CoordinateY, FloorID, BuildingID,
+                   (POWER(CoordinateX - ?, 2) + POWER(CoordinateY - ?, 2)) as dist_sq
+            FROM MapNodes
+            ORDER BY dist_sq ASC
+            LIMIT 1
+        """
+        conn.prepareStatement(query).use { stmt ->
+            stmt.setDouble(1, x)
+            stmt.setDouble(2, y)
+            val rs = stmt.executeQuery()
+            if (rs.next()) {
+                return mapOf(
+                    "NodeID" to rs.getInt("NodeID"),
+                    "CoordinateX" to rs.getInt("CoordinateX"),
+                    "CoordinateY" to rs.getInt("CoordinateY"),
+                    "FloorID" to rs.getInt("FloorID"),
+                    "BuildingID" to rs.getString("BuildingID")
+                )
+            }
+        }
+        return null
+    }
+
+    private fun estimateUserLocation(payload: Map<String, Any?>, prevX: Double, prevY: Double): Pair<Double, Double> {
+        val heading = (payload["heading_degrees"] as Number).toDouble()
+        val accel = payload["accelerometer"] as Map<*, *>
+        
+        var currentX = prevX 
+        var currentY = prevY
+
+        // Pedestrian Dead Reckoning (PDR)
+        val yAccel = (accel["y"] as Number).toDouble()
+        
+        // Simple heuristic: if y-acceleration exceeds threshold, consider it a step.
+        // Can be improved later with sliding window peak detection.
+        val isMoving = yAccel > 1.2 
+
+        if (isMoving) {
+            val stepSizeMeters = 0.762 // Avg human step is ~2.5 feet (0.762 meters)
+            val stepSizePixels = stepSizeMeters * 3.28084 * 10 // Convert to pixels (1 foot = 10 pixels per populate_floor_data.py)
+            
+            val headingRad = Math.toRadians(heading)
+            
+            // Apply heading to position (note: Y increases downwards in screen/image coordinates)
+            // 0 degrees = North (up, -y), 90 degrees = East (right, +x), etc.
+            currentX += stepSizePixels * sin(headingRad)
+            currentY -= stepSizePixels * cos(headingRad)
+        }
+        
+        return Pair(currentX, currentY)
     }
 
     override fun handleRequest(
@@ -126,7 +217,27 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
 
         // TODO(business-logic): resolve and persist per-session user navigation state by session_id
         // (e.g., current step, last estimated node, and route progress).
-        // TODO(business-logic): run live localization using image + sensor signals.
+        // TODO(business-logic): run live localization using image.
+        val previousX = 0.0
+        val previousY = 0.0
+
+        // Execute Location Estimation based purely on PDR
+        val (estimatedX, estimatedY) = estimateUserLocation(payload, previousX, previousY)
+        
+        // Execute Closest Node Search
+        var closestNodeId: String
+        try {
+            getDbConnection().use { conn ->
+                val closestNode = getClosestMapNode(conn, estimatedX, estimatedY)
+                if (closestNode != null) {
+                    closestNodeId = closestNode["NodeID"].toString()
+                    logger.log("Estimated Location: ($estimatedX, $estimatedY). Nearest Node: $closestNodeId")
+                }
+            }
+        } catch (e: Exception) {
+            logger.log("Database error resolving closest map node: ${e.message}")
+        }
+
         // TODO(business-logic): compute remaining instructions, estimated position, and completion state.
         val responsePayload = mapOf(
             "type" to "navigation_update",
