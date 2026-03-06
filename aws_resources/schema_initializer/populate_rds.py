@@ -24,7 +24,7 @@ def get_db_secret():
     return json.loads(response['SecretString'])
 
 def main():
-    logger.info("Starting Schema Initialization...")
+    print("Starting Schema Initialization...")
     
     # 1. Get Credentials
     creds = get_db_secret()
@@ -144,15 +144,17 @@ def main():
             cursor.execute(sql)
             
         conn.commit()
-        logger.info("Schema successfully initialized.")
+        print("Schema successfully initialized.")
         
     except Exception as e:
-        logger.info(f"Error initializing schema: {e}")
-        if conn:
-            conn.rollback()
-        raise e
+            logger.error(f"❌ Error initializing schema: {e}")
+            print(f"❌ Error initializing schema: {e}")
+            if conn:
+                conn.rollback()
+            exit(1)
     finally:
         if conn:
             conn.close()
-            
-    return {"status": "success"}
+
+if __name__ == "__main__":
+    main()
