@@ -7,6 +7,7 @@ import software.amazon.awssdk.services.dynamodb.model.AttributeValue
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest
 import software.amazon.awssdk.services.dynamodb.model.ScanRequest
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
+import software.amazon.awssdk.services.dynamodb.model.PutItemRequest
 
 /**
  * Modular client for interacting with a specific DynamoDB table.
@@ -87,6 +88,59 @@ class DynamoDbTableClient(private val tableName: String, private val primaryKeyN
         } catch (e: Exception) {
             println("Error getting item '$itemName' from table $tableName: ${e.message}")
             return null
+        }
+    }
+
+    /**
+     * Fetches a full item from the table as a simple Map of Strings.
+     */
+    fun getItemDetails(keyValue: String): Map<String, String>? {
+        try {
+            val key = mapOf(primaryKeyName to AttributeValue.builder().s(keyValue).build())
+
+            val request = GetItemRequest.builder()
+                .tableName(tableName)
+                .key(key)
+                .build()
+
+            val response = sdkClient.getItem(request)
+
+            if (!response.hasItem()) {
+                return null
+            }
+
+            return response.item().mapValues { (_, attr) ->
+                attr.s() ?: attr.n() ?: attr.bool()?.toString() ?: ""
+            }
+        } catch (e: Exception) {
+            println("Error getting details for '$keyValue' from table $tableName: ${e.message}")
+            return null
+        }
+    }
+
+    /**
+     * Inserts or updates an item in the DynamoDB table.
+     */
+    fun putItem(itemMap: Map<String, Any>) {
+        try {
+            val item = itemMap.mapValues { (_, value) ->
+                when (value) {
+                    is String -> AttributeValue.builder().s(value).build()
+                    is Number -> AttributeValue.builder().n(value.toString()).build()
+                    is Boolean -> AttributeValue.builder().bool(value).build()
+                    else -> AttributeValue.builder().s(value.toString()).build()
+                }
+            }
+            
+            val request = PutItemRequest.builder()
+                .tableName(tableName)
+                .item(item)
+                .build()
+                
+            sdkClient.putItem(request)
+        } catch (e: Exception) {
+            println("Error putting item in table $tableName: ${e.message}")
+            e.printStackTrace()
         }
     }
 }

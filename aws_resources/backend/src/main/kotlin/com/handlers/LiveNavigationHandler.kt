@@ -12,6 +12,11 @@ import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.apigatewaymanagementapi.ApiGatewayManagementApiClient
 import software.amazon.awssdk.services.apigatewaymanagementapi.model.PostToConnectionRequest
+import com.services.DynamoDbTableClient
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue
+import software.amazon.awssdk.services.dynamodb.model.GetItemRequest
+import software.amazon.awssdk.services.dynamodb.model.PutItemRequest
+import java.time.Instant
 import java.net.URI
 import java.util.Base64
 import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient
@@ -33,6 +38,11 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
             .httpClient(UrlConnectionHttpClient.create())
             .build()
     }
+
+    private val sessionTableClient = DynamoDbTableClient(
+        tableName = System.getenv("SESSION_TABLE_NAME") ?: "NavigationSessionTable",
+        primaryKeyName = "session_id"
+    )
 
     private fun getDbConnection(): Connection {
         val dbHost = System.getenv("DB_HOST") ?: "localhost"
@@ -215,14 +225,28 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         val sessionId = payload["session_id"] as String
         val requestId = (payload["request_id"] as Number).toInt()
 
-        // TODO(business-logic): resolve and persist per-session user navigation state by session_id
-        // (e.g., current step, last estimated node, and route progress).
         // TODO(business-logic): run live localization using image.
-        val previousX = 0.0
-        val previousY = 0.0
+        val sessionData = sessionTableClient.getItemDetails(sessionId)
+        val previousX = sessionData?.get("current_x")?.toDoubleOrNull() ?: 0.0
+        val previousY = sessionData?.get("current_y")?.toDoubleOrNull() ?: 0.0
+
+        if (sessionData != null) {
+            logger.log("Restored session state for $sessionId: prevX=$previousX, prevY=$previousY")
+        } else {
+            logger.log("New session $sessionId started. Defaulting to (0.0, 0.0).")
+        }
 
         // Execute Location Estimation based purely on PDR
         val (estimatedX, estimatedY) = estimateUserLocation(payload, previousX, previousY)
+        // Update state in DynamoDB with new estimated location and timestamp. Set TTL for 2 hours to allow stale session cleanup.
+        val ttlSeconds = (System.currentTimeMillis() / 1000) + 7200 // 2 hour expiration
+        sessionTableClient.putItem(mapOf(
+            "session_id" to sessionId,
+            "current_x" to estimatedX,
+            "current_y" to estimatedY,
+            "last_updated_ms" to System.currentTimeMillis(),
+            "ttl" to ttlSeconds
+        ))
         
         // Execute Closest Node Search
         var closestNodeId: String
