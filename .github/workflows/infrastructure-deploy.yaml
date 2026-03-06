@@ -140,7 +140,9 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: aws_resources/requirements.txt
+          cache-dependency-path: |
+            aws_resources/requirements.txt
+            aws_resources/schema_initializer/requirements.txt
       
       # Step 5: Install Python dependencies
       - name: Install Python dependencies
@@ -148,12 +150,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          # Keep schema initializer deps in its own folder for runtime imports.
+          pip install --upgrade --target schema_initializer -r schema_initializer/requirements.txt
 
-      - name: Install Schema Initializer dependencies
-        working-directory: aws_resources/schema_initializer
-        run: |
-          pip install -r requirements.txt -t .
-      
       # Step 6: Install jq (required for parsing stack outputs)
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq

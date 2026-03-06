@@ -121,6 +121,17 @@ class CdkStack(Stack):
             snap_start=_lambda.SnapStartConf.ON_PUBLISHED_VERSIONS,
         )
 
+        # Define the Live Navigation Lambda function (WebSocket route: navigation)
+        live_navigation_handler = _lambda.Function(
+            self, "LiveNavigationHandler",
+            runtime=_lambda.Runtime.JAVA_21,
+            handler="com.handlers.LiveNavigationHandler",
+            code=code_asset,
+            memory_size=3008,
+            timeout=Duration.seconds(29),
+            snap_start=_lambda.SnapStartConf.ON_PUBLISHED_VERSIONS,
+        )
+
         # Define Cognito User Pool
         user_pool = cognito.UserPool(
             self, "StrideUserPool",
@@ -234,12 +245,17 @@ class CdkStack(Stack):
             route_key="frame",
             integration=integrations.WebSocketLambdaIntegration("FrameIntegration", object_detection_handler)
         )
+        ws_api.add_route(
+            route_key="navigation",
+            integration=integrations.WebSocketLambdaIntegration("NavigationIntegration", live_navigation_handler)
+        )
         # Add $default route to catch unmatched messages (for debugging)
         ws_api.add_route(
             route_key="$default",
             integration=integrations.WebSocketLambdaIntegration("DefaultIntegration", object_detection_handler)
         )
         ws_api.grant_manage_connections(object_detection_handler)
+        ws_api.grant_manage_connections(live_navigation_handler)
 
         # Add stack outputs for reporting to CICD
         CfnOutput(self, "RestAPIEndpointURL",
