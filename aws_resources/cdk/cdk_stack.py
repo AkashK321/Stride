@@ -371,6 +371,7 @@ class CdkStack(Stack):
         live_navigation_handler.add_environment("DB_PORT", db_instance.db_instance_endpoint_port)
         live_navigation_handler.add_environment("DB_NAME", "StrideCore")
         live_navigation_handler.add_environment("DB_SECRET_ARN", db_instance.secret.secret_arn)
+        db_instance.secret.grant_read(live_navigation_handler)
 
         CfnOutput(
             self, "DBSecretArn",

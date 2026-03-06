@@ -249,7 +249,7 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         ))
         
         // Execute Closest Node Search
-        var closestNodeId: String
+        var closestNodeId: String? = "unknown"
         try {
             getDbConnection().use { conn ->
                 val closestNode = getClosestMapNode(conn, estimatedX, estimatedY)
@@ -269,7 +269,14 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
             "current_step" to 1,
             "remaining_instructions" to emptyList<Any>(),
             "request_id" to requestId,
-            "message" to "Live navigation infrastructure is wired. Business logic pending."
+            "message" to "Live navigation infrastructure is wired. Business logic pending.",
+            "estimated_position" to mapOf(
+                "node_id" to closestNodeId,
+                "coordinates" to mapOf(
+                    "x_feet" to estimatedX,
+                    "y_feet" to estimatedY
+                )
+            )
         )
 
         postJsonToConnection(
