@@ -325,6 +325,23 @@ class CdkStack(Stack):
             description="Cognito User Pool Client ID"
         )
 
+        navigation_session_table = ddb.Table(
+            self, "NavigationSessionTable",
+            partition_key=ddb.Attribute(
+                name="session_id",
+                type=ddb.AttributeType.STRING
+            ),
+            time_to_live_attribute="ttl", # Automatically cleans up old sessions
+            removal_policy=RemovalPolicy.DESTROY,
+            billing_mode=ddb.BillingMode.PAY_PER_REQUEST
+        )
+
+        navigation_session_table.grant_read_write_data(live_navigation_handler)
+        live_navigation_handler.add_environment("SESSION_TABLE_NAME", navigation_session_table.table_name)
+
+        navigation_session_table.grant_read_write_data(static_navigation_handler)
+        static_navigation_handler.add_environment("SESSION_TABLE_NAME", navigation_session_table.table_name)
+
         # TODO: RDS setup disabled for now - to be re-enabled when ready
         # Define RDS Resource
         db_instance = rds.DatabaseInstance(
@@ -352,6 +369,12 @@ class CdkStack(Stack):
         db_instance.secret.grant_read(static_navigation_handler)
 
         db_instance.connections.allow_from_any_ipv4(ec2.Port.tcp(5432), "Allow public access for Lambda")
+
+        live_navigation_handler.add_environment("DB_HOST", db_instance.db_instance_endpoint_address)
+        live_navigation_handler.add_environment("DB_PORT", db_instance.db_instance_endpoint_port)
+        live_navigation_handler.add_environment("DB_NAME", "StrideCore")
+        live_navigation_handler.add_environment("DB_SECRET_ARN", db_instance.secret.secret_arn)
+        db_instance.secret.grant_read(live_navigation_handler)
 
         CfnOutput(
             self, "DBSecretArn",

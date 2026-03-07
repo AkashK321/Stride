@@ -4,6 +4,7 @@ import com.amazonaws.services.lambda.runtime.Context
 import com.amazonaws.services.lambda.runtime.RequestHandler
 import com.amazonaws.services.lambda.runtime.events.APIGatewayV2WebSocketEvent
 import com.amazonaws.services.lambda.runtime.events.APIGatewayV2WebSocketResponse
+import com.amazonaws.services.lambda.runtime.LambdaLogger
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import software.amazon.awssdk.auth.credentials.EnvironmentVariableCredentialsProvider
@@ -12,12 +13,25 @@ import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.apigatewaymanagementapi.ApiGatewayManagementApiClient
 import software.amazon.awssdk.services.apigatewaymanagementapi.model.PostToConnectionRequest
+import com.services.DynamoDbTableClient
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue
+import software.amazon.awssdk.services.dynamodb.model.GetItemRequest
+import software.amazon.awssdk.services.dynamodb.model.PutItemRequest
+import java.time.Instant
 import java.net.URI
 import java.util.Base64
+import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient
+import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueRequest
+import java.sql.Connection
+import java.sql.DriverManager
+import kotlin.math.cos
+import kotlin.math.sin
 
 class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGatewayV2WebSocketResponse> {
 
     private val mapper = jacksonObjectMapper()
+
+    private val pixel_to_feet_ratio = 0.1 // 1 foot in real world corresponds to 10 pixels in our coordinate system (based on populate_floor_data.py)
 
     private val apiGatewayFactory: (String) -> ApiGatewayManagementApiClient = { endpointUrl ->
         ApiGatewayManagementApiClient.builder()
@@ -26,6 +40,116 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
             .credentialsProvider(EnvironmentVariableCredentialsProvider.create())
             .httpClient(UrlConnectionHttpClient.create())
             .build()
+    }
+
+    private val sessionTableClient = DynamoDbTableClient(
+        tableName = System.getenv("SESSION_TABLE_NAME") ?: "NavigationSessionTable",
+        primaryKeyName = "session_id"
+    )
+
+    private fun getDbConnection(): Connection {
+        val dbHost = System.getenv("DB_HOST") ?: "localhost"
+        val dbPort = System.getenv("DB_PORT") ?: "5432"
+        val dbName = System.getenv("DB_NAME") ?: "stride_db"
+        val secretArn = System.getenv("DB_SECRET_ARN")
+        
+        val dbUser: String
+        val dbPassword: String
+
+        if (!secretArn.isNullOrBlank()) {
+            val secretsClient = SecretsManagerClient.builder()
+                .region(Region.US_EAST_1)
+                .build()
+
+            val valueRequest = GetSecretValueRequest.builder().secretId(secretArn).build()
+            val secretString = secretsClient.getSecretValue(valueRequest).secretString()
+            val secretMap: Map<String, String> = mapper.readValue(secretString)
+            dbUser = secretMap["username"] ?: "postgres"
+            dbPassword = secretMap["password"] ?: "password"
+            
+            secretsClient.close()
+        } else {
+            dbUser = System.getenv("DB_USER") ?: "postgres"
+            dbPassword = System.getenv("DB_PASSWORD") ?: "password"
+        }
+
+        val url = "jdbc:postgresql://$dbHost:$dbPort/$dbName"
+        return DriverManager.getConnection(url, dbUser, dbPassword)
+    }
+
+    private fun getClosestMapNode(conn: Connection, x: Double, y: Double): Map<String, Any>? {
+        // Find the closest node using squared Euclidean distance (avoids expensive SQRT operation)
+        val query = """
+            SELECT NodeID, CoordinateX, CoordinateY, FloorID, BuildingID,
+                   (POWER(CoordinateX - ?, 2) + POWER(CoordinateY - ?, 2)) as dist_sq
+            FROM MapNodes
+            ORDER BY dist_sq ASC
+            LIMIT 1
+        """
+        conn.prepareStatement(query).use { stmt ->
+            stmt.setDouble(1, x)
+            stmt.setDouble(2, y)
+            val rs = stmt.executeQuery()
+            if (rs.next()) {
+                return mapOf(
+                    "NodeID" to rs.getInt("NodeID"),
+                    "CoordinateX" to rs.getInt("CoordinateX"),
+                    "CoordinateY" to rs.getInt("CoordinateY"),
+                    "FloorID" to rs.getInt("FloorID"),
+                    "BuildingID" to rs.getString("BuildingID")
+                )
+            }
+        }
+        return null
+    }
+
+    private fun estimateUserLocation(payload: Map<String, Any?>, prevX: Double, prevY: Double, prevTimeMs: Long, logger: LambdaLogger): Pair<Double, Double> {
+        val heading = (payload["heading_degrees"] as Number).toDouble()
+        val accel = payload["accelerometer"] as Map<*, *>
+        val currentTimestampMs = (payload["timestamp_ms"] as Number).toLong()
+        
+        var currentX = prevX 
+        var currentY = prevY
+
+        // 1. Calculate time elapsed since last frame (Delta t)
+        var deltaTimeSec = 0.0
+        if (prevTimeMs > 0L && currentTimestampMs > prevTimeMs) {
+            deltaTimeSec = (currentTimestampMs - prevTimeMs) / 1000.0
+        }
+
+        // Cap delta time at 5.0 seconds to prevent massive teleportation if the app is paused/backgrounded
+        if (deltaTimeSec > 5.0) {
+            deltaTimeSec = 5.0
+        }
+
+        // Compute 3D Acceleration Magnitude (Orientation-agnostic)
+        val xAccel = (accel["x"] as? Number)?.toDouble() ?: 0.0
+        val yAccel = (accel["y"] as? Number)?.toDouble() ?: 0.0
+        val zAccel = (accel["z"] as? Number)?.toDouble() ?: 0.0
+        
+        val magnitude = Math.sqrt((xAccel * xAccel) + (yAccel * yAccel) + (zAccel * zAccel))
+
+        // Movement Heuristic (Gravity is ~1.0g. Bounces > 1.2g indicate walking)
+        val isMoving = magnitude > 1.2 
+
+        if (isMoving && deltaTimeSec > 0) {
+            // Average human walking speed is ~3.5 feet per second
+            val speedFeetPerSec = 3.5
+            val distanceFeet = speedFeetPerSec * deltaTimeSec
+            
+            // Convert to pixels (1 foot = 10 pixels per populate_floor_data.py)
+            val distancePixels = distanceFeet * 10
+            
+            val headingRad = Math.toRadians(heading)
+            
+            // Apply heading to position (note: Y increases downwards in screen coordinates)
+            currentX += distancePixels * Math.sin(headingRad)
+            currentY -= distancePixels * Math.cos(headingRad)
+
+            logger.log("Moving detected. DeltaTime: $deltaTimeSec sec, Distance: $distancePixels pixels, Heading: $heading, X: $currentX, Y: $currentY")
+        }
+        
+        return Pair(currentX, currentY)
     }
 
     override fun handleRequest(
@@ -100,6 +224,7 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         }
 
         val validationError = validateNavigationFramePayload(payload)
+        logger.log("Payload: $payload")
         if (validationError != null) {
             val sessionId = (payload["session_id"] as? String) ?: "unknown"
             val requestId = (payload["request_id"] as? Number)?.toInt()
@@ -123,10 +248,46 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
 
         val sessionId = payload["session_id"] as String
         val requestId = (payload["request_id"] as Number).toInt()
+        val currentTimestampMs = (payload["timestamp_ms"] as Number?)?.toLong() ?: System.currentTimeMillis()
 
-        // TODO(business-logic): resolve and persist per-session user navigation state by session_id
-        // (e.g., current step, last estimated node, and route progress).
-        // TODO(business-logic): run live localization using image + sensor signals.
+        // TODO(business-logic): run live localization using image.
+        val sessionData = sessionTableClient.getItemDetails(sessionId)
+        val previousX = sessionData?.get("current_x")?.toDoubleOrNull() ?: 0.0
+        val previousY = sessionData?.get("current_y")?.toDoubleOrNull() ?: 0.0
+        val previousTime = sessionData?.get("last_updated_ms")?.toLongOrNull() ?: 0L
+
+        if (sessionData != null) {
+            logger.log("Restored session state for $sessionId: prevX=$previousX, prevY=$previousY")
+        } else {
+            logger.log("New session $sessionId started. Defaulting to (0.0, 0.0).")
+        }
+
+        // Execute Location Estimation based purely on PDR
+        val (estimatedX, estimatedY) = estimateUserLocation(payload, previousX, previousY, previousTime, logger)
+        // Update state in DynamoDB with new estimated location and timestamp. Set TTL for 2 hours to allow stale session cleanup.
+        val ttlSeconds = (System.currentTimeMillis() / 1000) + 7200 // 2 hour expiration
+        sessionTableClient.putItem(mapOf(
+            "session_id" to sessionId,
+            "current_x" to estimatedX,
+            "current_y" to estimatedY,
+            "last_updated_ms" to currentTimestampMs,
+            "ttl" to ttlSeconds
+        ))
+        
+        // Execute Closest Node Search
+        var closestNodeId: String? = "unknown"
+        try {
+            getDbConnection().use { conn ->
+                val closestNode = getClosestMapNode(conn, estimatedX, estimatedY)
+                if (closestNode != null) {
+                    closestNodeId = closestNode["NodeID"].toString()
+                    logger.log("Estimated Location: ($estimatedX, $estimatedY). Nearest Node: $closestNodeId")
+                }
+            }
+        } catch (e: Exception) {
+            logger.log("Database error resolving closest map node: ${e.message}")
+        }
+
         // TODO(business-logic): compute remaining instructions, estimated position, and completion state.
         val responsePayload = mapOf(
             "type" to "navigation_update",
@@ -134,7 +295,14 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
             "current_step" to 1,
             "remaining_instructions" to emptyList<Any>(),
             "request_id" to requestId,
-            "message" to "Live navigation infrastructure is wired. Business logic pending."
+            "message" to "Live navigation infrastructure is wired. Business logic pending.",
+            "estimated_position" to mapOf(
+                "node_id" to closestNodeId,
+                "coordinates" to mapOf(
+                    "x_feet" to estimatedX*pixel_to_feet_ratio,
+                    "y_feet" to estimatedY*pixel_to_feet_ratio
+                )
+            )
         )
 
         postJsonToConnection(
@@ -206,7 +374,10 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
 
     private fun validateVector3(value: Any?): Boolean {
         if (value !is Map<*, *>) return false
-        return value["x"] is Number && value["y"] is Number && value["z"] is Number
+        value.forEach { (_, v) ->
+            if (v !is Number) return false
+        }
+        return true
     }
 
     private fun isWholeNumber(number: Number): Boolean {
