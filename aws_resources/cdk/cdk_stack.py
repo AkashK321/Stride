@@ -339,6 +339,9 @@ class CdkStack(Stack):
         navigation_session_table.grant_read_write_data(live_navigation_handler)
         live_navigation_handler.add_environment("SESSION_TABLE_NAME", navigation_session_table.table_name)
 
+        navigation_session_table.grant_read_write_data(static_navigation_handler)
+        static_navigation_handler.add_environment("SESSION_TABLE_NAME", navigation_session_table.table_name)
+
         # TODO: RDS setup disabled for now - to be re-enabled when ready
         # Define RDS Resource
         db_instance = rds.DatabaseInstance(
