@@ -41,9 +41,7 @@ export default function TabsLayout() {
     // App settings and preferences tab - app configuration and preferences
     React.createElement(Tabs.Screen, { name: "settings" }),
     // Navigation tab - camera frame capture and transmission
-    React.createElement(Tabs.Screen, { name: "navigation" }),
-    // UI components tab - used to display all UI components and their usage
-    React.createElement(Tabs.Screen, { name: "ui_components" }),
+    React.createElement(Tabs.Screen, { name: "nav-dev" }),
     // Sensor dev tab - hidden from tab bar (dev only, accessible via direct navigation)
     React.createElement(Tabs.Screen, { name: "sensor-dev" }),
     ),

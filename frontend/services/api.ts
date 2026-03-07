@@ -71,6 +71,78 @@ export interface RegisterResponse {
   username: string;
 }
 
+export interface LandmarkResult {
+  landmark_id: number;
+  name: string;
+  floor_number: number;
+  nearest_node: string;
+}
+
+export interface SearchResponse {
+  results: LandmarkResult[];
+}
+
+export interface NavigationStartRequest {
+  destination: { landmark_id: string };
+  start_location: { node_id: string };
+}
+
+export interface NavigationInstruction {
+  step: number;
+  distance_feet: number;
+  direction: string | null;
+  node_id: string;
+  coordinates: { x?: number; y?: number; x_feet?: number; y_feet?: number };
+}
+
+export interface NavigationStartResponse {
+  session_id: string;
+  instructions: NavigationInstruction[];
+}
+
+/**
+ * Aggregates navigation instructions: removes 0-foot steps (except final "arrive")
+ * and merges consecutive steps that share the same direction into one step with summed distance.
+ */
+export function aggregateNavigationInstructions(
+  instructions: NavigationInstruction[],
+): NavigationInstruction[] {
+  if (instructions.length === 0) return [];
+
+  const filtered = instructions.filter((inst, index) => {
+    const isLast = index === instructions.length - 1;
+    if (inst.distance_feet > 0) return true;
+    if (isLast && inst.direction === "arrive") return true;
+    return false;
+  });
+
+  if (filtered.length === 0) return [];
+
+  const merged: NavigationInstruction[] = [];
+  let current = { ...filtered[0], distance_feet: filtered[0].distance_feet };
+
+  for (let i = 1; i < filtered.length; i++) {
+    const inst = filtered[i];
+    if (inst.direction === current.direction && inst.direction !== "arrive") {
+      current.distance_feet += inst.distance_feet;
+      current.node_id = inst.node_id;
+      current.coordinates = inst.coordinates;
+    } else {
+      merged.push({
+        ...current,
+        step: merged.length + 1,
+      });
+      current = { ...inst, distance_feet: inst.distance_feet };
+    }
+  }
+  merged.push({
+    ...current,
+    step: merged.length + 1,
+  });
+
+  return merged;
+}
+
 /**
  * Makes a POST request to the login endpoint.
  */
@@ -167,4 +239,102 @@ export async function register(userData: RegisterRequest): Promise<RegisterRespo
     // Otherwise wrap it
     throw new Error(`Registration failed: ${String(error)}`);
   }
+}
+
+/**
+ * Searches landmarks (rooms, facilities) by name.
+ * Uses case-insensitive partial matching on the Landmarks table.
+ */
+export async function searchLandmarks(
+  query: string,
+  limit: number = 10
+): Promise<SearchResponse> {
+  const base = requireApiUrl();
+  const params = new URLSearchParams({ query, limit: String(limit) });
+  const url = `${base}/search?${params}`;
+  console.log("[API] search request:", { query, limit, url });
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (err) {
+    console.log("[API] search fetch failed (network error):", err);
+    throw err;
+  }
+
+  const responseText = await response.text();
+  console.log("[API] search response raw:", {
+    status: response.status,
+    statusText: response.statusText,
+    ok: response.ok,
+    bodyLength: responseText.length,
+    bodyPreview: responseText.slice(0, 200),
+  });
+
+  let data: unknown;
+  try {
+    data = responseText.length > 0 ? JSON.parse(responseText) : {};
+  } catch (parseErr) {
+    console.log("[API] search response not JSON:", responseText.slice(0, 500));
+    throw new Error(`Search failed: response was not JSON (${response.status})`);
+  }
+
+  if (!response.ok) {
+    const error: ApiError = data as ApiError;
+    console.log("[API] search response (error):", { status: response.status, data });
+    throw new Error(error.error || `Search failed: ${response.statusText}`);
+  }
+
+  console.log("[API] search response:", data);
+  return data as SearchResponse;
+}
+
+/**
+ * Starts a navigation session by calculating the path from a start node
+ * to the destination landmark using A* pathfinding.
+ */
+export async function startNavigation(
+  request: NavigationStartRequest
+): Promise<NavigationStartResponse> {
+  const base = requireApiUrl();
+  const url = `${base}/navigation/start`;
+  const body = JSON.stringify(request);
+  console.log("[API] navigation/start request:", { url, body: request });
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+  });
+
+  const responseText = await response.text();
+  console.log("[API] navigation/start response raw:", {
+    status: response.status,
+    statusText: response.statusText,
+    ok: response.ok,
+    bodyLength: responseText.length,
+    bodyPreview: responseText.slice(0, 300),
+  });
+
+  let data: unknown;
+  try {
+    data = responseText.length > 0 ? JSON.parse(responseText) : {};
+  } catch (parseErr) {
+    console.log("[API] navigation/start response not JSON:", responseText.slice(0, 500));
+    throw new Error(`Navigation failed: response was not JSON (${response.status})`);
+  }
+
+  if (!response.ok) {
+    const error: ApiError = data as ApiError;
+    console.log("[API] navigation/start response (error):", { status: response.status, data });
+    throw new Error(
+      error.error || `Navigation failed: ${response.statusText}`
+    );
+  }
+
+  console.log("[API] navigation/start response:", data);
+  return data as NavigationStartResponse;
 }

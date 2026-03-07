@@ -70,8 +70,8 @@ class StaticNavigationHandlerTest {
         every { mockLandmarkStmt.executeQuery() } returns mockResultSet(listOf(
             mapOf(
                 "Name" to "Room 205",
-                "NearestNodeID" to 2,
-                "DistanceToNode" to 2.0, // 2 meters from node 2
+                "NearestNodeID" to "n2",
+                "DistanceToNode" to 2.0, // 2 meters from node n2
                 "BearingFromNode" to "East",
                 "MapCoordinateX" to 12,
                 "MapCoordinateY" to 0
@@ -81,23 +81,29 @@ class StaticNavigationHandlerTest {
         val mockBuildingStmt = mockk<PreparedStatement>(relaxed = true)
         every { mockBuildingStmt.executeQuery() } returns mockResultSet(listOf(mapOf("BuildingID" to "B1")))
 
+        val mockStartNodeStmt = mockk<PreparedStatement>(relaxed = true)
+        every { mockStartNodeStmt.executeQuery() } returns mockResultSet(listOf(mapOf("NodeIDString" to "staircase_main_2S01")))
+
         val mockGraphStmt = mockk<PreparedStatement>(relaxed = true)
         every { mockGraphStmt.executeQuery() } returns mockResultSet(listOf(
-            mapOf("StartNodeID" to 1, "EndNodeID" to 2, "DistanceMeters" to 10.0, "IsBidirectional" to true),
-            mapOf("StartNodeID" to 2, "EndNodeID" to 3, "DistanceMeters" to 5.0, "IsBidirectional" to true)
+            mapOf("StartNodeID" to "staircase_main_2S01", "EndNodeID" to "n1", "DistanceMeters" to 1.0, "IsBidirectional" to true),
+            mapOf("StartNodeID" to "n1", "EndNodeID" to "n2", "DistanceMeters" to 10.0, "IsBidirectional" to true),
+            mapOf("StartNodeID" to "n2", "EndNodeID" to "n3", "DistanceMeters" to 5.0, "IsBidirectional" to true)
         ))
 
         val mockNodesStmt = mockk<PreparedStatement>(relaxed = true)
         every { mockNodesStmt.executeQuery() } returns mockResultSet(listOf(
-            mapOf("NodeID" to 1, "CoordinateX" to 0, "CoordinateY" to 0),
-            mapOf("NodeID" to 2, "CoordinateX" to 10, "CoordinateY" to 0),
-            mapOf("NodeID" to 3, "CoordinateX" to 10, "CoordinateY" to 5)
+            mapOf("NodeIDString" to "staircase_main_2S01", "CoordinateX" to -10, "CoordinateY" to 0),
+            mapOf("NodeIDString" to "n1", "CoordinateX" to 0, "CoordinateY" to 0),
+            mapOf("NodeIDString" to "n2", "CoordinateX" to 10, "CoordinateY" to 0),
+            mapOf("NodeIDString" to "n3", "CoordinateX" to 10, "CoordinateY" to 5)
         ))
 
         val mockPathEdgesStmt = mockk<PreparedStatement>(relaxed = true)
         every { mockPathEdgesStmt.executeQuery() } returns mockResultSet(listOf(
-            mapOf("StartNodeID" to 1, "EndNodeID" to 2, "DistanceMeters" to 10.0, "Bearing" to 90.0, "IsBidirectional" to true), // 90 = East
-            mapOf("StartNodeID" to 2, "EndNodeID" to 3, "DistanceMeters" to 5.0, "Bearing" to 0.0, "IsBidirectional" to true)   // 0 = North
+            mapOf("StartNodeID" to "staircase_main_2S01", "EndNodeID" to "n1", "DistanceMeters" to 1.0, "Bearing" to 90.0, "IsBidirectional" to true),
+            mapOf("StartNodeID" to "n1", "EndNodeID" to "n2", "DistanceMeters" to 10.0, "Bearing" to 90.0, "IsBidirectional" to true), // 90 = East
+            mapOf("StartNodeID" to "n2", "EndNodeID" to "n3", "DistanceMeters" to 5.0, "Bearing" to 0.0, "IsBidirectional" to true)   // 0 = North
         ))
 
         every { mockConn.prepareStatement(any<String>()) } answers {
@@ -105,8 +111,9 @@ class StaticNavigationHandlerTest {
             when {
                 sql.contains("FROM Landmarks") -> mockLandmarkStmt
                 sql.contains("BuildingID FROM MapNodes") -> mockBuildingStmt
+                sql.contains("NodeIDString FROM MapNodes WHERE NodeIDString") -> mockStartNodeStmt
                 sql.contains("FROM MapEdges e") -> mockGraphStmt
-                sql.contains("FROM MapNodes WHERE NodeID IN") -> mockNodesStmt
+                sql.contains("FROM MapNodes WHERE NodeIDString IN") -> mockNodesStmt
                 sql.contains("WHERE StartNodeID IN") -> mockPathEdgesStmt
                 else -> mockk<PreparedStatement>(relaxed = true)
             }
@@ -114,7 +121,7 @@ class StaticNavigationHandlerTest {
 
         val requestBody = """
             {
-                "start_location": { "node_id": "1" },
+                "start_location": { "node_id": "staircase_main_2S01" },
                 "destination": { "landmark_id": "2" }
             }
         """.trimIndent()
@@ -145,6 +152,78 @@ class StaticNavigationHandlerTest {
         assertTrue(responseBody.contains("arrive"))
     }
 
+    @Test
+    fun `handleNavigationStart accepts string node_id (NodeIDString) and returns 200`() {
+        val mockLandmarkStmt = mockk<PreparedStatement>(relaxed = true)
+        every { mockLandmarkStmt.executeQuery() } returns mockResultSet(listOf(
+            mapOf(
+                "Name" to "Room 226",
+                "NearestNodeID" to "n2",
+                "DistanceToNode" to 1.5,
+                "BearingFromNode" to "North",
+                "MapCoordinateX" to 10,
+                "MapCoordinateY" to 5
+            )
+        ))
+
+        val mockBuildingStmt = mockk<PreparedStatement>(relaxed = true)
+        every { mockBuildingStmt.executeQuery() } returns mockResultSet(listOf(mapOf("BuildingID" to "BHEE")))
+
+        val mockStartNodeStmt = mockk<PreparedStatement>(relaxed = true)
+        every { mockStartNodeStmt.executeQuery() } returns mockResultSet(listOf(mapOf("NodeIDString" to "staircase_main_2S01")))
+
+        val mockGraphStmt = mockk<PreparedStatement>(relaxed = true)
+        every { mockGraphStmt.executeQuery() } returns mockResultSet(listOf(
+            mapOf("StartNodeID" to "staircase_main_2S01", "EndNodeID" to "n1", "DistanceMeters" to 1.0, "IsBidirectional" to true),
+            mapOf("StartNodeID" to "n1", "EndNodeID" to "n2", "DistanceMeters" to 10.0, "IsBidirectional" to true)
+        ))
+
+        val mockNodesStmt = mockk<PreparedStatement>(relaxed = true)
+        every { mockNodesStmt.executeQuery() } returns mockResultSet(listOf(
+            mapOf("NodeIDString" to "staircase_main_2S01", "CoordinateX" to -10, "CoordinateY" to 0),
+            mapOf("NodeIDString" to "n1", "CoordinateX" to 0, "CoordinateY" to 0),
+            mapOf("NodeIDString" to "n2", "CoordinateX" to 10, "CoordinateY" to 0)
+        ))
+
+        val mockPathEdgesStmt = mockk<PreparedStatement>(relaxed = true)
+        every { mockPathEdgesStmt.executeQuery() } returns mockResultSet(listOf(
+            mapOf("StartNodeID" to "staircase_main_2S01", "EndNodeID" to "n1", "DistanceMeters" to 1.0, "Bearing" to 90.0, "IsBidirectional" to true),
+            mapOf("StartNodeID" to "n1", "EndNodeID" to "n2", "DistanceMeters" to 10.0, "Bearing" to 90.0, "IsBidirectional" to true)
+        ))
+
+        every { mockConn.prepareStatement(any<String>()) } answers {
+            val sql = firstArg<String>()
+            when {
+                sql.contains("FROM Landmarks") -> mockLandmarkStmt
+                sql.contains("BuildingID FROM MapNodes") -> mockBuildingStmt
+                sql.contains("NodeIDString FROM MapNodes WHERE NodeIDString") -> mockStartNodeStmt
+                sql.contains("FROM MapEdges e") -> mockGraphStmt
+                sql.contains("FROM MapNodes WHERE NodeIDString IN") -> mockNodesStmt
+                sql.contains("WHERE StartNodeID IN") -> mockPathEdgesStmt
+                else -> mockk<PreparedStatement>(relaxed = true)
+            }
+        }
+
+        val requestBody = """
+            {
+                "start_location": { "node_id": "staircase_main_2S01" },
+                "destination": { "landmark_id": "1" }
+            }
+        """.trimIndent()
+
+        val event = APIGatewayProxyRequestEvent().apply {
+            path = "/navigation/start"
+            httpMethod = "POST"
+            body = requestBody
+        }
+
+        val response = handler.handleRequest(event, mockContext)
+
+        assertEquals(200, response.statusCode)
+        assertTrue(response.body?.contains("session_id") == true)
+        assertTrue(response.body?.contains("instructions") == true)
+    }
+
 	@Test
 	fun `search endpoint with missing query returns 400`() {
 		val event = APIGatewayProxyRequestEvent().apply {
@@ -159,18 +238,20 @@ class StaticNavigationHandlerTest {
 
 	@Test
 	fun `search endpoint with valid query returns 200 and results`() {
-		// 1. Mock the search SQL query result
+		// 1. Mock the search SQL query result (JOIN returns LandmarkID, Name, FloorNumber, NearestNodeDisplay)
 		val mockSearchStmt = mockk<PreparedStatement>(relaxed = true)
 		every { mockSearchStmt.executeQuery() } returns mockResultSet(listOf(
 			mapOf(
+				"LandmarkID" to 1,
 				"Name" to "Room 226",
 				"FloorNumber" to 2,
-				"NearestNodeID" to 42
+				"NearestNodeDisplay" to "r226_door"
 			),
 			mapOf(
+				"LandmarkID" to 2,
 				"Name" to "Room 224",
 				"FloorNumber" to 2,
-				"NearestNodeID" to 43
+				"NearestNodeDisplay" to "r224_door"
 			)
 		))
 
@@ -188,18 +269,21 @@ class StaticNavigationHandlerTest {
 		}
 		val response = handler.handleRequest(event, mockContext)
         println("Search response: ${response.body}")
-		
-		// 4. Assert response payload
+
+		// 4. Assert response payload: landmark_id, name, floor_number, nearest_node (string id)
 		assertEquals(200, response.statusCode)
 		val body = response.body ?: ""
+		assertTrue(body.contains("\"landmark_id\":1"))
+		assertTrue(body.contains("\"landmark_id\":2"))
 		assertTrue(body.contains("Room 226"))
 		assertTrue(body.contains("Room 224"))
 		assertTrue(body.contains("\"floor_number\":2"))
-		assertTrue(body.contains("\"nearest_node\":\"42\"")) // Validates Int was parsed to String
+		assertTrue(body.contains("\"nearest_node\":\"r226_door\""))
+		assertTrue(body.contains("\"nearest_node\":\"r224_door\""))
 
 		// 5. Verify SQL parameters were bound correctly
-		verify { mockSearchStmt.setString(1, "%Room 2%") } // Verify % wrapped for ILIKE
-		verify { mockSearchStmt.setInt(2, 10) } // Default limit is 10
+		verify { mockSearchStmt.setString(1, "%Room 2%") }
+		verify { mockSearchStmt.setInt(2, 10) }
 	}
 
 	@Test

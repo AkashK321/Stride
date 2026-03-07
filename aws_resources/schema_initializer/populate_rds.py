@@ -85,7 +85,10 @@ def main():
             # MapNodes
             """
             CREATE TABLE MapNodes (
-                NodeID SERIAL PRIMARY KEY,
+                -- Use the human-readable node ID string as the primary key
+                NodeIDString VARCHAR(255) PRIMARY KEY,
+                -- Keep an auto-incrementing integer for internal use and foreign keys
+                NodeID SERIAL UNIQUE,
                 FloorID INT REFERENCES Floors(FloorID) ON DELETE CASCADE,
                 BuildingID VARCHAR(50) REFERENCES Buildings(BuildingID),
                 CoordinateX INT NOT NULL,
@@ -99,8 +102,8 @@ def main():
             CREATE TABLE MapEdges (
                 EdgeID SERIAL PRIMARY KEY,
                 FloorID INT REFERENCES Floors(FloorID) ON DELETE CASCADE,
-                StartNodeID INT REFERENCES MapNodes(NodeID) ON DELETE CASCADE,
-                EndNodeID INT REFERENCES MapNodes(NodeID) ON DELETE CASCADE,
+                StartNodeID VARCHAR(255) REFERENCES MapNodes(NodeIDString) ON DELETE CASCADE,
+                EndNodeID VARCHAR(255) REFERENCES MapNodes(NodeIDString) ON DELETE CASCADE,
                 DistanceMeters DOUBLE PRECISION NOT NULL,
                 Bearing DOUBLE PRECISION,
                 IsBidirectional BOOLEAN DEFAULT TRUE
@@ -113,7 +116,7 @@ def main():
                 LandmarkID SERIAL PRIMARY KEY, -- Correct Name
                 FloorID INT REFERENCES Floors(FloorID) ON DELETE CASCADE,
                 Name VARCHAR(50) NOT NULL, -- e.g. "Room 205" or "Men's Restroom"
-                NearestNodeID INT REFERENCES MapNodes(NodeID),
+                NearestNodeID VARCHAR(255) REFERENCES MapNodes(NodeIDString),
                 DistanceToNode DOUBLE PRECISION,
                 BearingFromNode VARCHAR(10) CHECK (BearingFromNode IN ('North', 'South', 'East', 'West')),
                 MapCoordinateX INT,
