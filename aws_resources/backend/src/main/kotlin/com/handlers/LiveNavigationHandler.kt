@@ -4,6 +4,7 @@ import com.amazonaws.services.lambda.runtime.Context
 import com.amazonaws.services.lambda.runtime.RequestHandler
 import com.amazonaws.services.lambda.runtime.events.APIGatewayV2WebSocketEvent
 import com.amazonaws.services.lambda.runtime.events.APIGatewayV2WebSocketResponse
+import com.amazonaws.services.lambda.runtime.LambdaLogger
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import software.amazon.awssdk.auth.credentials.EnvironmentVariableCredentialsProvider
@@ -29,6 +30,8 @@ import kotlin.math.sin
 class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGatewayV2WebSocketResponse> {
 
     private val mapper = jacksonObjectMapper()
+
+    private val pixel_to_feet_ratio = 0.1 // 1 foot in real world corresponds to 10 pixels in our coordinate system (based on populate_floor_data.py)
 
     private val apiGatewayFactory: (String) -> ApiGatewayManagementApiClient = { endpointUrl ->
         ApiGatewayManagementApiClient.builder()
@@ -100,30 +103,50 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         return null
     }
 
-    private fun estimateUserLocation(payload: Map<String, Any?>, prevX: Double, prevY: Double): Pair<Double, Double> {
+    private fun estimateUserLocation(payload: Map<String, Any?>, prevX: Double, prevY: Double, prevTimeMs: Long, logger: LambdaLogger): Pair<Double, Double> {
         val heading = (payload["heading_degrees"] as Number).toDouble()
         val accel = payload["accelerometer"] as Map<*, *>
+        val currentTimestampMs = (payload["timestamp_ms"] as Number).toLong()
         
         var currentX = prevX 
         var currentY = prevY
 
-        // Pedestrian Dead Reckoning (PDR)
-        val yAccel = (accel["y"] as Number).toDouble()
-        
-        // Simple heuristic: if y-acceleration exceeds threshold, consider it a step.
-        // Can be improved later with sliding window peak detection.
-        val isMoving = yAccel > 1.2 
+        // 1. Calculate time elapsed since last frame (Delta t)
+        var deltaTimeSec = 0.0
+        if (prevTimeMs > 0L && currentTimestampMs > prevTimeMs) {
+            deltaTimeSec = (currentTimestampMs - prevTimeMs) / 1000.0
+        }
 
-        if (isMoving) {
-            val stepSizeMeters = 0.762 // Avg human step is ~2.5 feet (0.762 meters)
-            val stepSizePixels = stepSizeMeters * 3.28084 * 10 // Convert to pixels (1 foot = 10 pixels per populate_floor_data.py)
+        // Cap delta time at 5.0 seconds to prevent massive teleportation if the app is paused/backgrounded
+        if (deltaTimeSec > 5.0) {
+            deltaTimeSec = 5.0
+        }
+
+        // Compute 3D Acceleration Magnitude (Orientation-agnostic)
+        val xAccel = (accel["x"] as? Number)?.toDouble() ?: 0.0
+        val yAccel = (accel["y"] as? Number)?.toDouble() ?: 0.0
+        val zAccel = (accel["z"] as? Number)?.toDouble() ?: 0.0
+        
+        val magnitude = Math.sqrt((xAccel * xAccel) + (yAccel * yAccel) + (zAccel * zAccel))
+
+        // Movement Heuristic (Gravity is ~1.0g. Bounces > 1.2g indicate walking)
+        val isMoving = magnitude > 1.2 
+
+        if (isMoving && deltaTimeSec > 0) {
+            // Average human walking speed is ~3.5 feet per second
+            val speedFeetPerSec = 3.5
+            val distanceFeet = speedFeetPerSec * deltaTimeSec
+            
+            // Convert to pixels (1 foot = 10 pixels per populate_floor_data.py)
+            val distancePixels = distanceFeet * 10
             
             val headingRad = Math.toRadians(heading)
             
-            // Apply heading to position (note: Y increases downwards in screen/image coordinates)
-            // 0 degrees = North (up, -y), 90 degrees = East (right, +x), etc.
-            currentX += stepSizePixels * sin(headingRad)
-            currentY -= stepSizePixels * cos(headingRad)
+            // Apply heading to position (note: Y increases downwards in screen coordinates)
+            currentX += distancePixels * Math.sin(headingRad)
+            currentY -= distancePixels * Math.cos(headingRad)
+
+            logger.log("Moving detected. DeltaTime: $deltaTimeSec sec, Distance: $distancePixels pixels, Heading: $heading, X: $currentX, Y: $currentY")
         }
         
         return Pair(currentX, currentY)
@@ -201,6 +224,7 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         }
 
         val validationError = validateNavigationFramePayload(payload)
+        logger.log("Payload: $payload")
         if (validationError != null) {
             val sessionId = (payload["session_id"] as? String) ?: "unknown"
             val requestId = (payload["request_id"] as? Number)?.toInt()
@@ -224,11 +248,13 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
 
         val sessionId = payload["session_id"] as String
         val requestId = (payload["request_id"] as Number).toInt()
+        val currentTimestampMs = (payload["timestamp_ms"] as Number?)?.toLong() ?: System.currentTimeMillis()
 
         // TODO(business-logic): run live localization using image.
         val sessionData = sessionTableClient.getItemDetails(sessionId)
         val previousX = sessionData?.get("current_x")?.toDoubleOrNull() ?: 0.0
         val previousY = sessionData?.get("current_y")?.toDoubleOrNull() ?: 0.0
+        val previousTime = sessionData?.get("last_updated_ms")?.toLongOrNull() ?: 0L
 
         if (sessionData != null) {
             logger.log("Restored session state for $sessionId: prevX=$previousX, prevY=$previousY")
@@ -237,14 +263,14 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         }
 
         // Execute Location Estimation based purely on PDR
-        val (estimatedX, estimatedY) = estimateUserLocation(payload, previousX, previousY)
+        val (estimatedX, estimatedY) = estimateUserLocation(payload, previousX, previousY, previousTime, logger)
         // Update state in DynamoDB with new estimated location and timestamp. Set TTL for 2 hours to allow stale session cleanup.
         val ttlSeconds = (System.currentTimeMillis() / 1000) + 7200 // 2 hour expiration
         sessionTableClient.putItem(mapOf(
             "session_id" to sessionId,
             "current_x" to estimatedX,
             "current_y" to estimatedY,
-            "last_updated_ms" to System.currentTimeMillis(),
+            "last_updated_ms" to currentTimestampMs,
             "ttl" to ttlSeconds
         ))
         
@@ -273,8 +299,8 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
             "estimated_position" to mapOf(
                 "node_id" to closestNodeId,
                 "coordinates" to mapOf(
-                    "x_feet" to estimatedX,
-                    "y_feet" to estimatedY
+                    "x_feet" to estimatedX*pixel_to_feet_ratio,
+                    "y_feet" to estimatedY*pixel_to_feet_ratio
                 )
             )
         )
@@ -348,7 +374,10 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
 
     private fun validateVector3(value: Any?): Boolean {
         if (value !is Map<*, *>) return false
-        return value["x"] is Number && value["y"] is Number && value["z"] is Number
+        value.forEach { (_, v) ->
+            if (v !is Number) return false
+        }
+        return true
     }
 
     private fun isWholeNumber(number: Number): Boolean {

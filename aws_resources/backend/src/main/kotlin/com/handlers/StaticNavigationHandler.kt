@@ -13,6 +13,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import java.sql.Connection
 import java.sql.DriverManager
 import java.util.PriorityQueue
+import com.services.DynamoDbTableClient
 
 data class LandmarkDetails(
     val id: Int,
@@ -64,6 +65,11 @@ data class NavigationStartResponse(
 class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
 
     private val mapper = jacksonObjectMapper()
+
+    private val sessionTableClient = DynamoDbTableClient(
+        tableName = System.getenv("SESSION_TABLE_NAME") ?: "NavigationSessionTable",
+        primaryKeyName = "session_id"
+    )
 
     private fun getDbConnection(): Connection {
         val dbHost = System.getenv("DB_HOST") ?: "localhost"
@@ -228,8 +234,30 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
                 logger.log("Instruction: $inst")
             })
 
+            val sessionId = "nav_session_${System.currentTimeMillis()}"
+
+            // 5. Initialize the Live Navigation Session in DynamoDB
+            try {
+                // The first instruction step is the starting node, which contains the start X and Y (in pixels)
+                val startX = instructions.firstOrNull()?.coordinates?.get("x") ?: 0.0
+                val startY = instructions.firstOrNull()?.coordinates?.get("y") ?: 0.0
+                
+                val ttlSeconds = (System.currentTimeMillis() / 1000) + 7200 // 2 hour expiration
+                
+                sessionTableClient.putItem(mapOf(
+                    "session_id" to sessionId,
+                    "current_x" to startX,
+                    "current_y" to startY,
+                    "last_updated_ms" to System.currentTimeMillis(), // Initial timestamp for delta-t calculations
+                    "ttl" to ttlSeconds
+                ))
+                logger.log("Successfully initialized DynamoDB session state for $sessionId at ($startX, $startY)")
+            } catch (e: Exception) {
+                logger.log("Error initializing session in DynamoDB: ${e.message}")
+            }
+
             return NavigationStartResponse(
-                session_id = "nav_session_${System.currentTimeMillis()}",
+                session_id = sessionId,
                 instructions = instructions
             )
         }
