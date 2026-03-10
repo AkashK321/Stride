@@ -1,17 +1,21 @@
 import * as React from "react";
-import { View, Text, StyleSheet, ActivityIndicator, Pressable } from "react-native";
-import { useNavigation, router } from "expo-router";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ActivityIndicator,
+  Pressable,
+  PanResponder,
+} from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Speech from "expo-speech";
 import { Ionicons } from "@expo/vector-icons";
-import SearchSheet from "../../components/SearchSheet";
-import type { SearchSheetRef } from "../../components/SearchSheet";
+import { router, useLocalSearchParams } from "expo-router";
 import NavigationInstructionsDropdown from "../../components/NavigationInstructions/NavigationInstructionsDropdown";
 import { formatInstruction } from "../../components/NavigationInstructions/NavigationInstructionItem";
 import {
-  LandmarkResult,
   NavigationInstruction,
   startNavigation,
   aggregateNavigationInstructions,
@@ -20,12 +24,11 @@ import { colors } from "../../theme/colors";
 import { typography } from "../../theme/typography";
 import { spacing } from "../../theme/spacing";
 
-export default function Home() {
-  const sheetRef = React.useRef<SearchSheetRef>(null);
-  const navigation = useNavigation();
+
+export default function NavigationSession() {
+  const params = useLocalSearchParams();
+  const insets = useSafeAreaInsets();
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-  const [selectedDestination, setSelectedDestination] =
-    React.useState<LandmarkResult | null>(null);
   const [navigationInstructions, setNavigationInstructions] =
     React.useState<NavigationInstruction[] | null>(null);
   const [navigationError, setNavigationError] = React.useState<string | null>(
@@ -33,18 +36,58 @@ export default function Home() {
   );
   const [navigationLoading, setNavigationLoading] = React.useState(false);
   const [speakerMode, setSpeakerMode] = React.useState(false);
+  const [currentStepIndex, setCurrentStepIndex] = React.useState(0);
   const lastSpokenTextRef = React.useRef<string | null>(null);
 
   const toggleSpeakerMode = React.useCallback(() => {
     setSpeakerMode((prev) => !prev);
   }, []);
 
+  const handleSelectedIndexChange = React.useCallback((index: number) => {
+    setCurrentStepIndex(index);
+  }, []);
+
+  const instructionCountRef = React.useRef(0);
+  instructionCountRef.current = navigationInstructions?.length ?? 0;
+
+  const panResponder = React.useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        const { dx } = gestureState;
+        return Math.abs(dx) > 25;
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        const { dx } = gestureState;
+        const SWIPE_THRESHOLD = 50;
+        const count = instructionCountRef.current;
+        if (count <= 0) return;
+        setCurrentStepIndex((prev) => {
+          if (dx > SWIPE_THRESHOLD) {
+            return Math.max(0, prev - 1);
+          }
+          if (dx < -SWIPE_THRESHOLD) {
+            return Math.min(count - 1, prev + 1);
+          }
+          return prev;
+        });
+      },
+    }),
+  ).current;
+
+  // Reset selected step when the instruction list is replaced (e.g. from API or later from WebSocket).
+  React.useEffect(() => {
+    setCurrentStepIndex(0);
+  }, [navigationInstructions]);
+
+  // Speak whenever the selected instruction changes (from dropdown, or later from other sources).
   React.useEffect(() => {
     if (!speakerMode || !navigationInstructions || navigationInstructions.length === 0) {
       return;
     }
-    const current = navigationInstructions[0];
-    const next = navigationInstructions[1] ?? null;
+    const safeIndex = Math.max(0, Math.min(currentStepIndex, navigationInstructions.length - 1));
+    const current = navigationInstructions[safeIndex];
+    const next = safeIndex + 1 < navigationInstructions.length ? navigationInstructions[safeIndex + 1] : null;
     const text = formatInstruction(current, next);
     if (text === lastSpokenTextRef.current) {
       return;
@@ -54,7 +97,7 @@ export default function Home() {
     return () => {
       Speech.stop();
     };
-  }, [speakerMode, navigationInstructions]);
+  }, [speakerMode, navigationInstructions, currentStepIndex]);
 
   React.useEffect(() => {
     if (!speakerMode) {
@@ -63,44 +106,50 @@ export default function Home() {
     }
   }, [speakerMode]);
 
-  const handleSelectDestination = React.useCallback(
-    (landmark: LandmarkResult) => {
-      router.push({
-        pathname: "/navigation/navigation",
-        params: {
-          landmark_id: String(landmark.landmark_id),
-          name: landmark.name,
-          floor_number: String(landmark.floor_number),
-        },
-      });
-    },
-    [],
-  );
-
-  const handleExitNavigation = React.useCallback(() => {
-    setNavigationInstructions(null);
-    setNavigationError(null);
-    setSelectedDestination(null);
-    sheetRef.current?.collapse?.();
-  }, []);
-
+  // Kick off navigation when the screen mounts
   React.useEffect(() => {
-    const parent = navigation.getParent?.();
-    if (!parent) {
+    if (!params.landmark_id) {
+      setNavigationError("No destination provided.");
       return;
     }
 
-    if (navigationInstructions && navigationInstructions.length > 0) {
-      parent.setOptions({
-        tabBarStyle: { display: "none" },
-      });
-    } else {
-      // Restore default tab bar style from layout by clearing override
-      parent.setOptions({
-        tabBarStyle: undefined,
-      });
-    }
-  }, [navigation, navigationInstructions]);
+    let cancelled = false;
+
+    const run = async () => {
+      setNavigationLoading(true);
+      setNavigationError(null);
+      try {
+        const response = await startNavigation({
+          destination: { landmark_id: String(params.landmark_id) },
+          start_location: { node_id: "r208_door" },
+        });
+        if (cancelled) return;
+        setNavigationInstructions(
+          aggregateNavigationInstructions(response.instructions),
+        );
+      } catch (err) {
+        if (cancelled) return;
+        setNavigationInstructions(null);
+        setNavigationError(
+          err instanceof Error ? err.message : "Failed to start navigation",
+        );
+      } finally {
+        if (!cancelled) {
+          setNavigationLoading(false);
+        }
+      }
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [params.landmark_id]);
+
+  const handleExitNavigation = React.useCallback(() => {
+    router.back();
+  }, []);
 
   const totalDistanceFeet = React.useMemo(() => {
     if (!navigationInstructions || navigationInstructions.length === 0) {
@@ -134,7 +183,7 @@ export default function Home() {
         React.createElement(
           Text,
           { style: styles.permissionText },
-          "Camera permission is required to use the home screen.",
+          "Camera permission is required to use navigation.",
         ),
         React.createElement(
           Text,
@@ -163,76 +212,94 @@ export default function Home() {
         style: styles.overlay,
         edges: ["top"] as const,
       },
+      React.createElement(
+        View,
+        {
+          style: styles.swipeableOverlay,
+          ...(navigationInstructions && navigationInstructions.length > 0
+            ? panResponder.panHandlers
+            : {}),
+        },
+        navigationLoading &&
+          React.createElement(
+            View,
+            { style: styles.loadingBanner },
+            React.createElement(ActivityIndicator, {
+              size: "small",
+              color: colors.buttonPrimaryText,
+            }),
+            React.createElement(
+              Text,
+              { style: styles.loadingText },
+              "Calculating route…",
+            ),
+          ),
 
-      navigationLoading &&
-        React.createElement(
-          View,
-          { style: styles.loadingBanner },
-          React.createElement(ActivityIndicator, {
-            size: "small",
-            color: colors.buttonPrimaryText,
+        navigationError &&
+          React.createElement(
+            View,
+            { style: styles.errorBanner },
+            React.createElement(
+              Text,
+              { style: styles.errorText },
+              navigationError,
+            ),
+          ),
+
+        navigationInstructions &&
+          React.createElement(NavigationInstructionsDropdown, {
+            instructions: navigationInstructions,
+            onExit: handleExitNavigation,
+            selectedIndex: currentStepIndex,
+            onSelectedIndexChange: handleSelectedIndexChange,
           }),
-          React.createElement(
-            Text,
-            { style: styles.loadingText },
-            "Calculating route…",
-          ),
-        ),
-
-      navigationError &&
-        React.createElement(
-          View,
-          { style: styles.errorBanner },
-          React.createElement(
-            Text,
-            { style: styles.errorText },
-            navigationError,
-          ),
-        ),
-
-      navigationInstructions &&
-        React.createElement(NavigationInstructionsDropdown, {
-          instructions: navigationInstructions,
-          onExit: handleExitNavigation,
-          // style: styles.navigationInstructionsDropdown,
-        }),
+      ),
     ),
 
-    selectedDestination &&
+    params.name &&
       navigationInstructions &&
       React.createElement(
         View,
         { style: styles.bottomNavContainer },
         React.createElement(
-          Pressable,
-          {
-            style: styles.speakerButton,
-            onPress: toggleSpeakerMode,
-            accessibilityRole: "button",
-            accessibilityLabel: speakerMode ? "Speaker on, tap to turn off" : "Speaker off, tap to turn on",
-          },
-          React.createElement(Ionicons, {
-            name: speakerMode ? "volume-high" : "volume-mute-outline",
-            size: 28,
-            color: speakerMode ? colors.primary : colors.textSecondary,
-          }),
+          View,
+          { style: styles.speakerButtonRow },
+          React.createElement(
+            Pressable,
+            {
+              style: styles.speakerButton,
+              onPress: toggleSpeakerMode,
+              accessibilityRole: "button",
+              accessibilityLabel: speakerMode ? "Speaker on, tap to turn off" : "Speaker off, tap to turn on",
+            },
+            React.createElement(Ionicons, {
+              name: speakerMode ? "volume-high" : "volume-mute-outline",
+              size: 28,
+              color: speakerMode ? colors.primary : colors.textSecondary,
+            }),
+          ),
         ),
         React.createElement(
           View,
-          { style: styles.bottomNavBar },
+          {
+            style: [
+              styles.bottomNavBar,
+              { paddingBottom: insets.bottom || spacing.sm },
+            ],
+          },
           React.createElement(
             View,
             { style: styles.bottomNavTextContainer },
             React.createElement(
               Text,
-              { style: styles.bottomNavDestination },
-              selectedDestination.name,
+              { style: styles.bottomNavDestination, numberOfLines: 1 },
+              params.name,
             ),
             totalDistanceFeet !== null &&
               React.createElement(
                 Text,
                 { style: styles.bottomNavDistance },
-                `${totalDistanceFeet} ft remaining`,
+                `${totalDistanceFeet} ft`,
               ),
           ),
           React.createElement(
@@ -246,17 +313,11 @@ export default function Home() {
             React.createElement(
               Text,
               { style: styles.bottomNavEndButtonText },
-              "End",
+              "End navigation",
             ),
           ),
         ),
       ),
-
-    !navigationInstructions &&
-      React.createElement(SearchSheet, {
-        ref: sheetRef,
-        onSelectDestination: handleSelectDestination,
-      }),
   );
 }
 
@@ -266,6 +327,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#000",
   },
   overlay: {
+    flex: 1,
+  },
+  swipeableOverlay: {
     flex: 1,
   },
   centered: {
@@ -312,7 +376,13 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    alignItems: "center",
+    width: "100%",
+  },
+  speakerButtonRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.sm,
   },
   speakerButton: {
     width: 56,
@@ -323,47 +393,51 @@ const styles = StyleSheet.create({
     borderColor: colors.backgroundSecondary,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: spacing.sm,
     shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    elevation: 3,
   },
   bottomNavBar: {
-    left: 0,
-    right: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    flexDirection: "column",
+    alignItems: "stretch",
+    alignSelf: "stretch",
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingTop: spacing.sm,
     backgroundColor: colors.background,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.backgroundSecondary,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: "hidden",
   },
   bottomNavTextContainer: {
-    flex: 1,
-    marginRight: spacing.sm,
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
   },
   bottomNavDestination: {
     ...typography.h3,
-    fontSize: 18,
+    fontSize: 22,
     color: colors.text,
   },
   bottomNavDistance: {
     ...typography.label,
-    marginTop: 2,
+    marginTop: 4,
+    fontSize: 18,
     color: colors.textSecondary,
   },
   bottomNavEndButton: {
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: 999,
+    paddingVertical: spacing.md,
+    borderRadius: 16,
+    alignItems: "center",
+    alignSelf: "stretch",
     backgroundColor: colors.danger,
   },
   bottomNavEndButtonText: {
     ...typography.button,
+    fontSize: 16,
     color: colors.buttonPrimaryText,
   },
 });
+

@@ -102,7 +102,8 @@ def populate_database(conn, building_data):
             logger.info(f"Inserted floor {floor_data['floor_number']}, FloorID: {floor_id}")
             
             # 3. Insert MapNodes (CamelCase)
-            node_id_map = {}  # Map from custom node IDs to database node IDs
+            # We treat the human-readable node ID string as the canonical ID.
+            node_coords = {}  # Map from custom node IDs to their pixel coordinates
             
             for node in floor_data.get('nodes', []):
                 x_pixels = feet_to_pixels(node['x_feet'])
@@ -110,33 +111,27 @@ def populate_database(conn, building_data):
                 
                 cursor.execute(
                     """
-                    INSERT INTO MapNodes (FloorID, BuildingID, CoordinateX, CoordinateY, NodeType)
-                    VALUES (%s, %s, %s, %s, %s)
-                    RETURNING NodeID
+                    INSERT INTO MapNodes (NodeIDString, FloorID, BuildingID, CoordinateX, CoordinateY, NodeType)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     """,
                     (
+                        node['id'],
                         floor_id,
                         building_data['building_id'],
                         x_pixels,
                         y_pixels,
-                        node['type']
+                        node['type'],
                     )
                 )
-                node_id = cursor.fetchone()[0]
-                node_id_map[node['id']] = node_id
-                logger.info(f"Inserted node {node['id']} -> NodeID {node_id} at ({x_pixels}, {y_pixels})")
+                node_coords[node['id']] = (x_pixels, y_pixels)
+                logger.info(f"Inserted node {node['id']} at ({x_pixels}, {y_pixels})")
             
             # 4. Insert MapEdges (CamelCase)
             for edge in floor_data.get('edges', []):
-                start_node_id = node_id_map[edge['start']]
-                end_node_id = node_id_map[edge['end']]
-                
-                # Get coordinates for distance/bearing calculation
-                cursor.execute("SELECT CoordinateX, CoordinateY FROM MapNodes WHERE NodeID = %s", (start_node_id,))
-                x1, y1 = cursor.fetchone()
-                
-                cursor.execute("SELECT CoordinateX, CoordinateY FROM MapNodes WHERE NodeID = %s", (end_node_id,))
-                x2, y2 = cursor.fetchone()
+                start_node_key = edge['start']
+                end_node_key = edge['end']
+                x1, y1 = node_coords[start_node_key]
+                x2, y2 = node_coords[end_node_key]
                 
                 distance = calculate_distance(x1, y1, x2, y2)
                 bearing = calculate_bearing(x1, y1, x2, y2)
@@ -148,8 +143,8 @@ def populate_database(conn, building_data):
                     """,
                     (
                         floor_id,
-                        start_node_id,
-                        end_node_id,
+                        start_node_key,
+                        end_node_key,
                         distance,
                         bearing,
                         edge.get('bidirectional', True)
@@ -162,13 +157,12 @@ def populate_database(conn, building_data):
                 x_pixels = feet_to_pixels(landmark['x_feet'])
                 y_pixels = feet_to_pixels(landmark['y_feet'])
                 
-                nearest_node_id = node_id_map.get(landmark.get('nearest_node'))
+                nearest_node_key = landmark.get('nearest_node')
                 distance_to_node = None
                 
-                if nearest_node_id:
-                    # Calculate distance from landmark to nearest node
-                    cursor.execute("SELECT CoordinateX, CoordinateY FROM MapNodes WHERE NodeID = %s", (nearest_node_id,))
-                    nx, ny = cursor.fetchone()
+                if nearest_node_key and nearest_node_key in node_coords:
+                    # Calculate distance from landmark to nearest node using cached coordinates
+                    nx, ny = node_coords[nearest_node_key]
                     pixel_dist = math.sqrt((x_pixels - nx)**2 + (y_pixels - ny)**2)
                     distance_to_node = (pixel_dist / FEET_TO_PIXELS) * 0.3048  # Convert to meters
                 
@@ -180,7 +174,7 @@ def populate_database(conn, building_data):
                     (
                         floor_id,
                         landmark['name'],
-                        nearest_node_id,
+                        nearest_node_key,
                         distance_to_node,
                         landmark.get('bearing'),
                         x_pixels,
