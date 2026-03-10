@@ -2,8 +2,8 @@
 
 | Test Case ID | Level (Unit/Int/System) | Requirement ID | Tool | Automated | CI Integrated |
 |--------------|-------------------------|----------------|------|------------|----------------|
-| CD-01 | Integration | FR-1 | Postman | Partial | Planned |
-| CD-02 | Integration | FR-2 | Postman | Partial | Planned |
+| CD-01 | Integration | FR-1 | pytest | Yes | Planned |
+| CD-02 | Integration | FR-2 | pytest | Yes | Planned |
 | NAV-01 | System | FR-3/FR-4 | Full System | No | Planned |
 | NAV-02 | Unit | FR-3 | mockk | Yes | Yes |
 | NAV-03 | Integration | FR-3 | pytest | Yes | Yes |
