@@ -4,7 +4,11 @@ import com.amazonaws.services.lambda.runtime.Context
 import com.amazonaws.services.lambda.runtime.LambdaLogger
 import com.amazonaws.services.lambda.runtime.events.APIGatewayV2WebSocketEvent
 import com.amazonaws.services.lambda.runtime.events.APIGatewayV2WebSocketEvent.RequestContext
+import com.models.LandmarkDetails
+import com.services.DynamoDbTableClient
+import com.services.RdsMapClient
 import io.mockk.*
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -21,9 +25,38 @@ class LiveNavigationHandlerTest {
     fun setup() {
         every { mockContext.logger } returns mockLogger
         
-        // We use the real handler for these tests since it gracefully handles exceptions
-        // internally (API Gateway connection, DB connection) via try-catch blocks.
+        // 1. Mock DynamoDB client to avoid real AWS calls and control the session state
+        mockkConstructor(DynamoDbTableClient::class)
+        every { anyConstructed<DynamoDbTableClient>().getItemDetails(any()) } returns mapOf(
+            "current_x" to "0.0",
+            "current_y" to "0.0",
+            "last_updated_ms" to "1670000000000",
+            "destLandmarkId" to "1"
+        )
+        every { anyConstructed<DynamoDbTableClient>().putItem(any()) } just Runs
+
+        // 2. Mock RDS Map client to avoid Postgres connections during unit tests
+        mockkConstructor(RdsMapClient::class)
+        val mockConn = mockk<java.sql.Connection>(relaxed = true)
+        
+        every { anyConstructed<RdsMapClient>().getDbConnection() } returns mockConn
+        every { anyConstructed<RdsMapClient>().getClosestMapNode(any(), any(), any()) } returns mapOf("NodeID" to "1")
+        
+        val mockLandmark = mockk<LandmarkDetails>(relaxed = true)
+        every { mockLandmark.nearestNodeId } returns "2"
+        every { anyConstructed<RdsMapClient>().getLandmark(any(), any()) } returns mockLandmark
+        
+        every { anyConstructed<RdsMapClient>().getBuildingIdForNode(any(), any()) } returns "B1"
+        // Return a mock path to prevent the pathNodes.isEmpty() Exception from throwing
+        every { anyConstructed<RdsMapClient>().calculateShortestPath(any(), any(), any(), any()) } returns Pair(listOf("1", "2"), 10.0)
+        every { anyConstructed<RdsMapClient>().buildInstructions(any(), any(), any()) } returns emptyList()
+
         handler = LiveNavigationHandler()
+    }
+
+    @AfterEach
+    fun teardown() {
+        unmockkAll() // Clean up mocks after every test to prevent cross-contamination
     }
 
     @Test
@@ -141,9 +174,6 @@ class LiveNavigationHandlerTest {
             }"""
         }
 
-        // Note: Because we aren't mocking DynamoDB or PostgreSQL here, their SDK clients 
-        // will throw exceptions internally during the test. However, the handler encapsulates 
-        // them in try-catch blocks and should still return a 200 OK at the end of execution.
         val response = handler.handleRequest(event, mockContext)
 
         assertEquals(200, response.statusCode)
