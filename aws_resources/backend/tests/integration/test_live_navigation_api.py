@@ -146,7 +146,7 @@ def test_live_navigation_moving_and_state_persistence(ws_api_url, rest_api_url, 
     assert session_id is not None, "Did not receive a session_id from /navigation/start"
     
     # 2. Emulate walking by delaying 1.5 seconds.
-    time.sleep(2.3)
+    time.sleep(1.5)
     
     ws = create_connection(ws_api_url)
     try:
