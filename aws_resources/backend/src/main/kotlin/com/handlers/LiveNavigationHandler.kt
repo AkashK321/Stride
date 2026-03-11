@@ -14,6 +14,8 @@ import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.apigatewaymanagementapi.ApiGatewayManagementApiClient
 import software.amazon.awssdk.services.apigatewaymanagementapi.model.PostToConnectionRequest
 import com.services.DynamoDbTableClient
+import com.services.RdsMapClient
+import com.models.NavigationInstruction
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest
@@ -47,61 +49,7 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         primaryKeyName = "session_id"
     )
 
-    private fun getDbConnection(): Connection {
-        val dbHost = System.getenv("DB_HOST") ?: "localhost"
-        val dbPort = System.getenv("DB_PORT") ?: "5432"
-        val dbName = System.getenv("DB_NAME") ?: "stride_db"
-        val secretArn = System.getenv("DB_SECRET_ARN")
-        
-        val dbUser: String
-        val dbPassword: String
-
-        if (!secretArn.isNullOrBlank()) {
-            val secretsClient = SecretsManagerClient.builder()
-                .region(Region.US_EAST_1)
-                .build()
-
-            val valueRequest = GetSecretValueRequest.builder().secretId(secretArn).build()
-            val secretString = secretsClient.getSecretValue(valueRequest).secretString()
-            val secretMap: Map<String, String> = mapper.readValue(secretString)
-            dbUser = secretMap["username"] ?: "postgres"
-            dbPassword = secretMap["password"] ?: "password"
-            
-            secretsClient.close()
-        } else {
-            dbUser = System.getenv("DB_USER") ?: "postgres"
-            dbPassword = System.getenv("DB_PASSWORD") ?: "password"
-        }
-
-        val url = "jdbc:postgresql://$dbHost:$dbPort/$dbName"
-        return DriverManager.getConnection(url, dbUser, dbPassword)
-    }
-
-    private fun getClosestMapNode(conn: Connection, x: Double, y: Double): Map<String, Any>? {
-        // Find the closest node using squared Euclidean distance (avoids expensive SQRT operation)
-        val query = """
-            SELECT NodeID, CoordinateX, CoordinateY, FloorID, BuildingID,
-                   (POWER(CoordinateX - ?, 2) + POWER(CoordinateY - ?, 2)) as dist_sq
-            FROM MapNodes
-            ORDER BY dist_sq ASC
-            LIMIT 1
-        """
-        conn.prepareStatement(query).use { stmt ->
-            stmt.setDouble(1, x)
-            stmt.setDouble(2, y)
-            val rs = stmt.executeQuery()
-            if (rs.next()) {
-                return mapOf(
-                    "NodeID" to rs.getInt("NodeID"),
-                    "CoordinateX" to rs.getInt("CoordinateX"),
-                    "CoordinateY" to rs.getInt("CoordinateY"),
-                    "FloorID" to rs.getInt("FloorID"),
-                    "BuildingID" to rs.getString("BuildingID")
-                )
-            }
-        }
-        return null
-    }
+    private val rdsMapClient = RdsMapClient()
 
     private fun estimateUserLocation(payload: Map<String, Any?>, prevX: Double, prevY: Double, prevTimeMs: Long, logger: LambdaLogger): Pair<Double, Double> {
         val heading = (payload["heading_degrees"] as Number).toDouble()
@@ -255,6 +203,7 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         val previousX = sessionData?.get("current_x")?.toDoubleOrNull() ?: 0.0
         val previousY = sessionData?.get("current_y")?.toDoubleOrNull() ?: 0.0
         val previousTime = sessionData?.get("last_updated_ms")?.toLongOrNull() ?: 0L
+        val destLandmarkId = sessionData?.get("destLandmarkId")?.toString() ?: "unknown"
 
         if (sessionData != null) {
             logger.log("Restored session state for $sessionId: prevX=$previousX, prevY=$previousY")
@@ -264,21 +213,12 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
 
         // Execute Location Estimation based purely on PDR
         val (estimatedX, estimatedY) = estimateUserLocation(payload, previousX, previousY, previousTime, logger)
-        // Update state in DynamoDB with new estimated location and timestamp. Set TTL for 2 hours to allow stale session cleanup.
-        val ttlSeconds = (System.currentTimeMillis() / 1000) + 7200 // 2 hour expiration
-        sessionTableClient.putItem(mapOf(
-            "session_id" to sessionId,
-            "current_x" to estimatedX,
-            "current_y" to estimatedY,
-            "last_updated_ms" to currentTimestampMs,
-            "ttl" to ttlSeconds
-        ))
         
         // Execute Closest Node Search
-        var closestNodeId: String? = "unknown"
+        var closestNodeId: String = "unknown"
         try {
-            getDbConnection().use { conn ->
-                val closestNode = getClosestMapNode(conn, estimatedX, estimatedY)
+            rdsMapClient.getDbConnection().use { conn ->
+                val closestNode = rdsMapClient.getClosestMapNode(conn, estimatedX, estimatedY)
                 if (closestNode != null) {
                     closestNodeId = closestNode["NodeID"].toString()
                     logger.log("Estimated Location: ($estimatedX, $estimatedY). Nearest Node: $closestNodeId")
@@ -288,12 +228,51 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
             logger.log("Database error resolving closest map node: ${e.message}")
         }
 
-        // TODO(business-logic): compute remaining instructions, estimated position, and completion state.
+        // Update state in DynamoDB with new estimated location and timestamp. Set TTL for 2 hours to allow stale session cleanup.
+        val ttlSeconds = (System.currentTimeMillis() / 1000) + 7200 // 2 hour expiration
+        sessionTableClient.putItem(mapOf(
+            "session_id" to sessionId,
+            "current_x" to estimatedX,
+            "current_y" to estimatedY,
+            "currentNodeId" to closestNodeId,
+            "destLandmarkId" to destLandmarkId,
+            "last_updated_ms" to currentTimestampMs,
+            "ttl" to ttlSeconds
+        ))
+
+        // Calcualte shortest path from closest node
+        val instructions: List<NavigationInstruction>
+        rdsMapClient.getDbConnection().use { conn ->
+            // 1. Resolve Landmark to Nearest Node
+            val landmark = rdsMapClient.getLandmark(destLandmarkId.toInt(), conn)
+                ?: throw IllegalArgumentException("Landmark not found or has no associated node.")
+
+            val destNodeId = landmark.nearestNodeId
+
+            // 2. Identify Building Context (to limit the graph size)
+            val buildingId = rdsMapClient.getBuildingIdForNode(closestNodeId.toInt(), conn)
+                ?: throw IllegalArgumentException("Start node does not belong to a recognized building.")
+
+            // 3. Find Shortest Path
+            val (pathNodes, _) = rdsMapClient.calculateShortestPath(buildingId, closestNodeId.toInt(), destNodeId, conn)
+            if (pathNodes.isEmpty()) {
+                throw RuntimeException("No continuous path exists between these locations.")
+            }
+            logger.log("Calculated path: ${pathNodes.joinToString(" -> ")}")
+
+            // 4. Transform Path into Instructions
+            instructions = rdsMapClient.buildInstructions(conn, pathNodes, landmark)
+            logger.log("Translated instructions")
+            instructions.forEach({inst -> 
+                logger.log("Instruction: $inst")
+            })
+        }
+
         val responsePayload = mapOf(
             "type" to "navigation_update",
             "session_id" to sessionId,
             "current_step" to 1,
-            "remaining_instructions" to emptyList<Any>(),
+            "remaining_instructions" to instructions,
             "request_id" to requestId,
             "message" to "Live navigation infrastructure is wired. Business logic pending.",
             "estimated_position" to mapOf(
