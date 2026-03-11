@@ -17,7 +17,7 @@ package com.models
 data class LandmarkDetails(
     val id: Int,
     val name: String,
-    val nearestNodeId: Int,
+    val nearestNodeId: String,
     val distanceToNode: Double,
     val bearingFromNode: String,
     val coordX: Int,
@@ -28,7 +28,7 @@ data class LandmarkDetails(
  * Defines a simplified data class for representing a landmark search result
  */
 data class LandmarkResult(
-    val id: Int,
+    val landmark_id: Int,
     val name: String,
     val floor_number: Int,
     val nearest_node: String

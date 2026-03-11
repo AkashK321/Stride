@@ -122,12 +122,14 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
     }
 
     private fun handleNavigationStart(request: NavigationStartRequest, logger: LambdaLogger): NavigationStartResponse {
-        val startNodeId = request.start_location.node_id.toIntOrNull()
-            ?: throw IllegalArgumentException("Invalid start_location.node_id")
         val destLandmarkId = request.destination.landmark_id.toIntOrNull()
             ?: throw IllegalArgumentException("Invalid destination.landmark_id")
 
         rdsMapClient.getDbConnection().use { conn ->
+
+            val startNodeId = rdsMapClient.resolveStartNodeId(conn, request.start_location.node_id)
+                ?: throw IllegalArgumentException("Invalid start_location.node_id")
+
             // 1. Resolve Landmark to Nearest Node
             val landmark = rdsMapClient.getLandmark(destLandmarkId, conn)
                 ?: throw IllegalArgumentException("Landmark not found or has no associated node.")
@@ -168,6 +170,7 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
                     "current_y" to startY,
                     "currentNodeId" to startNodeId,
                     "destLandmarkId" to destLandmarkId,
+                    "path" to pathNodes.joinToString(","),
                     "last_updated_ms" to System.currentTimeMillis(), // Initial timestamp for delta-t calculations
                     "ttl" to ttlSeconds
                 ))

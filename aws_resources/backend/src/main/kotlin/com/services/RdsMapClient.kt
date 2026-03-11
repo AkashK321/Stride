@@ -97,7 +97,7 @@ class RdsMapClient {
                 return LandmarkDetails(
                     id = landmarkId,
                     name = rs.getString("Name"),
-                    nearestNodeId = rs.getInt("NearestNodeID"),
+                    nearestNodeId = rs.getString("NearestNodeID"),
                     distanceToNode = rs.getDouble("DistanceToNode"),
                     bearingFromNode = rs.getString("BearingFromNode") ?: "continue",
                     coordX = rs.getInt("MapCoordinateX"),
@@ -108,10 +108,10 @@ class RdsMapClient {
         return null
     }
 
-    fun getBuildingIdForNode(nodeId: Int, conn: Connection): String? {
-        val query = "SELECT BuildingID FROM MapNodes WHERE NodeID = ?"
+    fun getBuildingIdForNode(nodeId: String, conn: Connection): String? {
+        val query = "SELECT BuildingID FROM MapNodes WHERE NodeIDString = ?"
         conn.prepareStatement(query).use { stmt -> 
-            stmt.setInt(1, nodeId)
+            stmt.setString(1, nodeId)
             val rs = stmt.executeQuery()
             if (rs.next()) {
                 return rs.getString("BuildingID")
@@ -120,21 +120,37 @@ class RdsMapClient {
         return null
     }
 
-    fun calculateShortestPath(buildingId: String, startNode: Int, endNode: Int, conn: Connection): Pair<List<Int>, Double> {
+    /**
+     * Resolves start_location.node_id (NodeIDString) and verifies it exists.
+     * Only accepts the string node id from floor data (e.g. "staircase_main_2S01").
+     */
+    fun resolveStartNodeId(conn: Connection, nodeIdRaw: String): String? {
+        val trimmed = nodeIdRaw.trim()
+        if (trimmed.isEmpty()) return null
+        val query = "SELECT NodeIDString FROM MapNodes WHERE NodeIDString = ?"
+        conn.prepareStatement(query).use { stmt ->
+            stmt.setString(1, trimmed)
+            val rs = stmt.executeQuery()
+            if (rs.next()) return trimmed
+        }
+        return null
+    }
+
+    fun calculateShortestPath(buildingId: String, startNode: String, endNode: String, conn: Connection): Pair<List<String>, Double> {
         val query = """
             SELECT e.StartNodeID, e.EndNodeID, e.DistanceMeters, e.IsBidirectional
             FROM MapEdges e
-            JOIN MapNodes n ON e.StartNodeID = n.NodeID
+            JOIN MapNodes n ON e.StartNodeID = n.NodeIDString
             WHERE n.BuildingID = ?
         """
         // Building adjacency list
-        val graph = mutableMapOf<Int, MutableList<Pair<Int, Double>>>()
+        val graph = mutableMapOf<String, MutableList<Pair<String, Double>>>()
         conn.prepareStatement(query).use { stmt -> 
             stmt.setString(1, buildingId)
             val rs = stmt.executeQuery()
             while (rs.next()) {
-                val u = rs.getInt("StartNodeID")
-                val v = rs.getInt("EndNodeID")
+                val u = rs.getString("StartNodeID")
+                val v = rs.getString("EndNodeID")
                 val weight = rs.getDouble("DistanceMeters")
                 val isBidi = rs.getBoolean("IsBidirectional")
 
@@ -146,10 +162,10 @@ class RdsMapClient {
         }
 
         // Dijkstra setup
-        val distances = mutableMapOf<Int, Double>().withDefault { Double.POSITIVE_INFINITY }
-        val previous = mutableMapOf<Int, Int?>()
+        val distances = mutableMapOf<String, Double>().withDefault { Double.POSITIVE_INFINITY }
+        val previous = mutableMapOf<String, String?>()
         // Priority queue, ordered by shortest distance
-        val pq = PriorityQueue<Pair<Double, Int>>(compareBy { it.first })
+        val pq = PriorityQueue<Pair<Double, String>>(compareBy { it.first })
 
         distances[startNode] = 0.0
         pq.add(Pair(0.0, startNode))
@@ -174,8 +190,8 @@ class RdsMapClient {
             throw IllegalArgumentException("No path found between start and destination")
         }
 
-        val path = mutableListOf<Int>()
-        var curr: Int? = endNode
+        val path = mutableListOf<String>()
+        var curr: String? = endNode
         while (curr != null) {
             path.add(curr)
             curr = previous[curr]
@@ -185,18 +201,22 @@ class RdsMapClient {
         return Pair(path, distances.getValue(endNode))
     }
 
-    fun buildInstructions(conn: Connection, path: List<Int>, landmark: LandmarkDetails): List<NavigationInstruction> {
+    /**
+     * Converts a raw list of NodeIDs into the structured payload expected by the frontend.
+     * Fetches exact distances and bearings from the MapEdges table.
+     */
+    fun buildInstructions(conn: Connection, path: List<String>, landmark: LandmarkDetails): List<NavigationInstruction> {
         if (path.isEmpty()) return emptyList()
 
         val placeholders = path.joinToString(",") { "?" }
-        val nodeQuery = "SELECT NodeID, CoordinateX, CoordinateY FROM MapNodes WHERE NodeID IN ($placeholders)"
-        val nodeData = mutableMapOf<Int, Pair<Int, Int>>()
+        val nodeQuery = "SELECT NodeIDString, CoordinateX, CoordinateY FROM MapNodes WHERE NodeIDString IN ($placeholders)"
+        val nodeData = mutableMapOf<String, Pair<Int, Int>>()
         
         conn.prepareStatement(nodeQuery).use { stmt ->
-            path.forEachIndexed { index, id -> stmt.setInt(index + 1, id) }
+            path.forEachIndexed { index, id -> stmt.setString(index + 1, id) }
             val rs = stmt.executeQuery()
             while (rs.next()) {
-                nodeData[rs.getInt("NodeID")] = Pair(rs.getInt("CoordinateX"), rs.getInt("CoordinateY"))
+                nodeData[rs.getString("NodeIDString")] = Pair(rs.getInt("CoordinateX"), rs.getInt("CoordinateY"))
             }
         }
 
@@ -204,17 +224,17 @@ class RdsMapClient {
             SELECT StartNodeID, EndNodeID, DistanceMeters, Bearing, IsBidirectional
             FROM MapEdges WHERE StartNodeID IN ($placeholders) AND EndNodeID IN ($placeholders)
         """
-        val edgeMap = mutableMapOf<Pair<Int, Int>, Pair<Double, Double?>>()
+        val edgeMap = mutableMapOf<Pair<String, String>, Pair<Double, Double?>>()
         
         if (path.size > 1) {
             conn.prepareStatement(edgeQuery).use { stmt ->
                 var paramIndex = 1
-                path.forEach { stmt.setInt(paramIndex++, it) }
-                path.forEach { stmt.setInt(paramIndex++, it) }
+                path.forEach { stmt.setString(paramIndex++, it) }
+                path.forEach { stmt.setString(paramIndex++, it) }
                 val rs = stmt.executeQuery()
                 while (rs.next()) {
-                    val start = rs.getInt("StartNodeID")
-                    val end = rs.getInt("EndNodeID")
+                    val start = rs.getString("StartNodeID")
+                    val end = rs.getString("EndNodeID")
                     val dist = rs.getDouble("DistanceMeters")
                     val rawBearing = rs.getDouble("Bearing")
                     val bearing: Double? = if (rs.wasNull()) null else rawBearing
@@ -236,24 +256,18 @@ class RdsMapClient {
             val nodeId = path[i]
             val coords = nodeData[nodeId] ?: Pair(0, 0)
             
-            var distFeet = 0.0
-            var directionStr = ""
-            
-            if (i < path.size - 1) {
+            val (distFeet, directionStr) = if (i < path.size - 1) {
                 // Not at the last node yet, lookup edge to the next node
                 val nextNodeId = path[i + 1]
                 val edgeInfo = edgeMap[Pair(nodeId, nextNodeId)]
-                
                 if (edgeInfo != null) {
-                    distFeet = edgeInfo.first * 3.28084
-                    directionStr = bearingToDirectionString(edgeInfo.second)
+                    Pair(edgeInfo.first * 3.28084, bearingToDirectionString(edgeInfo.second))
                 } else {
-                    directionStr = "continue"
+                    Pair(0.0, "continue")
                 }
             } else {
                 // At the final node. Look towards the actual Landmark destination.
-                distFeet = landmark.distanceToNode * 3.28084
-                directionStr = "Head ${landmark.bearingFromNode}"
+                Pair(landmark.distanceToNode * 3.28084, "Head ${landmark.bearingFromNode}")
             }
             
             instructions.add(
@@ -261,7 +275,7 @@ class RdsMapClient {
                     step = i + 1,
                     distance_feet = distFeet,
                     direction = directionStr,
-                    node_id = nodeId.toString(),
+                        node_id = nodeId,
                     coordinates = mapOf("x" to coords.first.toDouble(), "y" to coords.second.toDouble())
                 )
             )
@@ -281,7 +295,7 @@ class RdsMapClient {
         return instructions
     }
 
-    private fun bearingToDirectionString(bearing: Double?): String {
+    fun bearingToDirectionString(bearing: Double?): String {
         if (bearing == null) return "continue"
         
         return when {

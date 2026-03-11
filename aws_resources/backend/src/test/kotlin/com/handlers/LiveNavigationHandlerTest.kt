@@ -40,15 +40,15 @@ class LiveNavigationHandlerTest {
         val mockConn = mockk<java.sql.Connection>(relaxed = true)
         
         every { anyConstructed<RdsMapClient>().getDbConnection() } returns mockConn
-        every { anyConstructed<RdsMapClient>().getClosestMapNode(any(), any(), any()) } returns mapOf("NodeID" to 1)
+        every { anyConstructed<RdsMapClient>().getClosestMapNode(any(), any(), any()) } returns mapOf("NodeID" to "1")
         
         val mockLandmark = mockk<LandmarkDetails>(relaxed = true)
-        every { mockLandmark.nearestNodeId } returns 2
+        every { mockLandmark.nearestNodeId } returns "2"
         every { anyConstructed<RdsMapClient>().getLandmark(any(), any()) } returns mockLandmark
         
         every { anyConstructed<RdsMapClient>().getBuildingIdForNode(any(), any()) } returns "B1"
         // Return a mock path to prevent the pathNodes.isEmpty() Exception from throwing
-        every { anyConstructed<RdsMapClient>().calculateShortestPath(any(), any(), any(), any()) } returns Pair(listOf(1, 2), 10.0)
+        every { anyConstructed<RdsMapClient>().calculateShortestPath(any(), any(), any(), any()) } returns Pair(listOf("1", "2"), 10.0)
         every { anyConstructed<RdsMapClient>().buildInstructions(any(), any(), any()) } returns emptyList()
 
         handler = LiveNavigationHandler()

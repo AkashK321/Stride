@@ -204,6 +204,8 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         val previousY = sessionData?.get("current_y")?.toDoubleOrNull() ?: 0.0
         val previousTime = sessionData?.get("last_updated_ms")?.toLongOrNull() ?: 0L
         val destLandmarkId = sessionData?.get("destLandmarkId")?.toString() ?: "unknown"
+        val pathNodesRaw = sessionData?.get("path") as String? ?: ""
+        val pathNodes = pathNodesRaw.split(",")
 
         if (sessionData != null) {
             logger.log("Restored session state for $sessionId: prevX=$previousX, prevY=$previousY")
@@ -228,6 +230,54 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
             logger.log("Database error resolving closest map node: ${e.message}")
         }
 
+        val instructions: List<NavigationInstruction>
+        try {
+            if (closestNodeId == "unkown" || !pathNodes.contains(closestNodeId)) {
+                logger.log("Estimated closest node $closestNodeId is not on the original path. Recalculating path")
+                rdsMapClient.getDbConnection().use { conn ->
+                    // 1. Resolve Landmark to Nearest Node
+                    val landmark = rdsMapClient.getLandmark(destLandmarkId.toInt(), conn)
+                        ?: throw IllegalArgumentException("Landmark not found or has no associated node.")
+
+                    val destNodeId = landmark.nearestNodeId
+
+                    // 2. Identify Building Context (to limit the graph size)
+                    val buildingId = rdsMapClient.getBuildingIdForNode(closestNodeId, conn)
+                        ?: throw IllegalArgumentException("Start node does not belong to a recognized building.")
+
+                    // 3. Find Shortest Path
+                    val (pathNodesNew, _) = rdsMapClient.calculateShortestPath(buildingId, closestNodeId, destNodeId, conn)
+                    if (pathNodesNew.isEmpty()) {
+                        throw RuntimeException("No continuous path exists between these locations.")
+                    }
+                    logger.log("Calculated path: ${pathNodesNew.joinToString(" -> ")}")
+
+                    // 4. Transform Path into Instructions
+                    instructions = rdsMapClient.buildInstructions(conn, pathNodesNew, landmark)
+                    logger.log("Translated instructions")
+                    instructions.forEach({inst -> 
+                        logger.log("Instruction: $inst")
+                    })
+                }
+            } else {
+                logger.log("Closest node $closestNodeId is on the original path. No need to recalculate.")
+                instructions = emptyList()
+            }
+        } catch (e: Exception) {
+            logger.log("Error during path recalculation or instruction generation: ${e.message}")
+            postJsonToConnection(
+                apiClient = apiClient,
+                connectionId = connectionId,
+                payload = mapOf(
+                    "type" to "navigation_error",
+                    "session_id" to sessionId,
+                    "error" to "Failed to calculate navigation instructions: ${e.message}"
+                ),
+                logger = logger
+            )
+            return APIGatewayV2WebSocketResponse().apply { statusCode = 500 }
+        }
+
         // Update state in DynamoDB with new estimated location and timestamp. Set TTL for 2 hours to allow stale session cleanup.
         val ttlSeconds = (System.currentTimeMillis() / 1000) + 7200 // 2 hour expiration
         sessionTableClient.putItem(mapOf(
@@ -239,34 +289,6 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
             "last_updated_ms" to currentTimestampMs,
             "ttl" to ttlSeconds
         ))
-
-        // Calcualte shortest path from closest node
-        val instructions: List<NavigationInstruction>
-        rdsMapClient.getDbConnection().use { conn ->
-            // 1. Resolve Landmark to Nearest Node
-            val landmark = rdsMapClient.getLandmark(destLandmarkId.toInt(), conn)
-                ?: throw IllegalArgumentException("Landmark not found or has no associated node.")
-
-            val destNodeId = landmark.nearestNodeId
-
-            // 2. Identify Building Context (to limit the graph size)
-            val buildingId = rdsMapClient.getBuildingIdForNode(closestNodeId.toInt(), conn)
-                ?: throw IllegalArgumentException("Start node does not belong to a recognized building.")
-
-            // 3. Find Shortest Path
-            val (pathNodes, _) = rdsMapClient.calculateShortestPath(buildingId, closestNodeId.toInt(), destNodeId, conn)
-            if (pathNodes.isEmpty()) {
-                throw RuntimeException("No continuous path exists between these locations.")
-            }
-            logger.log("Calculated path: ${pathNodes.joinToString(" -> ")}")
-
-            // 4. Transform Path into Instructions
-            instructions = rdsMapClient.buildInstructions(conn, pathNodes, landmark)
-            logger.log("Translated instructions")
-            instructions.forEach({inst -> 
-                logger.log("Instruction: $inst")
-            })
-        }
 
         val responsePayload = mapOf(
             "type" to "navigation_update",
