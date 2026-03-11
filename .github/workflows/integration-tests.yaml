@@ -124,7 +124,7 @@ jobs:
           WS_API_URL: ${{ inputs.ws_api_endpoint }}
           FEATURE_FLAG_TABLE_NAME: ${{ inputs.feature_flag_table }}
         run: |
-          python -m pytest -v backend/tests/ --junitxml=test-results/integration-tests.xml
+          python -m pytest -v -rs backend/tests/ --junitxml=test-results/integration-tests.xml
 
       # Step 5: Publish test results to GitHub
       - name: Publish test results
