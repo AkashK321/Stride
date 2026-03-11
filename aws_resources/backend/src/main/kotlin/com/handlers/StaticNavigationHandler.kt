@@ -74,11 +74,16 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
             if (navRequest.destination.landmark_id.isBlank() || navRequest.start_location.node_id.isBlank()) {
                 return createErrorResponse(400, "destination.landmark_id and start_location.node_id are required")
             }
-            val response = handleNavigationStart(navRequest, logger)
-            return APIGatewayProxyResponseEvent()
+            try {
+                val response = handleNavigationStart(navRequest, logger)
+                return APIGatewayProxyResponseEvent()
                 .withStatusCode(200)
                 .withHeaders(mapOf("Content-Type" to "application/json"))
                 .withBody(mapper.writeValueAsString(response))
+            } catch (e: Exception) {
+                logger.log("Navigation start error: ${e.message}")
+                return createErrorResponse(500, "Internal server error")
+            }
         }
 
         // Unknown endpoint
