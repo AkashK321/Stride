@@ -231,8 +231,10 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         }
 
         val instructions: List<NavigationInstruction>
+        var pathNodesNew: List<String> = emptyList()
         try {
-            if (closestNodeId == "unkown" || !pathNodes.contains(closestNodeId)) {
+            // Recalculate path if the closes node is not on the origina path
+            if (closestNodeId == "unknown" || !pathNodes.contains(closestNodeId)) {
                 logger.log("Estimated closest node $closestNodeId is not on the original path. Recalculating path")
                 rdsMapClient.getDbConnection().use { conn ->
                     // 1. Resolve Landmark to Nearest Node
@@ -246,7 +248,7 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
                         ?: throw IllegalArgumentException("Start node does not belong to a recognized building.")
 
                     // 3. Find Shortest Path
-                    val (pathNodesNew, _) = rdsMapClient.calculateShortestPath(buildingId, closestNodeId, destNodeId, conn)
+                    pathNodesNew = rdsMapClient.calculateShortestPath(buildingId, closestNodeId, destNodeId, conn).first
                     if (pathNodesNew.isEmpty()) {
                         throw RuntimeException("No continuous path exists between these locations.")
                     }
@@ -286,6 +288,9 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
             "current_y" to estimatedY,
             "currentNodeId" to closestNodeId,
             "destLandmarkId" to destLandmarkId,
+            "path" to (pathNodesNew.takeIf { 
+                            it.isNotEmpty() 
+                        }?.joinToString(",") ?: pathNodes.joinToString(",")),
             "last_updated_ms" to currentTimestampMs,
             "ttl" to ttlSeconds
         ))
