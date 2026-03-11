@@ -132,7 +132,7 @@ def test_live_navigation_moving_and_state_persistence(ws_api_url, rest_api_url, 
     # 1. Start the Session using the Static Navigation Handler (REST API)
     # Using start node 1 and destination landmark 1 (assumed present from populate_floor_data.py)
     start_payload = {
-        "start_location": {"node_id": "1"},
+        "start_location": {"node_id": "staircase_main_2S01"},
         "destination": {"landmark_id": "1"}
     }
     
@@ -202,6 +202,62 @@ def test_live_navigation_moving_and_state_persistence(ws_api_url, rest_api_url, 
         
         print(f"✅ Frame 2 (Moving South): estimated_x={estimated_x2}ft, estimated_y={estimated_y2}ft, node={node_id2}")
         print("✅ Session persistence successfully restored cross-lambda state initialized by the static API.")
+        
+    finally:
+        ws.close()
+
+
+def test_live_navigation_path_recalculation(ws_api_url, rest_api_url, ws_endpoint_healthy, dummy_base64_image):
+    """Test that moving off the known path triggers a recalculation yielding new instructions."""
+    
+    # 1. Start the Session using the Static Navigation Handler (REST API)
+    try:
+        # Start at node 1, dest landmark 1. This creates an initial path of simply ["1"] or a short segment.
+        start_resp = requests.post(f"{rest_api_url}/navigation/start", json={
+            "start_location": {"node_id": "staircase_main_2S01"},
+            "destination": {"landmark_id": "1"} 
+        }, timeout=10)
+        start_resp.raise_for_status()
+    except Exception as e:
+        pytest.skip(f"Could not initialize navigation session via REST API. Error: {e}")
+
+    session_id = start_resp.json().get("session_id")
+    assert session_id is not None
+    
+    ws = create_connection(ws_api_url)
+    try:
+        # 2. Wait 5 seconds to guarantee PDR calculates a large movement distance
+        time.sleep(5.0)
+        client_time_ms = int(time.time() * 1000)
+        
+        # 3. Send a frame moving the user heavily South (heading 180) to force them off the ["1"] path
+        payload = create_valid_payload(
+            session_id, 
+            request_id=1, 
+            accel_y=1.5, 
+            heading=180.0, 
+            img_b64=dummy_base64_image, 
+            timestamp_ms=client_time_ms
+        )
+        
+        ws.send(json.dumps(payload))
+        response = json.loads(ws.recv())
+        
+        assert response.get("type") == "navigation_update"
+        
+        est_pos = response.get("estimated_position", {})
+        node_id = est_pos.get("node_id")
+        
+        if node_id == "unknown":
+             pytest.skip("Test database not seeded. Nearest node returned 'unknown'.")
+
+        # Verify the user actually moved to a different node
+        assert node_id != "staircase_main_2S01", f"Failed to move off initial node. Closest node is still {node_id}"
+        
+        # 4. Verify that since the node is no longer "1", the recalculation logic fired and provided instructions
+        instructions = response.get("remaining_instructions", [])
+        assert len(instructions) > 0, "Expected path recalculation to return new instruction steps"
+        print(f"✅ Path recalculation correctly triggered off-path. Node: {node_id}, New Instructions Count: {len(instructions)}")
         
     finally:
         ws.close()
