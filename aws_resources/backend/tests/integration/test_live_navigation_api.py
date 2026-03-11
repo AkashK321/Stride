@@ -92,7 +92,7 @@ def test_live_navigation_stationary(ws_api_url, rest_api_url, ws_endpoint_health
     # 1. Start the Session using the Static Navigation Handler (REST API)
     try:
         start_resp = requests.post(f"{rest_api_url}/navigation/start", json={
-            "start_location": {"node_id": "1"},
+            "start_location": {"node_id": "staircase_main_2S01"},
             "destination": {"landmark_id": "1"}
         }, timeout=10)
         start_resp.raise_for_status()
@@ -121,7 +121,7 @@ def test_live_navigation_stationary(ws_api_url, rest_api_url, ws_endpoint_health
         if node_id == "unknown":
             pytest.skip("Test database not seeded. Nearest node returned 'unknown'.")
             
-        assert node_id == "1", f"Expected nearest node ID '1', got {node_id}"
+        assert node_id == "staircase_main_2S01", f"Expected nearest node ID 'staircase_main_2S01', got {node_id}"
         print("✅ Stationary PDR correctly calculated as 0 movement and snapped to correct node")
     finally:
         ws.close()
@@ -145,9 +145,8 @@ def test_live_navigation_moving_and_state_persistence(ws_api_url, rest_api_url, 
     session_id = start_resp.json().get("session_id")
     assert session_id is not None, "Did not receive a session_id from /navigation/start"
     
-    # 2. Emulate walking by delaying 1.5 seconds. 
-    # At 1.4 m/s (4.59 ft/s), a 1.5s delta is ~6.88 feet (guarantees > 5 feet).
-    time.sleep(1.5)
+    # 2. Emulate walking by delaying 1.5 seconds.
+    time.sleep(2.3)
     
     ws = create_connection(ws_api_url)
     try:
@@ -163,8 +162,10 @@ def test_live_navigation_moving_and_state_persistence(ws_api_url, rest_api_url, 
         estimated_x1 = est_pos1.get("coordinates", {}).get("x_feet", 0.0)
         estimated_y1 = est_pos1.get("coordinates", {}).get("y_feet", 0.0)
         node_id1 = est_pos1.get("node_id")
-        
+        instructions1 = response1.get("remaining_instructions", [])
+
         assert response1.get("type") == "navigation_update"
+        assert len(instructions1) == 0, "Closest node should be on path so no new instructions should be recieved"
         
         # Verify X moved at least 5 feet in 1.5+ seconds
         assert estimated_x1 > 5.0, f"Expected X to move > 5 feet, got {estimated_x1}"
@@ -174,13 +175,13 @@ def test_live_navigation_moving_and_state_persistence(ws_api_url, rest_api_url, 
             pytest.skip("Test database not seeded. Nearest node returned 'unknown'.")
             
         # At X=6.88 feet, Y=0 feet, the closest node is still Node 1 at (0,0) (node 31 is at 27ft)
-        assert node_id1 == "1", f"Expected nearest node ID '1' near x={estimated_x1}ft, y={estimated_y1}ft, got {node_id1}"
+        assert node_id1 == "staircase_main_2S01", f"Expected nearest node ID 'staircase_main_2S01' near x={estimated_x1}ft, y={estimated_y1}ft, got {node_id1}"
         print(f"✅ Frame 1 (Moving East): estimated_x={estimated_x1}ft, estimated_y={estimated_y1}ft, node={node_id1}")
 
-        # FRAME 2: Heading 180 (South), Moving 
-        time.sleep(5.0)
+        # FRAME 2: Heading 270 (West), Moving 
+        time.sleep(5)
         client_time_ms2 = int(time.time() * 1000)
-        payload2 = create_valid_payload(session_id, 2, accel_y=1.5, heading=120.0, img_b64=dummy_base64_image, timestamp_ms=client_time_ms2)
+        payload2 = create_valid_payload(session_id, 2, accel_y=1.5, heading=270.0, img_b64=dummy_base64_image, timestamp_ms=client_time_ms2)
         
         ws.send(json.dumps(payload2))
         response2 = json.loads(ws.recv())
@@ -192,13 +193,15 @@ def test_live_navigation_moving_and_state_persistence(ws_api_url, rest_api_url, 
         estimated_x2 = est_pos2.get("coordinates", {}).get("x_feet", 0.0)
         estimated_y2 = est_pos2.get("coordinates", {}).get("y_feet", 0.0)
         node_id2 = est_pos2.get("node_id")
-        
+        instructions2 = response2.get("remaining_instructions", [])
+
         # Validate state persistence
-        assert estimated_x2 > estimated_x1, f"Expected X to increase, got {estimated_x2}"
-        assert estimated_y2 > 5.0, f"Expected Y to move > 5 feet, got {estimated_y2}"
+        assert estimated_x2 < estimated_x1, f"Expected X to decrease, got {estimated_x2}"
+        assert math.isclose(estimated_y2, 0.0, abs_tol=0.1)
+        assert len(instructions2) == 0, "Closest node should be on path so no new instructions should be recieved"
         
         # At X=~20.6 ft, Y=~8.7 ft, the closest node is node 30 at (206.43444566227677, 87.49999999999996).
-        assert node_id2 == "30", f"Expected nearest node ID '30' near x={estimated_x2}ft, y={estimated_y2}ft, got {node_id2}"
+        assert node_id2 == "stair_west_corner", f"Expected nearest node ID 'stair_west_corner' near x={estimated_x2}ft, y={estimated_y2}ft, got {node_id2}"
         
         print(f"✅ Frame 2 (Moving South): estimated_x={estimated_x2}ft, estimated_y={estimated_y2}ft, node={node_id2}")
         print("✅ Session persistence successfully restored cross-lambda state initialized by the static API.")
@@ -210,9 +213,9 @@ def test_live_navigation_moving_and_state_persistence(ws_api_url, rest_api_url, 
 def test_live_navigation_path_recalculation(ws_api_url, rest_api_url, ws_endpoint_healthy, dummy_base64_image):
     """Test that moving off the known path triggers a recalculation yielding new instructions."""
     
-    # 1. Start the Session using the Static Navigation Handler (REST API)
+    # Start the Session using the Static Navigation Handler (REST API)
     try:
-        # Start at node 1, dest landmark 1. This creates an initial path of simply ["1"] or a short segment.
+        # Start at node staircase_main_2S01, dest landmark 1.
         start_resp = requests.post(f"{rest_api_url}/navigation/start", json={
             "start_location": {"node_id": "staircase_main_2S01"},
             "destination": {"landmark_id": "1"} 
@@ -226,22 +229,22 @@ def test_live_navigation_path_recalculation(ws_api_url, rest_api_url, ws_endpoin
     
     ws = create_connection(ws_api_url)
     try:
-        # 2. Wait 5 seconds to guarantee PDR calculates a large movement distance
         time.sleep(5.0)
         client_time_ms = int(time.time() * 1000)
         
-        # 3. Send a frame moving the user heavily South (heading 180) to force them off the ["1"] path
+        # Send a frame moving the user heavily South (heading 180) to force them off the path
         payload = create_valid_payload(
             session_id, 
             request_id=1, 
             accel_y=1.5, 
-            heading=180.0, 
+            heading=120.0, 
             img_b64=dummy_base64_image, 
             timestamp_ms=client_time_ms
         )
         
         ws.send(json.dumps(payload))
         response = json.loads(ws.recv())
+        print(f"Received response after moving off-path: {response}")
         
         assert response.get("type") == "navigation_update"
         
@@ -254,7 +257,7 @@ def test_live_navigation_path_recalculation(ws_api_url, rest_api_url, ws_endpoin
         # Verify the user actually moved to a different node
         assert node_id != "staircase_main_2S01", f"Failed to move off initial node. Closest node is still {node_id}"
         
-        # 4. Verify that since the node is no longer "1", the recalculation logic fired and provided instructions
+        # Verify that new instructions are returned after recalculation
         instructions = response.get("remaining_instructions", [])
         assert len(instructions) > 0, "Expected path recalculation to return new instruction steps"
         print(f"✅ Path recalculation correctly triggered off-path. Node: {node_id}, New Instructions Count: {len(instructions)}")

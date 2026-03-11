@@ -173,6 +173,7 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
                     "session_id" to sessionId,
                     "current_x" to startX,
                     "current_y" to startY,
+                    "currentStep" to 0,
                     "currentNodeId" to startNodeId,
                     "destLandmarkId" to destLandmarkId,
                     "path" to pathNodes.joinToString(","),

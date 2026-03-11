@@ -65,7 +65,7 @@ class RdsMapClient {
     fun getClosestMapNode(conn: Connection, x: Double, y: Double): Map<String, Any>? {
         // Find the closest node using squared Euclidean distance (avoids expensive SQRT operation)
         val query = """
-            SELECT NodeID, CoordinateX, CoordinateY, FloorID, BuildingID,
+            SELECT NodeIDString, CoordinateX, CoordinateY, FloorID, BuildingID,
                    (POWER(CoordinateX - ?, 2) + POWER(CoordinateY - ?, 2)) as dist_sq
             FROM MapNodes
             ORDER BY dist_sq ASC
@@ -77,7 +77,7 @@ class RdsMapClient {
             val rs = stmt.executeQuery()
             if (rs.next()) {
                 return mapOf(
-                    "NodeID" to rs.getInt("NodeID"),
+                    "NodeID" to rs.getString("NodeIDString"),
                     "CoordinateX" to rs.getInt("CoordinateX"),
                     "CoordinateY" to rs.getInt("CoordinateY"),
                     "FloorID" to rs.getInt("FloorID"),

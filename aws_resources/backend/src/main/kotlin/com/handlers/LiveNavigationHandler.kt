@@ -205,6 +205,7 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         val previousTime = sessionData?.get("last_updated_ms")?.toLongOrNull() ?: 0L
         val destLandmarkId = sessionData?.get("destLandmarkId")?.toString() ?: "unknown"
         val pathNodesRaw = sessionData?.get("path") as String? ?: ""
+        val currentStep = sessionData?.get("currentStep")?.toIntOrNull()?.plus(1) ?: 0
         val pathNodes = pathNodesRaw.split(",")
 
         if (sessionData != null) {
@@ -218,11 +219,13 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         
         // Execute Closest Node Search
         var closestNodeId: String = "unknown"
+        var buildingId: String = "unknown"
         try {
             rdsMapClient.getDbConnection().use { conn ->
                 val closestNode = rdsMapClient.getClosestMapNode(conn, estimatedX, estimatedY)
                 if (closestNode != null) {
                     closestNodeId = closestNode["NodeID"].toString()
+                    buildingId = closestNode["BuildingID"].toString()
                     logger.log("Estimated Location: ($estimatedX, $estimatedY). Nearest Node: $closestNodeId")
                 }
             }
@@ -244,8 +247,10 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
                     val destNodeId = landmark.nearestNodeId
 
                     // 2. Identify Building Context (to limit the graph size)
-                    val buildingId = rdsMapClient.getBuildingIdForNode(closestNodeId, conn)
-                        ?: throw IllegalArgumentException("Start node does not belong to a recognized building.")
+                    if (buildingId == "unknown") {
+                        buildingId = rdsMapClient.getBuildingIdForNode(closestNodeId, conn)
+                            ?: throw IllegalArgumentException("Closest node does not belong to a recognized building.")
+                    }
 
                     // 3. Find Shortest Path
                     pathNodesNew = rdsMapClient.calculateShortestPath(buildingId, closestNodeId, destNodeId, conn).first
@@ -286,6 +291,7 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
             "session_id" to sessionId,
             "current_x" to estimatedX,
             "current_y" to estimatedY,
+            "currentStep" to currentStep,
             "currentNodeId" to closestNodeId,
             "destLandmarkId" to destLandmarkId,
             "path" to (pathNodesNew.takeIf { 
@@ -298,7 +304,7 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         val responsePayload = mapOf(
             "type" to "navigation_update",
             "session_id" to sessionId,
-            "current_step" to 1,
+            "current_step" to currentStep,
             "remaining_instructions" to instructions,
             "request_id" to requestId,
             "message" to "Live navigation infrastructure is wired. Business logic pending.",
