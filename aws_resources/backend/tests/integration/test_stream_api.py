@@ -15,6 +15,7 @@ SCRIPT_DIR = Path(__file__).parent.absolute()
 IMAGE_PATH = SCRIPT_DIR / "resized/IMG_2828.jpg"
 
 
+
 @pytest.fixture
 def api_base_url():
     """Get the API base URL from environment variable."""
