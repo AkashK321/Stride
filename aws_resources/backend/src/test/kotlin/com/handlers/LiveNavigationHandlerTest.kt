@@ -119,6 +119,57 @@ class LiveNavigationHandlerTest {
     }
 
     @Test
+    fun `handleRequest should return 400 when image_base64 is invalid`() {
+        val event = APIGatewayV2WebSocketEvent().apply {
+            requestContext = RequestContext().apply {
+                connectionId = "test-conn-id"
+                domainName = "test.api"
+                stage = "prod"
+                routeKey = "navigation"
+            }
+            body = """{
+                "session_id": "session123",
+                "image_base64": "not_base64!!!",
+                "focal_length_pixels": 800.0,
+                "heading_degrees": 90.0,
+                "request_id": 1,
+                "accelerometer": {"x": 0.0, "y": 1.0, "z": 0.0},
+                "gyroscope": {"x": 0.0, "y": 0.0, "z": 0.0}
+            }"""
+        }
+
+        val response = handler.handleRequest(event, mockContext)
+
+        assertEquals(400, response.statusCode)
+    }
+
+    @Test
+    fun `handleRequest should return 400 when request_id is not an integer`() {
+        val validBase64 = Base64.getEncoder().encodeToString("dummy_image".toByteArray())
+        val event = APIGatewayV2WebSocketEvent().apply {
+            requestContext = RequestContext().apply {
+                connectionId = "test-conn-id"
+                domainName = "test.api"
+                stage = "prod"
+                routeKey = "navigation"
+            }
+            body = """{
+                "session_id": "session123",
+                "image_base64": "$validBase64",
+                "focal_length_pixels": 800.0,
+                "heading_degrees": 90.0,
+                "request_id": 1.5,
+                "accelerometer": {"x": 0.0, "y": 1.0, "z": 0.0},
+                "gyroscope": {"x": 0.0, "y": 0.0, "z": 0.0}
+            }"""
+        }
+
+        val response = handler.handleRequest(event, mockContext)
+
+        assertEquals(400, response.statusCode)
+    }
+
+    @Test
     fun `handleRequest should process valid payload and return 200`() {
         val validBase64 = Base64.getEncoder().encodeToString("dummy_image".toByteArray())
         val event = APIGatewayV2WebSocketEvent().apply {

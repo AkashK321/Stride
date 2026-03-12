@@ -64,40 +64,49 @@ def test_navigation_start_invalid_body(api_base_url):
     assert "error" in data
     assert "required" in data["error"]
 
-# def test_navigation_start_valid_route(api_base_url):
-#     """
-#     Verify that a valid start node and destination landmark successfully 
-#     execute Dijkstra's algorithm against the RDS database.
-#     """
-#     # Node 1 is the Stairwell, Landmark 1 is Room 226 based on floor2.py and our verification
-#     payload = {
-#         "start_location": {"node_id": "1"}, 
-#         "destination": {"landmark_id": "1"} 
-#     }
-    
-#     response = requests.post(f"{api_base_url}/navigation/start", json=payload, timeout=15)
+def test_navigation_start_valid_route(api_base_url):
+    """
+    Verify that a valid start node and destination landmark can produce navigation instructions.
+    If seeded map data is unavailable in the target environment, skip gracefully.
+    """
+    payload = {
+        "start_location": {"node_id": "staircase_main_2S01"},
+        "destination": {"landmark_id": "1"}
+    }
 
-#     print(f"Response: {response.text}")
-    
-#     # Graceful fallback: If the database is not seeded yet, the API will return an error 
-#     # about the node/landmark not being found. We skip rather than fail the build.
-#     if response.status_code in [400, 500] and "not found" in response.text.lower():
-#         pytest.skip("Test database not seeded with required nodes/landmarks (ID 1).")
-        
-#     assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-#     data = response.json()
-    
-#     # Assert successful payload structure
-#     assert "session_id" in data
-#     assert "instructions" in data
-#     assert isinstance(data["instructions"], list)
-#     assert len(data["instructions"]) > 0
-    
-#     # Verify the structure of the first navigation instruction
-#     first_step = data["instructions"][0]
-#     assert "step" in first_step
-#     assert "distance_feet" in first_step
-#     assert "direction" in first_step
-#     assert "coordinates" in first_step
-#     assert "x" in first_step["coordinates"]
-#     assert "y" in first_step["coordinates"]
+    response = requests.post(f"{api_base_url}/navigation/start", json=payload, timeout=15)
+    response_text = response.text or ""
+
+    if response.status_code in [400, 500]:
+        lower_text = response_text.lower()
+        skip_markers = [
+            "landmark not found",
+            "invalid start_location.node_id",
+            "invalid destination.landmark_id",
+            "start node does not belong to a recognized building",
+            "no continuous path exists",
+            "no path found"
+        ]
+        if any(marker in lower_text for marker in skip_markers):
+            pytest.skip(
+                f"Navigation route prerequisites are not available in this environment: "
+                f"status={response.status_code}, body={response_text}"
+            )
+
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response_text}"
+    data = response.json()
+
+    assert "session_id" in data
+    assert isinstance(data["session_id"], str)
+    assert data["session_id"].strip() != ""
+    assert "instructions" in data
+    assert isinstance(data["instructions"], list)
+    assert len(data["instructions"]) > 0
+
+    first_step = data["instructions"][0]
+    assert "step" in first_step
+    assert "distance_feet" in first_step
+    assert "direction" in first_step
+    assert "coordinates" in first_step
+    assert "x" in first_step["coordinates"]
+    assert "y" in first_step["coordinates"]
