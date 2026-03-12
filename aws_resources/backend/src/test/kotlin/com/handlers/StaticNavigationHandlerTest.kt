@@ -308,6 +308,28 @@ class StaticNavigationHandlerTest {
 		verify { mockSearchStmt.setInt(2, 3) } // Limit properly parsed from request
 	}
 
+	@Test
+	fun `search endpoint defaults invalid limit to 10`() {
+		val mockSearchStmt = mockk<PreparedStatement>(relaxed = true)
+		every { mockSearchStmt.executeQuery() } returns mockResultSet(emptyList())
+
+		every { mockConn.prepareStatement(any<String>()) } answers {
+			val sql = firstArg<String>()
+			if (sql.contains("ILIKE")) mockSearchStmt else mockk<PreparedStatement>(relaxed = true)
+		}
+
+		val event = APIGatewayProxyRequestEvent().apply {
+			httpMethod = "GET"
+			path = "/search"
+			queryStringParameters = mapOf("query" to "Restroom", "limit" to "abc")
+		}
+		val response = handler.handleRequest(event, mockContext)
+
+		assertEquals(200, response.statusCode)
+		verify { mockSearchStmt.setString(1, "%Restroom%") }
+		verify { mockSearchStmt.setInt(2, 10) }
+	}
+
     @Test
     fun `search endpoint properly formats query for a 'contains' search`() {
         // Setup a basic mock that returns empty results
