@@ -14,6 +14,9 @@ import Button from "../../components/Button";
 import { useAuth } from "../../contexts/AuthContext";
 import { spacing } from "../../theme/spacing";
 import { typography } from "../../theme/typography";
+import appJson from "../../app.json";
+
+export const APP_VERSION = appJson.expo.version;
 
 export default function Settings() {
   const { logout } = useAuth();
@@ -57,6 +60,19 @@ export default function Settings() {
         "Settings",
       ),
       React.createElement(
+        Text,
+        {
+          style: {
+            ...typography.body,
+            color: "#666",
+            marginTop: spacing.md,
+          },
+          accessibilityLabel: `Stride version ${APP_VERSION}`,
+          accessibilityRole: "text",
+        },
+        `Version ${APP_VERSION}`,
+      ),
+      React.createElement(
         View,
         {
           style: {
@@ -75,6 +91,7 @@ export default function Settings() {
           accessibilityLabel: "Logout",
           accessibilityRole: "button",
           accessibilityHint: "Sign out of your account",
+
         }),
       ),
     ),
