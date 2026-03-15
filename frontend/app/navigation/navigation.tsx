@@ -11,6 +11,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Speech from "expo-speech";
+import { Audio } from "expo-av";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import NavigationInstructionsDropdown from "../../components/NavigationInstructions/NavigationInstructionsDropdown";
@@ -18,7 +19,6 @@ import { formatInstruction } from "../../components/NavigationInstructions/Navig
 import {
   NavigationInstruction,
   startNavigation,
-  aggregateNavigationInstructions,
 } from "../../services/api";
 import { colors } from "../../theme/colors";
 import { typography } from "../../theme/typography";
@@ -37,7 +37,6 @@ export default function NavigationSession() {
   const [navigationLoading, setNavigationLoading] = React.useState(false);
   const [speakerMode, setSpeakerMode] = React.useState(false);
   const [currentStepIndex, setCurrentStepIndex] = React.useState(0);
-  const lastSpokenTextRef = React.useRef<string | null>(null);
 
   const toggleSpeakerMode = React.useCallback(() => {
     setSpeakerMode((prev) => !prev);
@@ -87,13 +86,24 @@ export default function NavigationSession() {
     }
     const safeIndex = Math.max(0, Math.min(currentStepIndex, navigationInstructions.length - 1));
     const current = navigationInstructions[safeIndex];
-    const next = safeIndex + 1 < navigationInstructions.length ? navigationInstructions[safeIndex + 1] : null;
-    const text = formatInstruction(current, next);
-    if (text === lastSpokenTextRef.current) {
-      return;
-    }
-    lastSpokenTextRef.current = text;
-    Speech.speak(text, { language: "en" });
+    const text = formatInstruction(current);
+    console.log("[NavigationSession] Speaking instruction:", text);
+    (async () => {
+      try {
+        await Audio.setAudioModeAsync({
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: false,
+          allowsRecordingIOS: false,
+          interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
+          shouldDuckAndroid: true,
+          interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
+          playThroughEarpieceAndroid: false,
+        });
+      } catch (e) {
+        console.warn("[NavigationSession] Failed to set audio mode", e);
+      }
+      Speech.speak(text, { language: "en" });
+    })();
     return () => {
       Speech.stop();
     };
@@ -101,7 +111,6 @@ export default function NavigationSession() {
 
   React.useEffect(() => {
     if (!speakerMode) {
-      lastSpokenTextRef.current = null;
       Speech.stop();
     }
   }, [speakerMode]);
@@ -124,9 +133,8 @@ export default function NavigationSession() {
           start_location: { node_id: "r208_door" },
         });
         if (cancelled) return;
-        setNavigationInstructions(
-          aggregateNavigationInstructions(response.instructions),
-        );
+        // Use instructions exactly as returned from the backend
+        setNavigationInstructions(response.instructions);
       } catch (err) {
         if (cancelled) return;
         setNavigationInstructions(null);
