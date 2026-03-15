@@ -64,6 +64,10 @@ data class NavigationStartResponse(
     val instructions: List<NavigationInstruction>
 )
 
+/** Thrown when the requested landmark does not exist or has no associated node (404). */
+class LandmarkNotFoundException(val landmarkId: Int, message: String? = null) :
+    IllegalArgumentException(message ?: "Landmark not found: landmark_id=$landmarkId")
+
 class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
 
     private val mapper = jacksonObjectMapper()
@@ -156,11 +160,22 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
             if (navRequest.destination.landmark_id.isBlank() || navRequest.start_location.node_id.isBlank()) {
                 return createErrorResponse(400, "destination.landmark_id and start_location.node_id are required")
             }
-            val response = handleNavigationStart(navRequest, logger)
-            return APIGatewayProxyResponseEvent()
-                .withStatusCode(200)
-                .withHeaders(mapOf("Content-Type" to "application/json"))
-                .withBody(mapper.writeValueAsString(response))
+            return try {
+                val response = handleNavigationStart(navRequest, logger)
+                APIGatewayProxyResponseEvent()
+                    .withStatusCode(200)
+                    .withHeaders(mapOf("Content-Type" to "application/json"))
+                    .withBody(mapper.writeValueAsString(response))
+            } catch (e: LandmarkNotFoundException) {
+                logger.log("Landmark not found: ${e.landmarkId}")
+                createErrorResponse(404, "Landmark not found: landmark_id=${e.landmarkId}. Ensure the database is populated and the landmark exists.")
+            } catch (e: IllegalArgumentException) {
+                logger.log("Navigation start validation error: ${e.message}")
+                createErrorResponse(400, e.message ?: "Bad request")
+            } catch (e: Exception) {
+                logger.log("Navigation start error: ${e.message}")
+                createErrorResponse(500, "Internal server error")
+            }
         }
 
         // Unknown endpoint
@@ -214,7 +229,7 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
 
             // 1. Resolve Landmark to Nearest Node
             val landmark = getLandmarkDetails(destLandmarkId, conn)
-                ?: throw IllegalArgumentException("Landmark not found or has no associated node.")
+                ?: throw LandmarkNotFoundException(destLandmarkId, "Landmark not found or has no associated node: landmark_id=$destLandmarkId")
 
             val destNodeId = landmark.nearestNodeId
 
