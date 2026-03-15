@@ -1523,6 +1523,12 @@ components:
               type: number
               description: Y coordinate in feet
               example: 0
+        heading_degrees:
+          type: number
+          nullable: true
+          description: |
+            Compass bearing in degrees 0-360, null for final "arrive" step.
+          example: 90
 
     PathNode:
       type: object
