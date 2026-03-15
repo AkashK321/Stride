@@ -267,7 +267,7 @@ class RdsMapClient {
                 }
             } else {
                 // At the final node. Look towards the actual Landmark destination.
-                Triple(landmark.distanceToNode * 3.28084, "Head ${landmark.bearingFromNode}", null)
+                Triple(landmark.distanceToNode * 3.28084, "Head ${landmark.bearingFromNode}", cardinalToDegrees(landmark.bearingFromNode))
             }
             
             instructions.add(
@@ -295,6 +295,21 @@ class RdsMapClient {
         )
 
         return instructions
+    }
+
+    /**
+     * Converts a cardinal direction string (e.g. from Landmarks.BearingFromNode) to degrees.
+     * North = 0, East = 90, South = 180, West = 270. Returns null for unknown or empty values.
+     */
+    private fun cardinalToDegrees(bearingFromNode: String?): Double? {
+        if (bearingFromNode.isNullOrBlank()) return null
+        return when (bearingFromNode.trim().lowercase()) {
+            "north" -> 0.0
+            "east" -> 90.0
+            "south" -> 180.0
+            "west" -> 270.0
+            else -> null
+        }
     }
 
     fun bearingToDirectionString(bearing: Double?): String {
