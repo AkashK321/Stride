@@ -18,5 +18,7 @@ data class NavigationInstruction(
     val distance_feet: Double,
     val direction: String?,
     val node_id: String,
-    val coordinates: Map<String, Double>
+    val coordinates: Map<String, Double>,
+    val heading_degrees: Double?,
+    val turn_at_end: String?
 )

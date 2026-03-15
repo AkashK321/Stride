@@ -145,20 +145,22 @@ class StaticNavigationHandlerTest {
         @Suppress("UNCHECKED_CAST")
         val instructions = bodyMap["instructions"] as List<Map<String, Any?>>
 
-        // Path segments: heading_degrees from MapEdges.Bearing
-        // Step 1: staircase_main_2S01 -> n1, Bearing 90 (East)
-        assertEquals(90.0, (instructions[0]["heading_degrees"] as? Number)?.toDouble())
-        // Step 2: n1 -> n2, Bearing 90 (East)
-        assertEquals(90.0, (instructions[1]["heading_degrees"] as? Number)?.toDouble())
-        // Step 3: n2 -> n3, Bearing 0 (North)
-        assertEquals(90.0, (instructions[2]["heading_degrees"] as? Number)?.toDouble())
-        // Step 4: n3 -> landmark (approach), BearingFromNode "East" -> 90
-        assertEquals(null, (instructions[3]["heading_degrees"] as? Number)?.toDouble())
+        // Path is staircase->n1->n2 (dest node n2); landmark "Room 205" has BearingFromNode "East" (90°).
+        // All three segments are 90° East, so aggregation merges them into one, then arrive = 2 instructions.
+        assertEquals(2, instructions.size)
 
-        // Existing direction/distance checks
+        // Step 1 (aggregated): all path segments 90° East; turn_at_end null (next is arrive)
+        assertEquals(90.0, (instructions[0]["heading_degrees"] as? Number)?.toDouble())
+        assertNull(instructions[0]["turn_at_end"])
+        assertTrue((instructions[0]["distance_feet"] as Number).toDouble() > 30.0) // 1m + 10m + 2m in feet
+
+        // Step 2: arrive
+        assertNull(instructions[1]["heading_degrees"])
+        assertEquals("arrive", instructions[1]["direction"])
+        assertNull(instructions[1]["turn_at_end"])
+
+        // Direction/distance and landmark name
         assertTrue(responseBody.contains("Head East"))
-        assertTrue(responseBody.contains("32.8084"))
-        assertTrue(responseBody.contains("6.56168"))
         assertTrue(responseBody.contains("Room 205"))
     }
 
@@ -233,19 +235,24 @@ class StaticNavigationHandlerTest {
         assertTrue(response.body?.contains("session_id") == true)
         assertTrue(response.body?.contains("instructions") == true)
 
-        // heading_degrees: path segments from MapEdges.Bearing, approach from BearingFromNode, arrive = null
+        // After aggregation: first two segments (both 90° East) merged, then approach (0° North), then arrive = 3 instructions
         val bodyMap = jacksonObjectMapper().readValue<Map<String, Any>>(response.body!!)
         @Suppress("UNCHECKED_CAST")
         val instructions = bodyMap["instructions"] as List<Map<String, Any?>>
-        // Step 1: staircase -> n1, Bearing 90
+        assertEquals(3, instructions.size)
+
+        // Step 1 (aggregated): staircase->n1 + n1->n2, both 90°; turn at end = left (90° -> 0° to approach)
         assertEquals(90.0, (instructions[0]["heading_degrees"] as? Number)?.toDouble())
-        // Step 2: n1 -> n2, Bearing 90
-        assertEquals(90.0, (instructions[1]["heading_degrees"] as? Number)?.toDouble())
-        // Step 3: n2 -> landmark (approach), BearingFromNode "North" -> 0
-        assertEquals(0.0, (instructions[2]["heading_degrees"] as? Number)?.toDouble())
-        // Step 4: arrive
-        assertNull(instructions[3]["heading_degrees"])
-        assertTrue(instructions[3]["direction"] == "arrive")
+        assertEquals("left", instructions[0]["turn_at_end"])
+
+        // Step 2: n2 -> landmark (approach), BearingFromNode "North" -> 0°; turn_at_end null
+        assertEquals(0.0, (instructions[1]["heading_degrees"] as? Number)?.toDouble())
+        assertNull(instructions[1]["turn_at_end"])
+
+        // Step 3: arrive
+        assertNull(instructions[2]["heading_degrees"])
+        assertEquals("arrive", instructions[2]["direction"])
+        assertNull(instructions[2]["turn_at_end"])
     }
 
 	@Test
