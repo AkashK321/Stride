@@ -6,7 +6,10 @@ import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent
 import io.mockk.*
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.AfterEach
 import io.mockk.unmockkAll
@@ -137,19 +140,28 @@ class StaticNavigationHandlerTest {
 
         assertEquals(200, response.statusCode)
 
-        val responseBody = response.body
+        val responseBody = response.body ?: ""
+        val bodyMap = jacksonObjectMapper().readValue<Map<String, Any>>(responseBody)
+        @Suppress("UNCHECKED_CAST")
+        val instructions = bodyMap["instructions"] as List<Map<String, Any?>>
 
-        // Assert Step 1: Node 1 to Node 2 (10m = 32.8ft, East)
+        // Path is staircase->n1->n2 (dest node n2); landmark "Room 205" has BearingFromNode "East" (90°).
+        // All three segments are 90° East, so aggregation merges them into one, then arrive = 2 instructions.
+        assertEquals(2, instructions.size)
+
+        // Step 1 (aggregated): all path segments 90° East; turn_at_end null (next is arrive)
+        assertEquals(90.0, (instructions[0]["heading_degrees"] as? Number)?.toDouble())
+        assertNull(instructions[0]["turn_at_end"])
+        assertTrue((instructions[0]["distance_feet"] as Number).toDouble() > 30.0) // 1m + 10m + 2m in feet
+
+        // Step 2: arrive
+        assertNull(instructions[1]["heading_degrees"])
+        assertEquals("arrive", instructions[1]["direction"])
+        assertNull(instructions[1]["turn_at_end"])
+
+        // Direction/distance and landmark name
         assertTrue(responseBody.contains("Head East"))
-        assertTrue(responseBody.contains("32.8084"))
-
-        // Assert Step 2: Node 2 to Landmark 2 (5m = 16.4ft, North)
-        assertTrue(responseBody.contains("Head East"))
-        assertTrue(responseBody.contains("6.56168"))
-
-        // Assert Step 3: Final arrival at Landmark
         assertTrue(responseBody.contains("Room 205"))
-        assertTrue(responseBody.contains("arrive"))
     }
 
     @Test
@@ -222,6 +234,25 @@ class StaticNavigationHandlerTest {
         assertEquals(200, response.statusCode)
         assertTrue(response.body?.contains("session_id") == true)
         assertTrue(response.body?.contains("instructions") == true)
+
+        // After aggregation: first two segments (both 90° East) merged, then approach (0° North), then arrive = 3 instructions
+        val bodyMap = jacksonObjectMapper().readValue<Map<String, Any>>(response.body!!)
+        @Suppress("UNCHECKED_CAST")
+        val instructions = bodyMap["instructions"] as List<Map<String, Any?>>
+        assertEquals(3, instructions.size)
+
+        // Step 1 (aggregated): staircase->n1 + n1->n2, both 90°; turn at end = left (90° -> 0° to approach)
+        assertEquals(90.0, (instructions[0]["heading_degrees"] as? Number)?.toDouble())
+        assertEquals("left", instructions[0]["turn_at_end"])
+
+        // Step 2: n2 -> landmark (approach), BearingFromNode "North" -> 0°; turn_at_end null
+        assertEquals(0.0, (instructions[1]["heading_degrees"] as? Number)?.toDouble())
+        assertNull(instructions[1]["turn_at_end"])
+
+        // Step 3: arrive
+        assertNull(instructions[2]["heading_degrees"])
+        assertEquals("arrive", instructions[2]["direction"])
+        assertNull(instructions[2]["turn_at_end"])
     }
 
 	@Test

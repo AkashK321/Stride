@@ -52,15 +52,21 @@ data class StartLocation(
 data class NavigationInstruction(
     val step: Int,
     val distance_feet: Double,
-    val direction: String?,
+    val direction: String?, // Planned to be removed, cardinal direction does not provide meaningful information
     val node_id: String,
-    val coordinates: Map<String, Double>
+    val coordinates: Map<String, Double>,
+    val heading_degrees: Double?,
+    val turn_at_end: String?
 )
 
 data class NavigationStartResponse(
     val session_id: String,
     val instructions: List<NavigationInstruction>
 )
+
+/** Thrown when the requested landmark does not exist or has no associated node (404). */
+class LandmarkNotFoundException(val landmarkId: Int, message: String? = null) :
+    IllegalArgumentException(message ?: "Landmark not found: landmark_id=$landmarkId")
 
 class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
 
@@ -154,11 +160,22 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
             if (navRequest.destination.landmark_id.isBlank() || navRequest.start_location.node_id.isBlank()) {
                 return createErrorResponse(400, "destination.landmark_id and start_location.node_id are required")
             }
-            val response = handleNavigationStart(navRequest, logger)
-            return APIGatewayProxyResponseEvent()
-                .withStatusCode(200)
-                .withHeaders(mapOf("Content-Type" to "application/json"))
-                .withBody(mapper.writeValueAsString(response))
+            return try {
+                val response = handleNavigationStart(navRequest, logger)
+                APIGatewayProxyResponseEvent()
+                    .withStatusCode(200)
+                    .withHeaders(mapOf("Content-Type" to "application/json"))
+                    .withBody(mapper.writeValueAsString(response))
+            } catch (e: LandmarkNotFoundException) {
+                logger.log("Landmark not found: ${e.landmarkId}")
+                createErrorResponse(404, "Landmark not found: landmark_id=${e.landmarkId}. Ensure the database is populated and the landmark exists.")
+            } catch (e: IllegalArgumentException) {
+                logger.log("Navigation start validation error: ${e.message}")
+                createErrorResponse(400, e.message ?: "Bad request")
+            } catch (e: Exception) {
+                logger.log("Navigation start error: ${e.message}")
+                createErrorResponse(500, "Internal server error")
+            }
         }
 
         // Unknown endpoint
@@ -212,7 +229,7 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
 
             // 1. Resolve Landmark to Nearest Node
             val landmark = getLandmarkDetails(destLandmarkId, conn)
-                ?: throw IllegalArgumentException("Landmark not found or has no associated node.")
+                ?: throw LandmarkNotFoundException(destLandmarkId, "Landmark not found or has no associated node: landmark_id=$destLandmarkId")
 
             val destNodeId = landmark.nearestNodeId
 
@@ -261,6 +278,81 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
                 instructions = instructions
             )
         }
+    }
+
+     /**
+     * Maps the change in heading from current segment to next segment to a turn-at-end label.
+     * Convention: delta in degrees (next - current), normalized to [0, 360).
+     * - ~0° or ~360° → straight
+     * - ~90° → right
+     * - ~180° → around
+     * - ~270° → left
+     * Tolerance: ±22.5° for each bucket.
+     */
+    private fun headingDeltaToTurnAtEnd(deltaDegrees: Double): String? {
+        val normalized = ((deltaDegrees % 360.0) + 360.0) % 360.0
+        return when {
+            normalized <= 22.5 || normalized >= 337.5 -> "straight"
+            normalized in 67.5..112.5 -> "right"
+            normalized in 157.5..202.5 -> "around"
+            normalized in 247.5..292.5 -> "left"
+            else -> "straight" // near-straight fallback
+        }
+    }
+
+    private companion object {
+        /** Max angular difference (degrees) to consider two segments "same direction" for aggregation. */
+        const val AGGREGATION_HEADING_TOLERANCE_DEGREES = 22.5
+    }
+
+    private fun headingsNearlyEqual(a: Double?, b: Double?): Boolean {
+        if (a == null || b == null) return a == b
+        var diff = kotlin.math.abs(a - b)
+        if (diff > 180.0) diff = 360.0 - diff
+        return diff <= AGGREGATION_HEADING_TOLERANCE_DEGREES
+    }
+
+    /**
+     * Aggregates instructions: merges consecutive segments with same/near heading, and merges
+     * zero-distance segments into the previous segment (so "0 ft, then turn left" disappears).
+     * The group's turn_at_end, node_id, and coordinates come from the last segment in the group.
+     */
+    private fun aggregateInstructions(instructions: List<NavigationInstruction>): List<NavigationInstruction> {
+        if (instructions.isEmpty()) return emptyList()
+        val result = mutableListOf<NavigationInstruction>()
+        var i = 0
+        var stepNum = 1
+        while (i < instructions.size) {
+            val first = instructions[i]
+            if (first.direction == "arrive") {
+                result.add(first.copy(step = stepNum, turn_at_end = null))
+                stepNum++
+                i++
+                continue
+            }
+            var totalFeet = first.distance_feet
+            var lastInGroup = first
+            var j = i + 1
+            while (j < instructions.size && instructions[j].direction != "arrive" &&
+                   (headingsNearlyEqual(first.heading_degrees, instructions[j].heading_degrees) ||
+                    instructions[j].distance_feet == 0.0)) {
+                totalFeet += instructions[j].distance_feet
+                lastInGroup = instructions[j]
+                j++
+            }
+            result.add(NavigationInstruction(
+                step = stepNum,
+                distance_feet = totalFeet,
+                direction = first.direction,
+                heading_degrees = first.heading_degrees,
+                turn_at_end = lastInGroup.turn_at_end,
+                node_id = lastInGroup.node_id,
+                coordinates = lastInGroup.coordinates
+            ))
+            stepNum++
+            i = j
+        }
+        return result
     }
 
     private fun getLandmarkDetails(landmarkId: Int, conn: Connection): LandmarkDetails? {
@@ -431,27 +523,39 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
             val nodeId = path[i]
             val coords = nodeData[nodeId] ?: Pair(0, 0)
             
-            val (distFeet, directionStr) = if (i < path.size - 1) {
+            val (distFeet, directionStr, headingDegrees) = if (i < path.size - 1) {
                 // Not at the last node yet, lookup edge to the next node
                 val nextNodeId = path[i + 1]
                 val edgeInfo = edgeMap[Pair(nodeId, nextNodeId)]
                 if (edgeInfo != null) {
-                    Pair(edgeInfo.first * 3.28084, bearingToDirectionString(edgeInfo.second))
+                    Triple(edgeInfo.first * 3.28084, bearingToDirectionString(edgeInfo.second), edgeInfo.second)
                 } else {
-                    Pair(0.0, "continue")
+                    Triple(0.0, "continue", null)
                 }
             } else {
                 // At the final node. Look towards the actual Landmark destination.
-                Pair(landmark.distanceToNode * 3.28084, "Head ${landmark.bearingFromNode}")
+                Triple(landmark.distanceToNode * 3.28084, "Head ${landmark.bearingFromNode}", cardinalToDegrees(landmark.bearingFromNode))
             }
-            
+
+            val nextHeading = when {
+                i >= path.size - 1 -> null
+                i + 2 < path.size -> edgeMap[Pair(path[i + 1], path[i + 2])]?.second
+                else -> cardinalToDegrees(landmark.bearingFromNode)
+            }
+
+            val turnAtEnd = if (headingDegrees != null && nextHeading != null) {
+                headingDeltaToTurnAtEnd(nextHeading - headingDegrees)
+            } else null
+
             instructions.add(
                 NavigationInstruction(
                     step = i + 1,
                     distance_feet = distFeet,
                     direction = directionStr,
-                        node_id = nodeId,
-                    coordinates = mapOf("x" to coords.first.toDouble(), "y" to coords.second.toDouble())
+                    node_id = nodeId,
+                    coordinates = mapOf("x" to coords.first.toDouble(), "y" to coords.second.toDouble()),
+                    heading_degrees = headingDegrees,
+                    turn_at_end = turnAtEnd
                 )
             )
         }
@@ -463,11 +567,28 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
                 distance_feet = 0.0,
                 direction = "arrive",
                 node_id = "${landmark.name}",
-                coordinates = mapOf("x" to landmark.coordX.toDouble(), "y" to landmark.coordY.toDouble())
+                coordinates = mapOf("x" to landmark.coordX.toDouble(), "y" to landmark.coordY.toDouble()),
+                heading_degrees = null,
+                turn_at_end = null
             )
         )
 
-        return instructions
+        return aggregateInstructions(instructions)
+    }
+
+    /**
+     * Converts a cardinal direction string (e.g. from Landmarks.BearingFromNode) to degrees.
+     * North = 0, East = 90, South = 180, West = 270. Returns null for unknown or empty values.
+     */
+    private fun cardinalToDegrees(bearingFromNode: String?): Double? {
+        if (bearingFromNode.isNullOrBlank()) return null
+        return when (bearingFromNode.trim().lowercase()) {
+            "north" -> 0.0
+            "east" -> 90.0
+            "south" -> 180.0
+            "west" -> 270.0
+            else -> null
+        }
     }
 
     /**

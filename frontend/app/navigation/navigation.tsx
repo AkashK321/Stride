@@ -18,7 +18,6 @@ import { formatInstruction } from "../../components/NavigationInstructions/Navig
 import {
   NavigationInstruction,
   startNavigation,
-  aggregateNavigationInstructions,
 } from "../../services/api";
 import { colors } from "../../theme/colors";
 import { typography } from "../../theme/typography";
@@ -37,7 +36,6 @@ export default function NavigationSession() {
   const [navigationLoading, setNavigationLoading] = React.useState(false);
   const [speakerMode, setSpeakerMode] = React.useState(false);
   const [currentStepIndex, setCurrentStepIndex] = React.useState(0);
-  const lastSpokenTextRef = React.useRef<string | null>(null);
 
   const toggleSpeakerMode = React.useCallback(() => {
     setSpeakerMode((prev) => !prev);
@@ -87,12 +85,8 @@ export default function NavigationSession() {
     }
     const safeIndex = Math.max(0, Math.min(currentStepIndex, navigationInstructions.length - 1));
     const current = navigationInstructions[safeIndex];
-    const next = safeIndex + 1 < navigationInstructions.length ? navigationInstructions[safeIndex + 1] : null;
-    const text = formatInstruction(current, next);
-    if (text === lastSpokenTextRef.current) {
-      return;
-    }
-    lastSpokenTextRef.current = text;
+    const text = formatInstruction(current);
+    console.log("[NavigationSession] Speaking instruction:", text);
     Speech.speak(text, { language: "en" });
     return () => {
       Speech.stop();
@@ -101,7 +95,6 @@ export default function NavigationSession() {
 
   React.useEffect(() => {
     if (!speakerMode) {
-      lastSpokenTextRef.current = null;
       Speech.stop();
     }
   }, [speakerMode]);
@@ -124,9 +117,8 @@ export default function NavigationSession() {
           start_location: { node_id: "r208_door" },
         });
         if (cancelled) return;
-        setNavigationInstructions(
-          aggregateNavigationInstructions(response.instructions),
-        );
+        // Use instructions exactly as returned from the backend
+        setNavigationInstructions(response.instructions);
       } catch (err) {
         if (cancelled) return;
         setNavigationInstructions(null);

@@ -1523,6 +1523,24 @@ components:
               type: number
               description: Y coordinate in feet
               example: 0
+        heading_degrees:
+          type: number
+          nullable: true
+          description: |
+            Compass bearing in degrees 0-360, null for final "arrive" step.
+          example: 90
+        turn_at_end:
+          type: string
+          nullable: true
+          description: |
+            At the end of this segment, the user should turn this way.
+            Computed from the change in heading to the next instruction.
+          enum:
+            - left
+            - right
+            - around
+            - straight
+          example: "left"
 
     PathNode:
       type: object

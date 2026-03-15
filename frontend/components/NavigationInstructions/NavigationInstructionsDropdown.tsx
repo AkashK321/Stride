@@ -193,7 +193,7 @@ export default function NavigationInstructionsDropdown({
           React.createElement(
             Text,
             { style: styles.primaryInstruction },
-            formatInstruction(currentInstruction, currentNextInstruction),
+            formatInstruction(currentInstruction),
           ),
         ),
       ),

@@ -14,7 +14,6 @@ import {
   LandmarkResult,
   NavigationInstruction,
   startNavigation,
-  aggregateNavigationInstructions,
 } from "../../services/api";
 import { colors } from "../../theme/colors";
 import { typography } from "../../theme/typography";
@@ -33,7 +32,6 @@ export default function Home() {
   );
   const [navigationLoading, setNavigationLoading] = React.useState(false);
   const [speakerMode, setSpeakerMode] = React.useState(false);
-  const lastSpokenTextRef = React.useRef<string | null>(null);
 
   const toggleSpeakerMode = React.useCallback(() => {
     setSpeakerMode((prev) => !prev);
@@ -44,12 +42,8 @@ export default function Home() {
       return;
     }
     const current = navigationInstructions[0];
-    const next = navigationInstructions[1] ?? null;
-    const text = formatInstruction(current, next);
-    if (text === lastSpokenTextRef.current) {
-      return;
-    }
-    lastSpokenTextRef.current = text;
+    const text = formatInstruction(current);
+    console.log("[Home] Speaking instruction:", text);
     Speech.speak(text, { language: "en" });
     return () => {
       Speech.stop();
@@ -58,7 +52,6 @@ export default function Home() {
 
   React.useEffect(() => {
     if (!speakerMode) {
-      lastSpokenTextRef.current = null;
       Speech.stop();
     }
   }, [speakerMode]);
