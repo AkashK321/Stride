@@ -52,7 +52,7 @@ data class StartLocation(
 data class NavigationInstruction(
     val step: Int,
     val distance_feet: Double,
-    val direction: String?,
+    val direction: String?, // Planned to be removed, cardinal direction does not provide meaningful information
     val node_id: String,
     val coordinates: Map<String, Double>,
     val heading_degrees: Double?
@@ -443,7 +443,7 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
                 }
             } else {
                 // At the final node. Look towards the actual Landmark destination.
-                Triple(landmark.distanceToNode * 3.28084, "Head ${landmark.bearingFromNode}", null)
+                Triple(landmark.distanceToNode * 3.28084, "Head ${landmark.bearingFromNode}", cardinalToDegrees(landmark.bearingFromNode))
             }
             
             instructions.add(
@@ -471,6 +471,21 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
         )
 
         return instructions
+    }
+
+    /**
+     * Converts a cardinal direction string (e.g. from Landmarks.BearingFromNode) to degrees.
+     * North = 0, East = 90, South = 180, West = 270. Returns null for unknown or empty values.
+     */
+    private fun cardinalToDegrees(bearingFromNode: String?): Double? {
+        if (bearingFromNode.isNullOrBlank()) return null
+        return when (bearingFromNode.trim().lowercase()) {
+            "north" -> 0.0
+            "east" -> 90.0
+            "south" -> 180.0
+            "west" -> 270.0
+            else -> null
+        }
     }
 
     /**
