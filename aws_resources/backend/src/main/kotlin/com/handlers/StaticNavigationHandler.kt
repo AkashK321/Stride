@@ -54,7 +54,8 @@ data class NavigationInstruction(
     val distance_feet: Double,
     val direction: String?,
     val node_id: String,
-    val coordinates: Map<String, Double>
+    val coordinates: Map<String, Double>,
+    val heading_degrees: Double?
 )
 
 data class NavigationStartResponse(
@@ -431,18 +432,18 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
             val nodeId = path[i]
             val coords = nodeData[nodeId] ?: Pair(0, 0)
             
-            val (distFeet, directionStr) = if (i < path.size - 1) {
+            val (distFeet, directionStr, headingDegrees) = if (i < path.size - 1) {
                 // Not at the last node yet, lookup edge to the next node
                 val nextNodeId = path[i + 1]
                 val edgeInfo = edgeMap[Pair(nodeId, nextNodeId)]
                 if (edgeInfo != null) {
-                    Pair(edgeInfo.first * 3.28084, bearingToDirectionString(edgeInfo.second))
+                    Triple(edgeInfo.first * 3.28084, bearingToDirectionString(edgeInfo.second), edgeInfo.second)
                 } else {
-                    Pair(0.0, "continue")
+                    Triple(0.0, "continue", null)
                 }
             } else {
                 // At the final node. Look towards the actual Landmark destination.
-                Pair(landmark.distanceToNode * 3.28084, "Head ${landmark.bearingFromNode}")
+                Triple(landmark.distanceToNode * 3.28084, "Head ${landmark.bearingFromNode}", null)
             }
             
             instructions.add(
@@ -451,7 +452,8 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
                     distance_feet = distFeet,
                     direction = directionStr,
                         node_id = nodeId,
-                    coordinates = mapOf("x" to coords.first.toDouble(), "y" to coords.second.toDouble())
+                    coordinates = mapOf("x" to coords.first.toDouble(), "y" to coords.second.toDouble()),
+                    heading_degrees = headingDegrees
                 )
             )
         }
@@ -463,7 +465,8 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
                 distance_feet = 0.0,
                 direction = "arrive",
                 node_id = "${landmark.name}",
-                coordinates = mapOf("x" to landmark.coordX.toDouble(), "y" to landmark.coordY.toDouble())
+                coordinates = mapOf("x" to landmark.coordX.toDouble(), "y" to landmark.coordY.toDouble()),
+                heading_degrees = null
             )
         )
 
