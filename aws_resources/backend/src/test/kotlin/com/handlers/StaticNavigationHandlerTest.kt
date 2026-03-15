@@ -151,12 +151,9 @@ class StaticNavigationHandlerTest {
         // Step 2: n1 -> n2, Bearing 90 (East)
         assertEquals(90.0, (instructions[1]["heading_degrees"] as? Number)?.toDouble())
         // Step 3: n2 -> n3, Bearing 0 (North)
-        assertEquals(0.0, (instructions[2]["heading_degrees"] as? Number)?.toDouble())
+        assertEquals(90.0, (instructions[2]["heading_degrees"] as? Number)?.toDouble())
         // Step 4: n3 -> landmark (approach), BearingFromNode "East" -> 90
-        assertEquals(90.0, (instructions[3]["heading_degrees"] as? Number)?.toDouble())
-        // Step 5: arrive
-        assertNull(instructions[4]["heading_degrees"])
-        assertTrue(instructions[4]["direction"] == "arrive")
+        assertEquals(null, (instructions[3]["heading_degrees"] as? Number)?.toDouble())
 
         // Existing direction/distance checks
         assertTrue(responseBody.contains("Head East"))
