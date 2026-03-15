@@ -5,7 +5,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Speech from "expo-speech";
-import { Audio } from "expo-av";
 import { Ionicons } from "@expo/vector-icons";
 import SearchSheet from "../../components/SearchSheet";
 import type { SearchSheetRef } from "../../components/SearchSheet";
@@ -45,22 +44,7 @@ export default function Home() {
     const current = navigationInstructions[0];
     const text = formatInstruction(current);
     console.log("[Home] Speaking instruction:", text);
-    (async () => {
-      try {
-        await Audio.setAudioModeAsync({
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: false,
-          allowsRecordingIOS: false,
-          interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
-          shouldDuckAndroid: true,
-          interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
-          playThroughEarpieceAndroid: false,
-        });
-      } catch (e) {
-        console.warn("[Home] Failed to set audio mode", e);
-      }
-      Speech.speak(text, { language: "en" });
-    })();
+    Speech.speak(text, { language: "en" });
     return () => {
       Speech.stop();
     };
