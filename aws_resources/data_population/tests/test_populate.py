@@ -7,7 +7,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from populate_floor_data import (
     calculate_bearing,
     calculate_distance,
-    feet_to_pixels
+    feet_to_pixels,
+    align_bearing_to_true_north,
 )
 
 def test_feet_to_pixels():
@@ -54,3 +55,27 @@ def test_calculate_bearing_edge_cases():
     
     # Diagonal Southeast  
     assert calculate_bearing(0, 0, 10, 10) == pytest.approx(135, abs=0.1)
+
+
+def test_align_bearing_to_true_north_no_offset():
+    """With offset 0 and no flip, bearing is unchanged."""
+    assert align_bearing_to_true_north(0, offset_deg=0, apply_horizontal_flip=False) == pytest.approx(0, abs=0.1)
+    assert align_bearing_to_true_north(90, offset_deg=0, apply_horizontal_flip=False) == pytest.approx(90, abs=0.1)
+    assert align_bearing_to_true_north(270, offset_deg=0, apply_horizontal_flip=False) == pytest.approx(270, abs=0.1)
+
+
+def test_align_bearing_to_true_north_with_offset():
+    """Offset is added and result normalized to 0-360."""
+    assert align_bearing_to_true_north(0, offset_deg=55, apply_horizontal_flip=False) == pytest.approx(55, abs=0.1)
+    assert align_bearing_to_true_north(90, offset_deg=55, apply_horizontal_flip=False) == pytest.approx(145, abs=0.1)
+    assert align_bearing_to_true_north(310, offset_deg=55, apply_horizontal_flip=False) == pytest.approx(5, abs=0.1)
+
+
+def test_align_bearing_to_true_north_horizontal_flip():
+    """With flip, horizontal bearings (45-135, 225-315) get +180 before offset."""
+    # 90 (East) -> 270 after flip, then +0 offset = 270
+    assert align_bearing_to_true_north(90, offset_deg=0, apply_horizontal_flip=True) == pytest.approx(270, abs=0.1)
+    # 270 (West) -> 90 after flip
+    assert align_bearing_to_true_north(270, offset_deg=0, apply_horizontal_flip=True) == pytest.approx(90, abs=0.1)
+    # North 0 is not horizontal, unchanged
+    assert align_bearing_to_true_north(0, offset_deg=0, apply_horizontal_flip=True) == pytest.approx(0, abs=0.1)

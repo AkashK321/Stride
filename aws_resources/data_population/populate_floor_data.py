@@ -20,6 +20,43 @@ FEET_TO_PIXELS = 10  # 1 foot = 10 pixels
 ORIGIN_X = 0
 ORIGIN_Y = 0
 
+# True-north alignment (ISSUE-171). Set via env so bearings match real compass.
+# TRUE_NORTH_OFFSET_DEGREES: angle to add to map bearings so 0° = true North (e.g. 55).
+# BEARING_HORIZONTAL_FLIP: if "true"/"1", add 180° to horizontal segments (45-135°, 225-315°) before offset.
+def _get_true_north_offset():
+    val = os.environ.get("TRUE_NORTH_OFFSET_DEGREES", "51")
+    try:
+        return float(val)
+    except ValueError:
+        return 0.0
+
+
+def _get_bearing_horizontal_flip():
+    v = os.environ.get("BEARING_HORIZONTAL_FLIP", "180").strip().lower()
+    return v in ("1", "true", "yes")
+
+
+def align_bearing_to_true_north(raw_bearing_deg, offset_deg=None, apply_horizontal_flip=None):
+    """
+    Align a bearing (from map geometry) to true compass.
+    raw_bearing_deg: 0=map North, 90=map East, etc.
+    offset_deg: angle from map north to true north (e.g. 55 if map north is 55° W of true north).
+    apply_horizontal_flip: if True, add 180° to horizontal segments (45-135°, 225-315°) first.
+    Returns bearing in 0-360, 0 = true North. Must be validated on-site (see ISSUE-171).
+    """
+    if offset_deg is None:
+        offset_deg = _get_true_north_offset()
+    if apply_horizontal_flip is None:
+        apply_horizontal_flip = _get_bearing_horizontal_flip()
+
+    normalized = (raw_bearing_deg + 360) % 360
+    if apply_horizontal_flip:
+        # Horizontal: 45-135 (E) or 225-315 (W)
+        if (45 <= normalized < 135) or (225 <= normalized < 315):
+            normalized = (normalized + 180) % 360
+    aligned = (normalized + offset_deg + 360) % 360
+    return aligned
+
 
 def get_db_secret():
     """Retrieves database credentials from AWS Secrets Manager."""
@@ -40,6 +77,19 @@ def calculate_bearing(x1, y1, x2, y2):
     angle = math.degrees(math.atan2(dx, dy))
     bearing = (angle + 360) % 360  # Normalize to 0-360
     return bearing
+
+
+def correct_horizontal_axis_bearing(raw_bearing_deg, x1, y1, x2, y2):
+    """
+    Fix bearing for horizontal segments: map x-axis may not align with compass east,
+    so reflect horizontal bearings (360 - bearing) so e.g. 51° -> 309°.
+    Horizontal = segment is mostly along map x (|dx| >= |dy|).
+    """
+    dx = abs(x2 - x1)
+    dy = abs(y2 - y1)
+    if dx >= dy:
+        return (360.0 - raw_bearing_deg) % 360.0
+    return raw_bearing_deg
 
 
 def calculate_distance(x1, y1, x2, y2):
@@ -101,8 +151,11 @@ def populate_database(conn, building_data):
             floor_id = cursor.fetchone()[0]
             logger.info(f"Inserted floor {floor_data['floor_number']}, FloorID: {floor_id}")
             
-            # 3. Insert MapNodes (CamelCase)
-            # We treat the human-readable node ID string as the canonical ID.
+            # Remove existing edges and landmarks for this floor so re-runs replace data cleanly
+            cursor.execute("DELETE FROM MapEdges WHERE FloorID = %s", (floor_id,))
+            cursor.execute("DELETE FROM Landmarks WHERE FloorID = %s", (floor_id,))
+            
+            # 3. Insert MapNodes (CamelCase) — upsert so re-run does not violate unique constraint
             node_coords = {}  # Map from custom node IDs to their pixel coordinates
             
             for node in floor_data.get('nodes', []):
@@ -113,6 +166,12 @@ def populate_database(conn, building_data):
                     """
                     INSERT INTO MapNodes (NodeIDString, FloorID, BuildingID, CoordinateX, CoordinateY, NodeType)
                     VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (NodeIDString) DO UPDATE SET
+                        FloorID = EXCLUDED.FloorID,
+                        BuildingID = EXCLUDED.BuildingID,
+                        CoordinateX = EXCLUDED.CoordinateX,
+                        CoordinateY = EXCLUDED.CoordinateY,
+                        NodeType = EXCLUDED.NodeType
                     """,
                     (
                         node['id'],
@@ -124,7 +183,7 @@ def populate_database(conn, building_data):
                     )
                 )
                 node_coords[node['id']] = (x_pixels, y_pixels)
-                logger.info(f"Inserted node {node['id']} at ({x_pixels}, {y_pixels})")
+                logger.info(f"Upserted node {node['id']} at ({x_pixels}, {y_pixels})")
             
             # 4. Insert MapEdges (CamelCase)
             for edge in floor_data.get('edges', []):
@@ -134,8 +193,9 @@ def populate_database(conn, building_data):
                 x2, y2 = node_coords[end_node_key]
                 
                 distance = calculate_distance(x1, y1, x2, y2)
-                bearing = calculate_bearing(x1, y1, x2, y2)
-                
+                raw_bearing = calculate_bearing(x1, y1, x2, y2)
+                raw_bearing = correct_horizontal_axis_bearing(raw_bearing, x1, y1, x2, y2)
+                bearing = align_bearing_to_true_north(raw_bearing)
                 cursor.execute(
                     """
                     INSERT INTO MapEdges (FloorID, StartNodeID, EndNodeID, DistanceMeters, Bearing, IsBidirectional)
@@ -152,8 +212,11 @@ def populate_database(conn, building_data):
                 )
                 logger.info(f"Inserted edge: {edge['start']} -> {edge['end']}, distance: {distance:.2f}m, bearing: {bearing:.1f}°")
             
-            # 5. Insert Landmarks (CamelCase)
-            for landmark in floor_data.get('landmarks', []):
+            # 5. Insert Landmarks (CamelCase) with stable IDs so re-runs give same landmark_id
+            # LandmarkID = floor_id * 10000 + (1-based index) so e.g. floor 1 -> 10001,10002,...; floor 2 -> 20001,20002,...
+            landmarks_list = floor_data.get('landmarks', [])
+            for idx, landmark in enumerate(landmarks_list):
+                landmark_id = floor_id * 10000 + (idx + 1)
                 x_pixels = feet_to_pixels(landmark['x_feet'])
                 y_pixels = feet_to_pixels(landmark['y_feet'])
                 
@@ -168,10 +231,19 @@ def populate_database(conn, building_data):
                 
                 cursor.execute(
                     """
-                    INSERT INTO Landmarks (FloorID, Name, NearestNodeID, DistanceToNode, BearingFromNode, MapCoordinateX, MapCoordinateY)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO Landmarks (LandmarkID, FloorID, Name, NearestNodeID, DistanceToNode, BearingFromNode, MapCoordinateX, MapCoordinateY)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (LandmarkID) DO UPDATE SET
+                        FloorID = EXCLUDED.FloorID,
+                        Name = EXCLUDED.Name,
+                        NearestNodeID = EXCLUDED.NearestNodeID,
+                        DistanceToNode = EXCLUDED.DistanceToNode,
+                        BearingFromNode = EXCLUDED.BearingFromNode,
+                        MapCoordinateX = EXCLUDED.MapCoordinateX,
+                        MapCoordinateY = EXCLUDED.MapCoordinateY
                     """,
                     (
+                        landmark_id,
                         floor_id,
                         landmark['name'],
                         nearest_node_key,
@@ -181,7 +253,14 @@ def populate_database(conn, building_data):
                         y_pixels
                     )
                 )
-                logger.info(f"Inserted landmark: {landmark['name']} at ({x_pixels}, {y_pixels})")
+                logger.info(f"Upserted landmark {landmark_id} {landmark['name']} at ({x_pixels}, {y_pixels})")
+            
+            # Advance the LandmarkID sequence so future SERIAL inserts don't reuse our explicit IDs
+            # Use lowercase identifiers: PostgreSQL folds unquoted names to lowercase
+            if landmarks_list:
+                cursor.execute(
+                    "SELECT setval(pg_get_serial_sequence('landmarks', 'landmarkid'), (SELECT COALESCE(MAX(landmarkid), 1) FROM landmarks))"
+                )
         
         conn.commit()
         logger.info("Successfully populated database!")
