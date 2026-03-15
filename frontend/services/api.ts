@@ -91,6 +91,8 @@ export interface NavigationInstruction {
   step: number;
   distance_feet: number;
   direction: string | null;
+  heading_degrees?: number | null;
+  turn_at_end?: "left" | "right" | "around" | "straight" | null;
   node_id: string;
   coordinates: { x?: number; y?: number; x_feet?: number; y_feet?: number };
 }
@@ -98,49 +100,6 @@ export interface NavigationInstruction {
 export interface NavigationStartResponse {
   session_id: string;
   instructions: NavigationInstruction[];
-}
-
-/**
- * Aggregates navigation instructions: removes 0-foot steps (except final "arrive")
- * and merges consecutive steps that share the same direction into one step with summed distance.
- */
-export function aggregateNavigationInstructions(
-  instructions: NavigationInstruction[],
-): NavigationInstruction[] {
-  if (instructions.length === 0) return [];
-
-  const filtered = instructions.filter((inst, index) => {
-    const isLast = index === instructions.length - 1;
-    if (inst.distance_feet > 0) return true;
-    if (isLast && inst.direction === "arrive") return true;
-    return false;
-  });
-
-  if (filtered.length === 0) return [];
-
-  const merged: NavigationInstruction[] = [];
-  let current = { ...filtered[0], distance_feet: filtered[0].distance_feet };
-
-  for (let i = 1; i < filtered.length; i++) {
-    const inst = filtered[i];
-    if (inst.direction === current.direction && inst.direction !== "arrive") {
-      current.distance_feet += inst.distance_feet;
-      current.node_id = inst.node_id;
-      current.coordinates = inst.coordinates;
-    } else {
-      merged.push({
-        ...current,
-        step: merged.length + 1,
-      });
-      current = { ...inst, distance_feet: inst.distance_feet };
-    }
-  }
-  merged.push({
-    ...current,
-    step: merged.length + 1,
-  });
-
-  return merged;
 }
 
 /**

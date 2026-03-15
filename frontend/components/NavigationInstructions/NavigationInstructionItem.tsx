@@ -11,85 +11,26 @@ export interface NavigationInstructionItemProps {
   nextInstruction?: NavigationInstruction | null;
 }
 
-function normalizeDirection(dir: string | null | undefined): string | null {
-  if (!dir) return null;
-  const lower = dir.trim().toLowerCase();
-
-  // Handle phrases like "Head North", "head east", etc.
-  if (lower.includes("north")) return "north";
-  if (lower.includes("east")) return "east";
-  if (lower.includes("south")) return "south";
-  if (lower.includes("west")) return "west";
-
-  // Handle explicit relative directions if they ever appear
-  if (lower.includes("left")) return "left";
-  if (lower.includes("right")) return "right";
-  if (lower.includes("straight")) return "straight";
-
-  return lower;
-}
-
-function getRelativeTurn(
-  currentDir: string | null | undefined,
-  nextDir: string | null | undefined,
-): "left" | "right" | "around" | "straight" | null {
-  const current = normalizeDirection(currentDir);
-  const next = normalizeDirection(nextDir);
-  if (!current || !next) return null;
-  if (current === next) return "straight";
-
-  const order = ["north", "east", "south", "west"] as const;
-  const fromIdx = order.indexOf(current as (typeof order)[number]);
-  const toIdx = order.indexOf(next as (typeof order)[number]);
-  if (fromIdx === -1 || toIdx === -1) return null;
-
-  const delta = (toIdx - fromIdx + order.length) % order.length;
-  if (delta === 1) return "right";
-  if (delta === 3) return "left";
-  if (delta === 2) return "around";
-  return null;
-}
-
 export function formatInstruction(
   current: NavigationInstruction,
-  next?: NavigationInstruction | null,
 ): string {
-  const { direction, distance_feet } = current;
+  const { direction, distance_feet, turn_at_end } = current;
   const roundedDistance = Math.round(distance_feet / 5) * 5;
   const distanceText = `${roundedDistance} ft`;
 
   // Arrival handling
-  if (direction === "arrive" || next?.direction === "arrive") {
+  if (direction === "arrive") {
     return `In ${distanceText}, you will arrive`;
   }
 
-  // If we don't have a "next" step, fall back to a simple walk instruction
-  if (!next) {
-    if (!direction) {
-      return `Continue for ${distanceText}`;
-    }
-    const dir =
-      direction.charAt(0).toUpperCase() + direction.slice(1).toLowerCase();
-    return `Walk ${dir} for ${distanceText}`;
-  }
-
-  const relativeTurn = getRelativeTurn(direction, next.direction);
-  if (relativeTurn === "straight") {
+  if (turn_at_end === "straight") {
     return `In ${distanceText}, continue straight`;
   }
-  if (relativeTurn === "around") {
+  if (turn_at_end === "around") {
     return `In ${distanceText}, turn around`;
   }
-  if (relativeTurn === "left" || relativeTurn === "right") {
-    return `In ${distanceText}, turn ${relativeTurn}`;
-  }
-
-  // Fallback when we can't determine a relative turn
-  if (next.direction) {
-    const nextDir =
-      next.direction.charAt(0).toUpperCase() +
-      next.direction.slice(1).toLowerCase();
-    return `In ${distanceText}, turn ${nextDir.toLowerCase()}`;
+  if (turn_at_end === "left" || turn_at_end === "right") {
+    return `In ${distanceText}, turn ${turn_at_end}`;
   }
 
   return `Continue for ${distanceText}`;
@@ -99,28 +40,26 @@ export default function NavigationInstructionItem({
   instruction,
   nextInstruction,
 }: NavigationInstructionItemProps) {
-  const { direction, distance_feet } = instruction;
+  const { direction, distance_feet, turn_at_end } = instruction;
   const roundedDistance = Math.round(distance_feet / 5) * 5;
   const distanceText = `${roundedDistance} ft`;
-
-  const relativeTurn = getRelativeTurn(direction, nextInstruction?.direction);
 
   let iconName: React.ComponentProps<typeof Ionicons>["name"] = "arrow-up";
   let turnLabel = "Continue";
 
-  if (direction === "arrive" || nextInstruction?.direction === "arrive") {
+  if (direction === "arrive") {
     iconName = "flag-outline";
     turnLabel = "Destination";
-  } else if (relativeTurn === "left") {
+  } else if (turn_at_end === "left") {
     iconName = "arrow-back-outline";
     turnLabel = "Turn left";
-  } else if (relativeTurn === "right") {
+  } else if (turn_at_end === "right") {
     iconName = "arrow-forward-outline";
     turnLabel = "Turn right";
-  } else if (relativeTurn === "around") {
+  } else if (turn_at_end === "around") {
     iconName = "refresh-outline";
     turnLabel = "Turn around";
-  } else if (relativeTurn === "straight") {
+  } else if (turn_at_end === "straight") {
     iconName = "arrow-up-outline";
     turnLabel = "Continue straight";
   }

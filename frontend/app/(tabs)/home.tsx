@@ -5,6 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Speech from "expo-speech";
+import { Audio } from "expo-av";
 import { Ionicons } from "@expo/vector-icons";
 import SearchSheet from "../../components/SearchSheet";
 import type { SearchSheetRef } from "../../components/SearchSheet";
@@ -14,7 +15,6 @@ import {
   LandmarkResult,
   NavigationInstruction,
   startNavigation,
-  aggregateNavigationInstructions,
 } from "../../services/api";
 import { colors } from "../../theme/colors";
 import { typography } from "../../theme/typography";
@@ -33,7 +33,6 @@ export default function Home() {
   );
   const [navigationLoading, setNavigationLoading] = React.useState(false);
   const [speakerMode, setSpeakerMode] = React.useState(false);
-  const lastSpokenTextRef = React.useRef<string | null>(null);
 
   const toggleSpeakerMode = React.useCallback(() => {
     setSpeakerMode((prev) => !prev);
@@ -44,13 +43,24 @@ export default function Home() {
       return;
     }
     const current = navigationInstructions[0];
-    const next = navigationInstructions[1] ?? null;
-    const text = formatInstruction(current, next);
-    if (text === lastSpokenTextRef.current) {
-      return;
-    }
-    lastSpokenTextRef.current = text;
-    Speech.speak(text, { language: "en" });
+    const text = formatInstruction(current);
+    console.log("[Home] Speaking instruction:", text);
+    (async () => {
+      try {
+        await Audio.setAudioModeAsync({
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: false,
+          allowsRecordingIOS: false,
+          interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
+          shouldDuckAndroid: true,
+          interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
+          playThroughEarpieceAndroid: false,
+        });
+      } catch (e) {
+        console.warn("[Home] Failed to set audio mode", e);
+      }
+      Speech.speak(text, { language: "en" });
+    })();
     return () => {
       Speech.stop();
     };
@@ -58,7 +68,6 @@ export default function Home() {
 
   React.useEffect(() => {
     if (!speakerMode) {
-      lastSpokenTextRef.current = null;
       Speech.stop();
     }
   }, [speakerMode]);
