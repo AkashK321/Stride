@@ -23,6 +23,7 @@ import {
 import { colors } from "../../theme/colors";
 import { typography } from "../../theme/typography";
 import { spacing } from "../../theme/spacing";
+import { useHeading } from "../../hooks/useHeading";
 
 
 export default function NavigationSession() {
@@ -38,6 +39,11 @@ export default function NavigationSession() {
   const [speakerMode, setSpeakerMode] = React.useState(false);
   const [currentStepIndex, setCurrentStepIndex] = React.useState(0);
   const lastSpokenTextRef = React.useRef<string | null>(null);
+
+  const { getAlignment } = useHeading();
+  const activeInstruction = navigationInstructions?.[currentStepIndex] ?? null;
+  // const alignment = getAlignment(activeInstruction?.heading_degrees ?? null);
+  const alignment = getAlignment(270); // mock "face west"
 
   const toggleSpeakerMode = React.useCallback(() => {
     setSpeakerMode((prev) => !prev);
@@ -301,6 +307,32 @@ export default function NavigationSession() {
                 { style: styles.bottomNavDistance },
                 `${totalDistanceFeet} ft`,
               ),
+            // Alignment indicator — shows when heading_degrees is available on the active instruction.
+            // Hidden on the final "arrive" step (heading_degrees is null) and before instructions load.
+            alignment !== "unknown" &&
+              React.createElement(
+                View,
+                { style: styles.alignmentRow },
+                React.createElement(Ionicons, {
+                  name:
+                    alignment === "aligned"
+                      ? "checkmark-circle"
+                      : alignment === "turn_left"
+                      ? "arrow-back-circle"
+                      : "arrow-forward-circle",
+                  size: 20,
+                  color: alignment === "aligned" ? colors.primary : colors.textSecondary,
+                }),
+                React.createElement(
+                  Text,
+                  { style: styles.alignmentText },
+                  alignment === "aligned"
+                    ? "Facing the right way"
+                    : alignment === "turn_left"
+                    ? "Turn left"
+                    : "Turn right",
+                ),
+              ),
           ),
           React.createElement(
             Pressable,
@@ -426,6 +458,17 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: colors.textSecondary,
   },
+  alignmentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 6,
+    gap: 6,
+  },
+  alignmentText: {
+    ...typography.label,
+    fontSize: 15,
+    color: colors.textSecondary,
+  },
   bottomNavEndButton: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
@@ -440,4 +483,3 @@ const styles = StyleSheet.create({
     color: colors.buttonPrimaryText,
   },
 });
-

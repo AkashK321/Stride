@@ -93,6 +93,7 @@ export interface NavigationInstruction {
   direction: string | null;
   node_id: string;
   coordinates: { x?: number; y?: number; x_feet?: number; y_feet?: number };
+  heading_degrees?: number | null;
 }
 
 export interface NavigationStartResponse {
