@@ -256,18 +256,18 @@ class RdsMapClient {
             val nodeId = path[i]
             val coords = nodeData[nodeId] ?: Pair(0, 0)
             
-            val (distFeet, directionStr) = if (i < path.size - 1) {
+            val (distFeet, directionStr, headingDegrees) = if (i < path.size - 1) {
                 // Not at the last node yet, lookup edge to the next node
                 val nextNodeId = path[i + 1]
                 val edgeInfo = edgeMap[Pair(nodeId, nextNodeId)]
                 if (edgeInfo != null) {
-                    Pair(edgeInfo.first * 3.28084, bearingToDirectionString(edgeInfo.second))
+                    Triple(edgeInfo.first * 3.28084, bearingToDirectionString(edgeInfo.second), edgeInfo.second)
                 } else {
-                    Pair(0.0, "continue")
+                    Triple(0.0, "continue", null)
                 }
             } else {
                 // At the final node. Look towards the actual Landmark destination.
-                Pair(landmark.distanceToNode * 3.28084, "Head ${landmark.bearingFromNode}")
+                Triple(landmark.distanceToNode * 3.28084, "Head ${landmark.bearingFromNode}", cardinalToDegrees(landmark.bearingFromNode))
             }
             
             instructions.add(
@@ -276,7 +276,8 @@ class RdsMapClient {
                     distance_feet = distFeet,
                     direction = directionStr,
                         node_id = nodeId,
-                    coordinates = mapOf("x" to coords.first.toDouble(), "y" to coords.second.toDouble())
+                    coordinates = mapOf("x" to coords.first.toDouble(), "y" to coords.second.toDouble()),
+                    heading_degrees = headingDegrees
                 )
             )
         }
@@ -288,11 +289,27 @@ class RdsMapClient {
                 distance_feet = 0.0,
                 direction = "arrive",
                 node_id = "${landmark.name}",
-                coordinates = mapOf("x" to landmark.coordX.toDouble(), "y" to landmark.coordY.toDouble())
+                coordinates = mapOf("x" to landmark.coordX.toDouble(), "y" to landmark.coordY.toDouble()),
+                heading_degrees = null
             )
         )
 
         return instructions
+    }
+
+    /**
+     * Converts a cardinal direction string (e.g. from Landmarks.BearingFromNode) to degrees.
+     * North = 0, East = 90, South = 180, West = 270. Returns null for unknown or empty values.
+     */
+    private fun cardinalToDegrees(bearingFromNode: String?): Double? {
+        if (bearingFromNode.isNullOrBlank()) return null
+        return when (bearingFromNode.trim().lowercase()) {
+            "north" -> 0.0
+            "east" -> 90.0
+            "south" -> 180.0
+            "west" -> 270.0
+            else -> null
+        }
     }
 
     fun bearingToDirectionString(bearing: Double?): String {
