@@ -149,7 +149,7 @@ jobs:
         uses: anchore/sbom-action@v0
         with:
           format: cyclonedx-json
-          output-file: /docs/SBOM.json
+          output-file: docs/SBOM.json
 
 
   unit-tests:
