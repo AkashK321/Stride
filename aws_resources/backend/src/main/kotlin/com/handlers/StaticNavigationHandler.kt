@@ -16,21 +16,6 @@ import com.models.SearchResponse
 import com.models.Destination
 import com.models.StartLocation
 
-data class NavigationInstruction(
-    val step: Int,
-    val distance_feet: Double,
-    val direction: String?, // Planned to be removed, cardinal direction does not provide meaningful information
-    val node_id: String,
-    val coordinates: Map<String, Double>,
-    val heading_degrees: Double?,
-    val turn_at_end: String?
-)
-
-data class NavigationStartResponse(
-    val session_id: String,
-    val instructions: List<NavigationInstruction>
-)
-
 /** Thrown when the requested landmark does not exist or has no associated node (404). */
 class LandmarkNotFoundException(val landmarkId: Int, message: String? = null) :
     IllegalArgumentException(message ?: "Landmark not found: landmark_id=$landmarkId")
@@ -228,3 +213,4 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
             .withHeaders(mapOf("Content-Type" to "application/json"))
     }
 }
+
