@@ -16,6 +16,10 @@ import com.models.SearchResponse
 import com.models.Destination
 import com.models.StartLocation
 
+/** Thrown when the requested landmark does not exist or has no associated node (404). */
+class LandmarkNotFoundException(val landmarkId: Int, message: String? = null) :
+    IllegalArgumentException(message ?: "Landmark not found: landmark_id=$landmarkId")
+
 class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
 
     private val mapper = jacksonObjectMapper()
@@ -74,15 +78,21 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
             if (navRequest.destination.landmark_id.isBlank() || navRequest.start_location.node_id.isBlank()) {
                 return createErrorResponse(400, "destination.landmark_id and start_location.node_id are required")
             }
-            try {
+            return try {
                 val response = handleNavigationStart(navRequest, logger)
-                return APIGatewayProxyResponseEvent()
-                .withStatusCode(200)
-                .withHeaders(mapOf("Content-Type" to "application/json"))
-                .withBody(mapper.writeValueAsString(response))
+                APIGatewayProxyResponseEvent()
+                    .withStatusCode(200)
+                    .withHeaders(mapOf("Content-Type" to "application/json"))
+                    .withBody(mapper.writeValueAsString(response))
+            } catch (e: LandmarkNotFoundException) {
+                logger.log("Landmark not found: ${e.landmarkId}")
+                createErrorResponse(404, "Landmark not found: landmark_id=${e.landmarkId}. Ensure the database is populated and the landmark exists.")
+            } catch (e: IllegalArgumentException) {
+                logger.log("Navigation start validation error: ${e.message}")
+                createErrorResponse(400, e.message ?: "Bad request")
             } catch (e: Exception) {
                 logger.log("Navigation start error: ${e.message}")
-                return createErrorResponse(500, "Internal server error")
+                createErrorResponse(500, "Internal server error")
             }
         }
 
@@ -203,3 +213,4 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
             .withHeaders(mapOf("Content-Type" to "application/json"))
     }
 }
+
