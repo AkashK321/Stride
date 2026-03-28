@@ -83,3 +83,38 @@ console.warn = (...args) => {
   if (typeof args[0] === "string" && args[0].includes("Animated:")) return;
   originalWarn(...args);
 };
+
+// --- Sensor and file system mocks (added for SensorService) ---
+
+// expo-sharing: mock file sharing
+jest.mock('expo-sharing', () => ({
+  isAvailableAsync: jest.fn(() => Promise.resolve(true)),
+  shareAsync: jest.fn(() => Promise.resolve()),
+}));
+
+// expo-sensors: mock IMU sensors
+jest.mock('expo-sensors', () => ({
+  Accelerometer: {
+    addListener: jest.fn(() => ({ remove: jest.fn() })),
+    setUpdateInterval: jest.fn(),
+  },
+  Gyroscope: {
+    addListener: jest.fn(() => ({ remove: jest.fn() })),
+    setUpdateInterval: jest.fn(),
+  },
+  Magnetometer: {
+    addListener: jest.fn(() => ({ remove: jest.fn() })),
+    setUpdateInterval: jest.fn(),
+  },
+}));
+
+// expo-file-system/legacy: mock file operations
+jest.mock('expo-file-system/legacy', () => ({
+  documentDirectory: 'file:///mock/documents/',
+  getInfoAsync: jest.fn(() => Promise.resolve({ exists: false })),
+  makeDirectoryAsync: jest.fn(() => Promise.resolve()),
+  writeAsStringAsync: jest.fn(() => Promise.resolve()),
+  readAsStringAsync: jest.fn(() => Promise.resolve('{}')),
+  readDirectoryAsync: jest.fn(() => Promise.resolve([])),
+  deleteAsync: jest.fn(() => Promise.resolve()),
+}));

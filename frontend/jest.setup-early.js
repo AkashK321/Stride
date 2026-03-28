@@ -1,5 +1,3 @@
-// Define globals that Expo expects
-global.__DEV__ = true;
 // Mock react-native early to prevent Flow syntax parsing issues
 // This runs before any other setup files
 // @testing-library/react-native will provide proper component implementations

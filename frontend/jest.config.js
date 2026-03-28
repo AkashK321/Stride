@@ -55,9 +55,6 @@ module.exports = {
       "|expo-web-browser" +
       "|expo-symbols" +
       "|expo-system-ui" +
-      "|expo-sharing" +           // ADD THIS LINE
-      "|expo-sensors" +           // ADD THIS LINE
-      "|expo-file-system" +       // ADD THIS LINE (for safety)
       "|libphonenumber-js" +
       ")/)",
   ],
