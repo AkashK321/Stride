@@ -13,6 +13,7 @@ import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
 import java.net.URI
 import java.util.Base64
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.services.HttpInferenceClient
 import com.services.SageMakerClient
 import com.services.DynamoDbTableClient
 import com.models.InferenceResult
@@ -106,33 +107,40 @@ class ObjectDetectionHandler (
         return detectedObjects
     }
 
-    fun getDetections(validImage: Boolean, imageBytes: ByteArray, logger: LambdaLogger): List<BoundingBox> {
-        // Process with SageMaker if valid image (JPEG or PNG)
+    /**
+     * Runs inference using the given [invoke] function (SageMaker or HTTP-compatible /invocations).
+     */
+    fun getDetections(
+        validImage: Boolean,
+        imageBytes: ByteArray,
+        logger: LambdaLogger,
+        invoke: (ByteArray) -> InferenceResult,
+        backendLabel: String,
+    ): List<BoundingBox> {
         val inferenceResult: InferenceResult = if (validImage && imageBytes.isNotEmpty()) {
             try {
-                logger.log("Calling SageMaker endpoint for inference...")
+                logger.log("Calling $backendLabel for inference...")
                 val startTime = System.currentTimeMillis()
-                
-                val result = SageMakerClient.invokeEndpoint(imageBytes)
-                
+
+                val result = invoke(imageBytes)
+
                 val endTime = System.currentTimeMillis()
-                logger.log("SageMaker inference completed in ${endTime - startTime}ms")
+                logger.log("$backendLabel inference completed in ${endTime - startTime}ms")
                 logger.log("Detections found: ${result.metadata?.detectionCount ?: 0}")
-                
+
                 result
             } catch (e: Exception) {
-                logger.log("Error calling SageMaker: ${e.message}")
+                logger.log("Error from $backendLabel: ${e.message}")
                 e.printStackTrace()
                 InferenceResult(
                     status = "error",
-                    error = "Failed to call SageMaker: ${e.message}"
+                    error = "Inference failed ($backendLabel): ${e.message}",
                 )
             }
         } else {
-            // Invalid image or no image
             InferenceResult(
                 status = "error",
-                error = "Invalid image format. Supported formats: JPEG, PNG"
+                error = "Invalid image format. Supported formats: JPEG, PNG",
             )
         }
         return inferenceResult.detections
@@ -286,11 +294,40 @@ class ObjectDetectionHandler (
             return APIGatewayV2WebSocketResponse().apply { statusCode = 400 }
         }
 
-        if (featureFlagsTableClient.getStringItem(itemName = "enable_sagemaker_inference") == true) {
-            logger.log("SageMaker inference is ENABLED via feature flag.")
-            detections = getDetections(validImage, imageBytes, logger)
-        } else {
-            logger.log("SageMaker inference is DISABLED via feature flag.")
+        val sageMakerEnabled =
+            featureFlagsTableClient.getStringItem(itemName = "enable_sagemaker_inference") == true
+        val httpInferenceUrl = HttpInferenceClient.baseUrl()
+
+        detections = when {
+            sageMakerEnabled -> {
+                logger.log("SageMaker inference is ENABLED via feature flag.")
+                getDetections(
+                    validImage,
+                    imageBytes,
+                    logger,
+                    { SageMakerClient.invokeEndpoint(it) },
+                    "SageMaker",
+                )
+            }
+            httpInferenceUrl != null -> {
+                logger.log(
+                    "SageMaker disabled; using HTTP inference at $httpInferenceUrl " +
+                        "(${HttpInferenceClient.ENV_INFERENCE_HTTP_URL}).",
+                )
+                getDetections(
+                    validImage,
+                    imageBytes,
+                    logger,
+                    { HttpInferenceClient.invokeEndpoint(it) },
+                    "HTTP inference",
+                )
+            }
+            else -> {
+                logger.log(
+                    "Inference skipped: SageMaker disabled and ${HttpInferenceClient.ENV_INFERENCE_HTTP_URL} is unset.",
+                )
+                emptyList()
+            }
         }
 
         val estimatedDistances = estimateDistances(detections)

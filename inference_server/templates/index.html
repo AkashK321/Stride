@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Stride inference — logs</title>
+  <link rel="stylesheet" href="/static/dashboard.css"/>
+</head>
+<body>
+  <header>
+    <h1>Local inference logs</h1>
+    <p class="muted">Request/response pairs from <code>POST /invocations</code> (newest first).</p>
+
+    <section class="session-panel" id="session-panel">
+      <h2>Inference session (tunnel security)</h2>
+      {% if require_session %}
+      <p class="muted">
+        <code>INFERENCE_REQUIRE_SESSION=1</code> is set: <code>/invocations</code> only works after you start a session and Lambda sends the matching secret header.
+      </p>
+      {% else %}
+      <p class="muted">
+        Session gating is <strong>off</strong>. For tunneling, run with <code>INFERENCE_REQUIRE_SESSION=1</code> so the endpoint is closed until you start a session here.
+      </p>
+      {% endif %}
+      <p class="muted">
+        The <strong>mobile app never sees this secret</strong>. Set <code>INFERENCE_HTTP_SECRET</code> on the <strong>object-detection Lambda</strong> (same value as the token below). Lambda adds header <code id="hdr-name">X-Stride-Inference-Secret</code>.
+      </p>
+      <p>
+        <button type="button" id="btn-start">Start session</button>
+        <button type="button" id="btn-end">End session</button>
+        <span id="session-status" class="muted"></span>
+      </p>
+      <div id="token-box" class="token-box hidden">
+        <p><strong>Copy once</strong> — this is not shown again after refresh. Set on Lambda:</p>
+        <pre id="token-display"></pre>
+        <button type="button" id="btn-copy-token">Copy token</button>
+        <p class="muted small">AWS CLI (merge with your existing Lambda env vars):</p>
+        <pre id="lambda-cli" class="cli-snippet"></pre>
+        <button type="button" id="btn-copy-cli">Copy aws command</button>
+      </div>
+    </section>
+
+    <form method="post" action="/api/logs/clear" onsubmit="return confirm('Clear all logs?');">
+      <button type="submit">Clear logs</button>
+    </form>
+  </header>
+  <main>
+    {% if rows %}
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Time</th>
+          <th>Latency (ms)</th>
+          <th>HTTP</th>
+          <th>Content-Type</th>
+          <th>OK</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td>{{ r.id }}</td>
+          <td>{{ "%.3f"|format(r.created) }}</td>
+          <td>{{ r.latency_ms }}</td>
+          <td>{{ r.http_status }}</td>
+          <td class="ct">{{ r.content_type or "—" }}</td>
+          <td>{% if r.success %}yes{% else %}no{% endif %}</td>
+          <td><a href="/logs/{{ r.id }}">detail</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No invocations yet. POST an image to <code>/invocations</code>.</p>
+    {% endif %}
+  </main>
+  <script>
+(function () {
+  const statusEl = document.getElementById('session-status');
+  const tokenBox = document.getElementById('token-box');
+  const tokenDisplay = document.getElementById('token-display');
+  const lambdaCli = document.getElementById('lambda-cli');
+
+  async function refreshStatus() {
+    const r = await fetch('/api/session/status');
+    const j = await r.json();
+    statusEl.textContent = j.active ? 'Session: active' : 'Session: inactive';
+    if (j.header_name) document.getElementById('hdr-name').textContent = j.header_name;
+  }
+
+  document.getElementById('btn-start').onclick = async function () {
+    const r = await fetch('/api/session/start', { method: 'POST' });
+    const j = await r.json();
+    if (!r.ok) { alert(j.detail || 'Start failed'); return; }
+    tokenDisplay.textContent = j.token;
+    const fn = prompt('Lambda function name (for AWS CLI snippet, optional):', 'ObjectDetectionHandler');
+    if (fn) {
+      lambdaCli.textContent =
+        'aws lambda update-function-configuration --function-name ' + fn +
+        ' --environment "Variables={INFERENCE_HTTP_SECRET=' + j.token + '}"\n' +
+        '# Merge manually with existing Variables if needed — do not replace all env vars blindly.';
+    } else {
+      lambdaCli.textContent = 'INFERENCE_HTTP_SECRET=' + j.token;
+    }
+    tokenBox.classList.remove('hidden');
+    await refreshStatus();
+  };
+
+  document.getElementById('btn-end').onclick = async function () {
+    await fetch('/api/session/end', { method: 'POST' });
+    tokenBox.classList.add('hidden');
+    tokenDisplay.textContent = '';
+    lambdaCli.textContent = '';
+    await refreshStatus();
+  };
+
+  document.getElementById('btn-copy-token').onclick = function () {
+    navigator.clipboard.writeText(tokenDisplay.textContent);
+  };
+  document.getElementById('btn-copy-cli').onclick = function () {
+    navigator.clipboard.writeText(lambdaCli.textContent);
+  };
+
+  refreshStatus();
+})();
+  </script>
+</body>
+</html>

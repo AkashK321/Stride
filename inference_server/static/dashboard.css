@@ -1,0 +1,146 @@
+body {
+  font-family: system-ui, sans-serif;
+  margin: 0;
+  padding: 1.5rem;
+  background: #0f1419;
+  color: #e6edf3;
+  line-height: 1.5;
+}
+
+header {
+  margin-bottom: 1.5rem;
+}
+
+h1 {
+  font-size: 1.35rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+}
+
+.muted {
+  color: #8b949e;
+  font-size: 0.9rem;
+}
+
+code {
+  background: #21262d;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+a {
+  color: #58a6ff;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+th, td {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #30363d;
+}
+
+th {
+  color: #8b949e;
+  font-weight: 500;
+}
+
+.ct {
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button {
+  margin-top: 0.75rem;
+  padding: 0.4rem 0.9rem;
+  background: #21262d;
+  border: 1px solid #30363d;
+  color: #e6edf3;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #30363d;
+}
+
+.session-panel {
+  margin: 1rem 0 1.25rem;
+  padding: 1rem;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  max-width: 52rem;
+}
+
+.session-panel h2 {
+  font-size: 1rem;
+  margin: 0 0 0.5rem;
+}
+
+.token-box {
+  margin-top: 0.75rem;
+}
+
+.token-box.hidden {
+  display: none;
+}
+
+.token-box pre {
+  margin: 0.35rem 0;
+  padding: 0.75rem;
+  background: #0d1117;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 0.75rem;
+  word-break: break-all;
+}
+
+.cli-snippet {
+  white-space: pre-wrap;
+}
+
+.small {
+  font-size: 0.8rem;
+}
+
+.detail .images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+figure {
+  margin: 0;
+}
+
+figcaption {
+  font-size: 0.85rem;
+  color: #8b949e;
+  margin-bottom: 0.35rem;
+}
+
+.detail img {
+  max-width: min(100%, 640px);
+  height: auto;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+}
+
+.json-block pre {
+  margin: 0;
+  padding: 1rem;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  overflow: auto;
+  font-size: 0.8rem;
+}

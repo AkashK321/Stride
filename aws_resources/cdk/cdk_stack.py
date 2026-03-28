@@ -202,6 +202,15 @@ class CdkStack(Stack):
             region
         )
 
+        # Optional: SageMaker-compatible HTTP POST /invocations when feature flag disables SageMaker.
+        # Set in cdk.context.json, e.g. "inferenceHttpUrl": "http://internal-host:8080" (VPC/LB/tunnel).
+        inference_http_url = self.node.try_get_context("inferenceHttpUrl")
+        if inference_http_url:
+            object_detection_handler.add_environment(
+                "INFERENCE_HTTP_URL",
+                str(inference_http_url),
+            )
+
         # Define the API Gateway REST API
         api = apigw.LambdaRestApi(
             self, "BusinessApi",
