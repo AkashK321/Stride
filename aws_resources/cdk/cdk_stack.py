@@ -235,7 +235,12 @@ class CdkStack(Stack):
         start.add_method("POST", integration=apigw.LambdaIntegration(static_navigation_handler))
 
         # Define the API Gateway WebSocket API
-        ws_api = apigw_v2.WebSocketApi(self, "StreamAPI")
+        # Explicit selection: client JSON must include "action": "frame" | "navigation" (etc.)
+        ws_api = apigw_v2.WebSocketApi(
+            self,
+            "StreamAPI",
+            route_selection_expression="$request.body.action",
+        )
         # Create a Stage (required for WebSockets)
         apigw_v2.WebSocketStage(self, "ProdStage",
             web_socket_api=ws_api,
