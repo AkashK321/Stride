@@ -23,6 +23,68 @@ python scripts/download_model.py   # optional: generic yolo11n for smoke tests
 
 **CPU vs GPU:** `pip install -r requirements.txt` pulls a CPU-capable PyTorch by default on supported platforms. For GPU, install a CUDA build of PyTorch that matches your environment (see [PyTorch install matrix](https://pytorch.org/get-started/locally/)), then reinstall `ultralytics` if needed.
 
+## One-command dev loop (`start_inference_server`)
+
+Use this when you want the **object-detection Lambda** in AWS to call your laptop over HTTPS (ngrok) without juggling multiple terminals and manual Lambda env edits.
+
+### Prerequisites
+
+- **AWS credentials** for the account that hosts the stack (`AWS_PROFILE`, SSO, or environment variables). The script runs `sts get-caller-identity` first so you can confirm the account.
+- **ngrok** installed and authenticated (`ngrok` on `PATH`, or set `NGROK_CMD` in `.env.inference` to the binary path).
+- **Physical Lambda name** for the object-detection function (CloudFormation → stack → Resources → handler → Physical ID), not the logical ID.
+- Optional: **`FEATURE_FLAGS_TABLE_NAME`** if you use `--set-sagemaker-off` so DynamoDB `enable_sagemaker_inference` is written as `false` (same shape as [integration tests](../aws_resources/backend/tests/integration/test_stream_api.py): partition key `feature_name`, attribute `value`).
+
+### Configure
+
+```bash
+cp .env.inference.example .env.inference
+# Edit OBJECT_DETECTION_LAMBDA_NAME, AWS_REGION, and optionally FEATURE_FLAGS_TABLE_NAME
+```
+
+### Run
+
+From `inference_server/`:
+
+```bash
+./start_inference_server.sh
+```
+
+With session gating (Lambda must send `X-Stride-Inference-Secret`; the script starts a session and merges `INFERENCE_HTTP_SECRET` on the Lambda):
+
+```bash
+INFERENCE_REQUIRE_SESSION=1 ./start_inference_server.sh
+```
+
+First time forcing HTTP instead of SageMaker (writes the feature flag; requires `FEATURE_FLAGS_TABLE_NAME`):
+
+```bash
+./start_inference_server.sh --set-sagemaker-off
+```
+
+**Manual tunnel:** set `SKIP_TUNNEL=1` and either `PUBLIC_URL=https://...` in `.env.inference` or pass `--public-url https://...` (for cloudflared or an existing ngrok session).
+
+**Teardown** (removes `INFERENCE_HTTP_URL` and `INFERENCE_HTTP_SECRET` from the Lambda only):
+
+```bash
+python scripts/start_dev_inference.py --teardown --yes
+```
+
+The script starts **ngrok** (unless skipped), waits for **`/ping`**, optionally **`POST /api/session/start`**, merges environment variables on the Lambda (never wipes unrelated keys), then runs **uvicorn** in the foreground. **Ctrl+C** stops uvicorn and the ngrok child.
+
+### Mobile app WebSocket URL
+
+This script does **not** change the Expo app. The app must still use the **same backend stack** WebSocket endpoint: set **`EXPO_PUBLIC_WS_API_URL`** in the frontend env (see [`frontend/.env.example`](../frontend/.env.example) and [`docs/FRONTEND.md`](../docs/FRONTEND.md)).
+
+### Troubleshooting
+
+| Symptom | What to check |
+|--------|-----------------|
+| `Lambda not found` | `OBJECT_DETECTION_LAMBDA_NAME` and `AWS_REGION` match the deployed function. |
+| Wrong AWS account | `aws sts get-caller-identity` / the identity line printed at startup. |
+| ngrok URL never appears | ngrok running; local API `http://127.0.0.1:4040/api/tunnels` reachable; free-tier session limits. |
+| Lambda still hits SageMaker | Run with `--set-sagemaker-off` (and correct `FEATURE_FLAGS_TABLE_NAME`), or set `enable_sagemaker_inference` to false manually in DynamoDB. |
+| `503` from `/invocations` with session mode | Start session from the dashboard or use `INFERENCE_REQUIRE_SESSION=0` for local-only testing; ensure `INFERENCE_HTTP_SECRET` on Lambda matches the current token. |
+
 ## Run
 
 ```bash
