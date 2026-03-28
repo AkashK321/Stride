@@ -108,6 +108,31 @@ class RdsMapClient {
         return null
     }
 
+    fun getLandmarkByName(name: String, conn: Connection): LandmarkDetails? {
+        val query = """
+            SELECT LandmarkID, Name, NearestNodeID, DistanceToNode, BearingFromNode, MapCoordinateX, MapCoordinateY 
+            FROM Landmarks 
+            WHERE Name = ? 
+            LIMIT 1
+        """
+        conn.prepareStatement(query).use { stmt -> 
+            stmt.setString(1, name)
+            val rs = stmt.executeQuery()
+            if (rs.next()) {
+                return LandmarkDetails(
+                    id = rs.getInt("LandmarkID"),
+                    name = rs.getString("Name"),
+                    nearestNodeId = rs.getString("NearestNodeID"),
+                    distanceToNode = rs.getDouble("DistanceToNode"),
+                    bearingFromNode = rs.getString("BearingFromNode") ?: "continue",
+                    coordX = rs.getInt("MapCoordinateX"),
+                    coordY = rs.getInt("MapCoordinateY")
+                )
+            }
+        }
+        return null
+    }
+
     fun getBuildingIdForNode(nodeId: String, conn: Connection): String? {
         val query = "SELECT BuildingID FROM MapNodes WHERE NodeIDString = ?"
         conn.prepareStatement(query).use { stmt -> 
