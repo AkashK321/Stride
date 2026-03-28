@@ -32,6 +32,7 @@ import kotlin.math.max
 
 private val METERS_TO_FEET = 3.28084
 private val FEET_TO_PIXELS = 10.0
+private val MAX_DISTANCE_FEET = 15.0
 
 class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGatewayV2WebSocketResponse> {
 
@@ -123,8 +124,7 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         val distanceFeet = primaryLandmark.distanceMeters * METERS_TO_FEET
         
         // Distance Threshold Check (Ignore CV if > 15 feet)
-        val maxDistanceFeet = 15.0
-        if (distanceFeet > maxDistanceFeet) {
+        if (distanceFeet > MAX_DISTANCE_FEET) {
             logger.log("Landmark '${primaryLandmark.obj.className}' detected, but ignored. Distance ($distanceFeet ft) exceeds 15 ft threshold.")
             return Pair(pdrX, pdrY)
         }
@@ -149,7 +149,7 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         // Calculate Dynamic Alpha (CV Weight)
         // alpha = maxAlpha at 0 ft, linearly decaying to 0.0 at 15 ft
         val maxAlpha = 0.90 // Cap trust at 90% to prevent jitter if bounding boxes fluctuate
-        var alpha = maxAlpha * (1.0 - (distanceFeet / maxDistanceFeet))
+        var alpha = maxAlpha * (1.0 - (distanceFeet / MAX_DISTANCE_FEET))
         
         // Safety clamp to ensure alpha stays between 0.0 and 1.0
         alpha = max(0.0, Math.min(1.0, alpha))
