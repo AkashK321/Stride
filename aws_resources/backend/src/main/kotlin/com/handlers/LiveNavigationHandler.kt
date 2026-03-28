@@ -112,25 +112,24 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         logger: LambdaLogger
     ): Pair<Double, Double> {
         
-        // 1. Return early if no objects detected
+        // Return early if no objects detected
         if (detectedObjects.isEmpty()) {
             return Pair(pdrX, pdrY)
         }
 
-        // 2. Find the closest confident landmark
+        // Find the closest confident landmark
         val primaryLandmark = detectedObjects.minByOrNull { it.distanceMeters } ?: return Pair(pdrX, pdrY)
         
         val distanceFeet = primaryLandmark.distanceMeters * METERS_TO_FEET
         
-        // 3. Distance Threshold Check (Ignore CV if > 15 feet)
+        // Distance Threshold Check (Ignore CV if > 15 feet)
         val maxDistanceFeet = 15.0
         if (distanceFeet > maxDistanceFeet) {
             logger.log("Landmark '${primaryLandmark.obj.className}' detected, but ignored. Distance ($distanceFeet ft) exceeds 15 ft threshold.")
             return Pair(pdrX, pdrY)
         }
 
-        // 4. Query RDS for the landmark's absolute map coordinates 
-        // Note: You must implement getLandmarkByName in RdsMapClient
+        // Get Landmark Object from RDS
         val dbLandmark = rdsMapClient.getDbConnection().use { conn -> 
                 rdsMapClient.getLandmarkByName(primaryLandmark.obj.className, conn)
             }
@@ -139,15 +138,15 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
             return Pair(pdrX, pdrY)
         }
 
-        // 5. Calculate Absolute Position from CV & Compass
+        // Calculate Absolute Position from CV & Compass
         val distancePixels = distanceFeet * FEET_TO_PIXELS
         val headingRad = Math.toRadians(headingDegrees)
 
-        // Using your coordinate system (Y increases downwards, Heading 0 is North)
+        // Y increases downwards, Heading 0 is North
         val cvEstimatedX = dbLandmark.coordX - (distancePixels * Math.sin(headingRad))
         val cvEstimatedY = dbLandmark.coordY + (distancePixels * Math.cos(headingRad))
 
-        // 6. Calculate Dynamic Alpha (CV Weight)
+        // Calculate Dynamic Alpha (CV Weight)
         // alpha = maxAlpha at 0 ft, linearly decaying to 0.0 at 15 ft
         val maxAlpha = 0.90 // Cap trust at 90% to prevent jitter if bounding boxes fluctuate
         var alpha = maxAlpha * (1.0 - (distanceFeet / maxDistanceFeet))
@@ -155,7 +154,7 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         // Safety clamp to ensure alpha stays between 0.0 and 1.0
         alpha = max(0.0, Math.min(1.0, alpha))
 
-        // 7. Apply Complementary Filter
+        // Apply Complementary Filter
         val fusedX = (alpha * cvEstimatedX) + ((1.0 - alpha) * pdrX)
         val fusedY = (alpha * cvEstimatedY) + ((1.0 - alpha) * pdrY)
 
