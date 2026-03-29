@@ -15,4 +15,6 @@
 | UI-07 | Integration | FR-8 | React Native Testing Library | Yes | Planned |
 | WCAG-09 | Integration, Unit | NFR-2 | React Native Testing Library, Jest | Yes | Planned |
 | DEPLOY-10 | System | NFR-3 | Detox | Yes | Planned |
+| MT-01 | Unit | FR-1 | Pytest | Yes | Yes |
+| MT-02 | Integration | FR-1 | Pytest | Yes | Yes |
 

@@ -92,3 +92,12 @@ aws_resources/test_results/*.json
 
 aws_resources/backend/build/*
 aws_resources/backend/tests/integration/.env
+
+# Model training datasets (raw images must never be committed)
+model_training/bhee_raw_dataset/*
+!model_training/bhee_raw_dataset/.gitkeep
+model_training/bhee_clean_dataset/*
+!model_training/bhee_clean_dataset/.gitkeep
+model_training/logs/*
+!model_training/logs/.gitkeep
+model_training/.venv/
