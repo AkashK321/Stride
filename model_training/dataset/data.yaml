@@ -1,0 +1,11 @@
+# YOLO dataset configuration for BHEE door sign detection
+# Used by: yolo detect train data=data.yaml model=yolo11n.pt
+
+path: .
+train: images/train
+val: images/val
+test: images/test
+
+nc: 1
+names:
+  0: door_sign

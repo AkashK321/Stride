@@ -1,0 +1,10 @@
+# Class ontology for BHEE door sign detection
+# Stage 1 object detection: single unified class for all door signs
+#
+# Bounding box rules:
+#   - Encompass the ENTIRE physical sign (shape + context against the wall)
+#   - Do NOT just box the text — include the sign's border and mounting area
+#   - Keep boxes tight but fully encompassing
+
+classes:
+  - door_sign
