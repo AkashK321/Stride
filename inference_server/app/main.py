@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.inference_core import load_yolo, resolve_model_path
-from app.logging_store import LogStore
+from app.persistence.sqlite_store import SqliteStore
 from app.routes import dashboard, invocations
 from app.session_gate import InferenceSessionState
 
@@ -20,10 +20,23 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     path = resolve_model_path()
-    model = load_yolo(path)
-    app.state.model = model
-    app.state.log_store = LogStore()
+    store = SqliteStore(BASE_DIR)
+    default_model = store.upsert_model(display_name=path.stem, file_path=str(path))
+    app.state.store = store
+    app.state.model_cache = {}
+    app.state.current_session_id = None
+    app.state.current_model_id = int(default_model["id"]) if default_model else None
+    app.state.current_model_path = str(path)
+    app.state.model = load_yolo(path)
     app.state.inference_session = InferenceSessionState()
+    active_session = store.get_active_session()
+    if active_session:
+        app.state.current_session_id = int(active_session["id"])
+        app.state.current_model_id = int(active_session["selected_model_id"])
+        app.state.current_model_path = str(active_session["model_file_path"])
+        active_model = load_yolo(Path(app.state.current_model_path))
+        if active_model is not None:
+            app.state.model = active_model
     yield
 
 

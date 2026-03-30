@@ -3,28 +3,28 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Log #{{ entry.id }}</title>
+  <title>Log #{{ entry["id"] }}</title>
   <link rel="stylesheet" href="/static/dashboard.css"/>
 </head>
 <body>
   <header>
     <p><a href="/">← Back to list</a></p>
-    <h1>Invocation #{{ entry.id }}</h1>
-    <p class="muted">Latency: {{ "%.2f"|format(entry.latency_ms) }} ms · HTTP {{ entry.http_status }} ·
-      {{ entry.content_type or "no content-type" }}</p>
+    <h1>Invocation #{{ entry["id"] }}</h1>
+    <p class="muted">Latency: {{ "%.2f"|format(entry["latency_ms"]) }} ms · HTTP {{ entry["http_status"] }} ·
+      {{ entry["content_type"] or "no content-type" }}</p>
   </header>
   <main class="detail">
     <section class="images">
-      {% if entry.request_image %}
+      {% if entry["has_image"] %}
       <figure>
         <figcaption>Request image</figcaption>
-        <img src="/api/logs/{{ entry.id }}/image" alt="request"/>
+        <img src="/api/logs/{{ entry["id"] }}/image" alt="request"/>
       </figure>
       {% endif %}
-      {% if entry.overlay_png %}
+      {% if entry["has_overlay"] %}
       <figure>
         <figcaption>Detections overlay</figcaption>
-        <img src="/api/logs/{{ entry.id }}/overlay" alt="overlay"/>
+        <img src="/api/logs/{{ entry["id"] }}/overlay" alt="overlay"/>
       </figure>
       {% endif %}
     </section>

@@ -16,7 +16,7 @@ ALLOWED_CONTENT_TYPES = frozenset(
 )
 
 DEFAULT_MODEL_URL = (
-    "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n.pt"
+    "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11l.pt"
 )
 
 
@@ -27,7 +27,7 @@ def base_dir() -> Path:
 def default_cache_model_path() -> Path:
     d = base_dir() / ".cache"
     d.mkdir(parents=True, exist_ok=True)
-    return d / "yolo11n.pt"
+    return d / "yolo11l.pt"
 
 
 def resolve_model_path() -> Path:

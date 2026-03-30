@@ -32,7 +32,9 @@ async def ping(request: Request) -> JSONResponse:
 async def invocations(request: Request) -> JSONResponse:
     t0 = time.perf_counter()
     model = getattr(request.app.state, "model", None)
-    log_store = getattr(request.app.state, "log_store", None)
+    store = getattr(request.app.state, "store", None)
+    session_id = getattr(request.app.state, "current_session_id", None)
+    model_id = getattr(request.app.state, "current_model_id", None)
 
     content_type = request.headers.get("content-type")
     body = await request.body()
@@ -48,13 +50,16 @@ async def invocations(request: Request) -> JSONResponse:
                 ),
             }
             latency_ms = (time.perf_counter() - t0) * 1000
-            if log_store:
-                log_store.add(
+            if store:
+                store.add_log(
                     content_type=content_type,
                     latency_ms=latency_ms,
                     http_status=503,
                     request_image=body,
                     response_body=out,
+                    overlay_png=None,
+                    session_id=session_id,
+                    model_id=model_id,
                 )
             return JSONResponse(out, status_code=503)
         supplied = request.headers.get(HEADER_NAME)
@@ -67,26 +72,32 @@ async def invocations(request: Request) -> JSONResponse:
                 ),
             }
             latency_ms = (time.perf_counter() - t0) * 1000
-            if log_store:
-                log_store.add(
+            if store:
+                store.add_log(
                     content_type=content_type,
                     latency_ms=latency_ms,
                     http_status=401,
                     request_image=body,
                     response_body=out,
+                    overlay_png=None,
+                    session_id=session_id,
+                    model_id=model_id,
                 )
             return JSONResponse(out, status_code=401)
 
     if model is None:
         out = {"success": False, "error": "Model not loaded"}
         latency_ms = (time.perf_counter() - t0) * 1000
-        if log_store:
-            log_store.add(
+        if store:
+            store.add_log(
                 content_type=content_type,
                 latency_ms=latency_ms,
                 http_status=500,
                 request_image=body,
                 response_body=out,
+                overlay_png=None,
+                session_id=session_id,
+                model_id=model_id,
             )
         return JSONResponse(out, status_code=500)
 
@@ -103,14 +114,16 @@ async def invocations(request: Request) -> JSONResponse:
         except Exception:
             overlay_png = None
 
-    if log_store:
-        log_store.add(
+    if store:
+        store.add_log(
             content_type=content_type,
             latency_ms=latency_ms,
             http_status=status,
             request_image=body,
             response_body=body_dict,
             overlay_png=overlay_png,
+            session_id=session_id,
+            model_id=model_id,
         )
 
     return JSONResponse(body_dict, status_code=status)
