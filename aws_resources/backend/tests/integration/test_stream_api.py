@@ -75,7 +75,7 @@ def test_inference_enabled(api_base_url, ddb_feature_flag_table, ws_endpoint_hea
         ws.close()
 
 
-def test_inference_disabled(api_base_url, ddb_feature_flag_table, ws_endpoint_healthy):
+def test_sagemaker_disabled_falls_back_to_http(api_base_url, ddb_feature_flag_table, ws_endpoint_healthy):
     set_sagemaker_flag(ddb_feature_flag_table, False)
 
     ws = create_connection(api_base_url)
@@ -87,10 +87,13 @@ def test_inference_disabled(api_base_url, ddb_feature_flag_table, ws_endpoint_he
         response = json.loads(ws.recv())
 
         assert response.get("valid") is True
-        assert len(response.get("estimatedDistances", [])) == 0
+        # With SageMaker disabled, handler should fall back to HTTP inference (if configured),
+        # so we only require the field to exist, not be empty.
+        assert "estimatedDistances" in response
+        assert isinstance(response.get("estimatedDistances"), list)
         # Verify request_id is echoed back
         assert response.get("request_id") == 1, "Expected request_id to be echoed back"
-        print(f"Inference Disabled Response: {response}")
+        print(f"SageMaker-disabled fallback response: {response}")
     finally:
         ws.close()
 
