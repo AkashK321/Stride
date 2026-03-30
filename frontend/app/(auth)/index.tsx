@@ -8,289 +8,400 @@
  * authenticate. Future authentication flows (login, forgot password, etc.) will be added
  * alongside this screen in the (auth) directory.
  */
+
 import * as React from "react";
-import { View, Text, Alert, Pressable, Keyboard, TouchableWithoutFeedback, TextInput, ScrollView } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, Pressable } from "react-native";
+import { useNavigation, router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { CameraView, useCameraPermissions } from "expo-camera";
+import * as Speech from "expo-speech";
 import { Ionicons } from "@expo/vector-icons";
-import Button from "../../components/Button";
-import TextField from "../../components/TextField";
-import Label from "../../components/Label";
-import { spacing } from "../../theme/spacing";
-import { typography } from "../../theme/typography";
+import * as Location from "expo-location";
+import * as Haptics from "expo-haptics";
+import SearchSheet from "../../components/SearchSheet";
+import type { SearchSheetRef } from "../../components/SearchSheet";
+import NavigationInstructionsDropdown from "../../components/NavigationInstructions/NavigationInstructionsDropdown";
+import { formatInstruction } from "../../components/NavigationInstructions/NavigationInstructionItem";
+import {
+  LandmarkResult,
+  NavigationInstruction,
+  startNavigation,
+} from "../../services/api";
 import { colors } from "../../theme/colors";
-import { login } from "../../services/api";
-import { useAuth } from "../../contexts/AuthContext";
+import { typography } from "../../theme/typography";
+import { spacing } from "../../theme/spacing";
+import SensorService from "../../services/SensorService";
+import type { HeadingAlignmentResult } from "../../services/SensorService";
 
-export default function Landing() {
-  const router = useRouter();
-  const { login: authLogin, devBypass } = useAuth();
-  const usernameRef = React.useRef<TextInput>(null);
-  const passwordRef = React.useRef<TextInput>(null);
-  const [username, setUsername] = React.useState("");
-  const [usernameError, setUsernameError] = React.useState("");
-  const [password, setPassword] = React.useState("");
-  const [passwordError, setPasswordError] = React.useState("");
-  const [isLoading, setIsLoading] = React.useState(false);
-  const [showPassword, setShowPassword] = React.useState(false);
+export default function Home() {
+  const sheetRef = React.useRef<SearchSheetRef>(null);
+  const navigation = useNavigation();
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [selectedDestination, setSelectedDestination] =
+    React.useState<LandmarkResult | null>(null);
+  const [navigationInstructions, setNavigationInstructions] =
+    React.useState<NavigationInstruction[] | null>(null);
+  const [navigationError, setNavigationError] = React.useState<string | null>(null);
+  const [navigationLoading, setNavigationLoading] = React.useState(false);
+  const [speakerMode, setSpeakerMode] = React.useState(false);
+  const [alignment, setAlignment] = React.useState<HeadingAlignmentResult | null>(null);
 
-  const handleSignIn = async () => {
-    // Clear previous errors
-    setUsernameError("");
-    setPasswordError("");
+  const wasAlignedRef = React.useRef<boolean>(false);
+  const headingSubscriptionRef = React.useRef<Location.LocationSubscription | null>(null);
 
-    // Validate inputs
-    if (!username.trim()) {
-      setUsernameError("Username is required");
+  const toggleSpeakerMode = React.useCallback(() => {
+    setSpeakerMode((prev) => !prev);
+  }, []);
+
+  React.useEffect(() => {
+    if (!speakerMode || !navigationInstructions || navigationInstructions.length === 0) {
+      return;
+    }
+    const current = navigationInstructions[0];
+    const text = formatInstruction(current);
+    Speech.speak(text, { language: "en" });
+    return () => {
+      Speech.stop();
+    };
+  }, [speakerMode, navigationInstructions]);
+
+  React.useEffect(() => {
+    if (!speakerMode) {
+      Speech.stop();
+    }
+  }, [speakerMode]);
+
+  // Heading subscription — starts when navigation is active, cleans up when it ends
+  React.useEffect(() => {
+    if (!navigationInstructions || navigationInstructions.length === 0) {
+      headingSubscriptionRef.current?.remove();
+      headingSubscriptionRef.current = null;
+      setAlignment(null);
       return;
     }
 
-    if (!password.trim()) {
-      setPasswordError("Password is required");
-      return;
-    }
-
-    setIsLoading(true);
-
-    try {
-      // Call login API
-      const response = await login({
-        username: username.trim(),
-        password: password.trim(),
-      });
-
-      // Store tokens and update auth state
-      await authLogin({
-        accessToken: response.accessToken,
-        idToken: response.idToken,
-        refreshToken: response.refreshToken,
-      });
-
-      // Navigation will be handled by AuthContext
-    } catch (error) {
-      // Handle error
-      const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred";
-      
-      // Show error alert
-      Alert.alert("Sign In Failed", errorMessage);
-      
-      // Set field errors if applicable
-      if (errorMessage.toLowerCase().includes("user") || errorMessage.toLowerCase().includes("not found")) {
-        setUsernameError("Invalid username or password");
-      } else if (errorMessage.toLowerCase().includes("password")) {
-        setPasswordError("Invalid password");
+    async function startHeadingWatch() {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        console.warn("[Home] Location permission denied — heading feedback unavailable");
+        return;
       }
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
-  const handleDevBypass = () => {
-    Alert.alert(
-      "Developer Mode Active",
-      "You are in developer bypass mode. There is no live backend endpoint configured.\n\n" +
-        "To test with a live backend, you must:\n" +
-        "1. Deploy the backend stack\n" +
-        "2. Log in with valid credentials\n\n" +
-        "Frontend-only features can be tested without a backend.",
-      [
-        {
-          text: "OK",
-          onPress: () => {
-            devBypass();
-          },
-        },
-      ]
+      const sub = await Location.watchHeadingAsync((headingData) => {
+        const degrees = headingData.trueHeading ?? headingData.magHeading;
+        SensorService.pushHeading(degrees);
+
+        const targetDeg = navigationInstructions![0].heading_degrees ?? null;
+        const result = SensorService.checkAlignment(targetDeg);
+        setAlignment(result);
+
+        // Haptics only on state change
+        if (result.isAligned && !wasAlignedRef.current) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        } else if (!result.isAligned && wasAlignedRef.current) {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
+        wasAlignedRef.current = result.isAligned;
+      });
+
+      headingSubscriptionRef.current = sub;
+    }
+
+    startHeadingWatch();
+
+    return () => {
+      headingSubscriptionRef.current?.remove();
+      headingSubscriptionRef.current = null;
+    };
+  }, [navigationInstructions]);
+
+  const handleSelectDestination = React.useCallback((landmark: LandmarkResult) => {
+    router.push({
+      pathname: "/navigation/navigation",
+      params: {
+        landmark_id: String(landmark.landmark_id),
+        name: landmark.name,
+        floor_number: String(landmark.floor_number),
+      },
+    });
+  }, []);
+
+  const handleExitNavigation = React.useCallback(() => {
+    setNavigationInstructions(null);
+    setNavigationError(null);
+    setSelectedDestination(null);
+    sheetRef.current?.collapse?.();
+  }, []);
+
+  React.useEffect(() => {
+    const parent = navigation.getParent?.();
+    if (!parent) return;
+
+    if (navigationInstructions && navigationInstructions.length > 0) {
+      parent.setOptions({ tabBarStyle: { display: "none" } });
+    } else {
+      parent.setOptions({ tabBarStyle: undefined });
+    }
+  }, [navigation, navigationInstructions]);
+
+  const totalDistanceFeet = React.useMemo(() => {
+    if (!navigationInstructions || navigationInstructions.length === 0) return null;
+    const rawTotal = navigationInstructions.reduce((sum, inst) => sum + inst.distance_feet, 0);
+    return Math.round(rawTotal / 5) * 5;
+  }, [navigationInstructions]);
+
+  if (!cameraPermission) {
+    return React.createElement(
+      View,
+      { style: styles.centered },
+      React.createElement(ActivityIndicator, { size: "large", color: colors.primary }),
     );
-  };
+  }
+
+  if (!cameraPermission.granted) {
+    return React.createElement(
+      GestureHandlerRootView,
+      { style: styles.root },
+      React.createElement(
+        View,
+        { style: styles.centered },
+        React.createElement(Text, { style: styles.permissionText },
+          "Camera permission is required to use the home screen.",
+        ),
+        React.createElement(Text, { style: styles.permissionLink, onPress: requestCameraPermission },
+          "Grant Camera Permission",
+        ),
+      ),
+    );
+  }
 
   return React.createElement(
-    TouchableWithoutFeedback,
-    {
-      onPress: Keyboard.dismiss,
-      accessibilityLabel: "Dismiss keyboard",
-      accessibilityRole: "button",
-      accessible: false, // This is a container, not an interactive element
-    },
+    GestureHandlerRootView,
+    { style: styles.root },
+
+    React.createElement(CameraView, { style: StyleSheet.absoluteFill, facing: "back" }),
+
     React.createElement(
       SafeAreaView,
-      {
-        style: {
-          flex: 1,
-        },
-        edges: ["top", "bottom"],
-      },
-      React.createElement(
-        ScrollView,
-        {
-          contentContainerStyle: {
-            flexGrow: 1,
-            justifyContent: "flex-start",
-            alignItems: "center",
-            gap: spacing.sm,
-            paddingTop: spacing.xl,
-            padding: spacing.xl,
-          },
-          keyboardShouldPersistTaps: "handled",
-          showsVerticalScrollIndicator: false,
-        },
+      { style: styles.overlay, edges: ["top"] as const },
+
+      navigationLoading &&
         React.createElement(
-          Text,
-          {
-            style: {
-              ...typography.h1,
-              fontSize: 40,
-              marginBottom: spacing.sm,
-            },
-            accessibilityRole: "header",
-            accessibilityLabel: "Welcome back to Stride",
-          },
-          "Welcome back to ",
-          React.createElement(
-            Text,
-            {
-              style: {
-                color: colors.primary,
-              },
-              accessible: false, // Nested text doesn't need separate accessibility
-            },
-            "Stride."
-          )
-        ),
-        React.createElement(
-          Label,
-          {
-            variant: "formHeader",
-            style: {
-              paddingTop: spacing.lg,
-              marginBottom: spacing.md,
-              alignSelf: "flex-start",
-              color: colors.textSecondary,
-            },
-            accessibilityLabel: "Sign in to your account",
-          },
-          "Sign in to your account"
-        ),
-        React.createElement(TextField, {
-          ref: usernameRef,
-          value: username,
-          onChangeText: setUsername,
-          error: usernameError,
-          autoCapitalize: "none",
-          autoComplete: "username",
-          returnKeyType: "next",
-          onSubmitEditing: () => {
-            passwordRef.current?.focus();
-          },
-          placeholder: "Username",
-          accessibilityLabel: "Username",
-          accessibilityHint: "Enter your username. Press next to move to password field.",
-          style: {
-            width: "100%",
-            marginBottom: spacing.md,
-          },
-        }),
-        React.createElement(TextField, {
-          ref: passwordRef,
-          value: password,
-          onChangeText: setPassword,
-          error: passwordError,
-          secureTextEntry: !showPassword,
-          autoCapitalize: "none",
-          autoComplete: "password",
-          returnKeyType: "go",
-          onSubmitEditing: handleSignIn,
-          placeholder: "Password",
-          accessibilityLabel: "Password",
-          accessibilityHint: "Enter your password. Press go to sign in.",
-          style: {
-            width: "100%",
-            marginBottom: spacing.md,
-          },
-          rightIcon: React.createElement(
-            Pressable,
-            {
-              onPress: () => setShowPassword(!showPassword),
-              style: {
-                padding: spacing.xs,
-              },
-              accessibilityLabel: showPassword ? "Hide password" : "Show password",
-              accessibilityRole: "button",
-              accessibilityHint: showPassword ? "Tap to hide your password" : "Tap to show your password",
-            },
-            React.createElement(Ionicons, {
-              name: showPassword ? "eye-off-outline" : "eye-outline",
-              size: 20,
-              color: colors.textSecondary,
-              accessible: false, // Icon is decorative, accessibility handled by Pressable
-            }),
-          ),
-        }),
-        React.createElement(Button, {
-          onPress: handleSignIn,
-          title: "Sign in",
-          loading: isLoading,
-          disabled: isLoading,
-          style: {
-            marginTop: spacing.xl,
-          },
-          accessibilityLabel: "Sign in to your account",
-          accessibilityRole: "button",
-          accessibilityHint: isLoading ? "Signing in, please wait" : "Sign in to your account to continue",
-        }),
-        React.createElement(Button, {
-          onPress: () => router.push("/register"),
-          title: "Create an account",
-          variant: "secondary",
-          style: {
-            marginTop: spacing.md,
-          },
-          accessibilityLabel: "Create an account",
-          accessibilityRole: "button",
-          accessibilityHint: "Navigate to the registration screen to create a new account",
-        }),
-        // Developer bypass button - only visible in development builds
-        __DEV__ && React.createElement(
           View,
-          {
-            style: {
-              marginTop: spacing.xl * 2,
-              width: "100%",
-              borderTopWidth: 1,
-              borderTopColor: colors.placeholder,
-              paddingTop: spacing.lg,
-              alignItems: "center",
-            },
-          },
+          { style: styles.loadingBanner },
+          React.createElement(ActivityIndicator, { size: "small", color: colors.buttonPrimaryText }),
+          React.createElement(Text, { style: styles.loadingText }, "Calculating route…"),
+        ),
+
+      navigationError &&
+        React.createElement(
+          View,
+          { style: styles.errorBanner },
+          React.createElement(Text, { style: styles.errorText }, navigationError),
+        ),
+
+      navigationInstructions &&
+        React.createElement(NavigationInstructionsDropdown, {
+          instructions: navigationInstructions,
+          onExit: handleExitNavigation,
+        }),
+    ),
+
+    selectedDestination &&
+      navigationInstructions &&
+      React.createElement(
+        View,
+        { style: styles.bottomNavContainer },
+
+        // Alignment badge
+        alignment !== null && navigationInstructions[0].heading_degrees !== null &&
           React.createElement(
-            Text,
+            View,
             {
-              style: {
-                ...typography.body,
-                color: colors.textSecondary,
-                marginBottom: spacing.sm,
-                fontSize: 12,
-              },
+              style: [
+                styles.alignmentBadge,
+                alignment.isAligned && styles.alignmentBadgeAligned,
+              ],
             },
-            "Development Only"
+            React.createElement(
+              Text,
+              { style: styles.alignmentBadgeText },
+              alignment.isAligned
+                ? "✓ Facing correct direction"
+                : alignment.turnDirection === "left"
+                  ? `↺ Turn left  ${alignment.degreesOff}°`
+                  : `↻ Turn right  ${alignment.degreesOff}°`,
+            ),
           ),
-          React.createElement(Button, {
-            onPress: handleDevBypass,
-            title: "Developer Bypass",
-            variant: "secondary",
-            size: "small",
-            style: {
-              borderStyle: "dashed" as any,
-              borderWidth: 1,
-              borderColor: colors.secondary,
-            },
-            accessibilityLabel: "Developer bypass login",
+
+        React.createElement(
+          Pressable,
+          {
+            style: styles.speakerButton,
+            onPress: toggleSpeakerMode,
             accessibilityRole: "button",
-            accessibilityHint: "Skip authentication and enter the app in developer mode. No backend endpoints will be available.",
+            accessibilityLabel: speakerMode ? "Speaker on, tap to turn off" : "Speaker off, tap to turn on",
+          },
+          React.createElement(Ionicons, {
+            name: speakerMode ? "volume-high" : "volume-mute-outline",
+            size: 28,
+            color: speakerMode ? colors.primary : colors.textSecondary,
           }),
         ),
-      )
-    ),
+
+        React.createElement(
+          View,
+          { style: styles.bottomNavBar },
+          React.createElement(
+            View,
+            { style: styles.bottomNavTextContainer },
+            React.createElement(Text, { style: styles.bottomNavDestination }, selectedDestination.name),
+            totalDistanceFeet !== null &&
+              React.createElement(Text, { style: styles.bottomNavDistance }, `${totalDistanceFeet} ft remaining`),
+          ),
+          React.createElement(
+            Pressable,
+            {
+              style: styles.bottomNavEndButton,
+              onPress: handleExitNavigation,
+              accessibilityRole: "button",
+              accessibilityLabel: "End navigation",
+            },
+            React.createElement(Text, { style: styles.bottomNavEndButtonText }, "End"),
+          ),
+        ),
+      ),
+
+    !navigationInstructions &&
+      React.createElement(SearchSheet, {
+        ref: sheetRef,
+        onSelectDestination: handleSelectDestination,
+      }),
   );
 }
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: "#000",
+  },
+  overlay: {
+    flex: 1,
+  },
+  centered: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: spacing.xl,
+    backgroundColor: colors.background,
+  },
+  permissionText: {
+    ...typography.body,
+    textAlign: "center",
+    marginBottom: spacing.md,
+    color: colors.text,
+  },
+  permissionLink: {
+    ...typography.body,
+    color: colors.primary,
+    fontWeight: "700",
+  },
+  loadingBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.secondary,
+  },
+  loadingText: {
+    ...typography.label,
+    color: colors.buttonPrimaryText,
+    marginLeft: spacing.sm,
+  },
+  errorBanner: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: "#FEF2F2",
+  },
+  errorText: {
+    ...typography.label,
+    color: colors.danger,
+  },
+  bottomNavContainer: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+  },
+  alignmentBadge: {
+    backgroundColor: "rgba(0,0,0,0.6)",
+    borderRadius: 20,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  alignmentBadgeAligned: {
+    backgroundColor: "rgba(22, 163, 74, 0.85)",
+  },
+  alignmentBadgeText: {
+    ...typography.label,
+    color: "#FFFFFF",
+    fontWeight: "600",
+    fontSize: 15,
+  },
+  speakerButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.background,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.backgroundSecondary,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: spacing.sm,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  bottomNavBar: {
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.background,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.backgroundSecondary,
+  },
+  bottomNavTextContainer: {
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  bottomNavDestination: {
+    ...typography.h3,
+    fontSize: 18,
+    color: colors.text,
+  },
+  bottomNavDistance: {
+    ...typography.label,
+    marginTop: 2,
+    color: colors.textSecondary,
+  },
+  bottomNavEndButton: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 999,
+    backgroundColor: colors.danger,
+  },
+  bottomNavEndButtonText: {
+    ...typography.button,
+    color: colors.buttonPrimaryText,
+  },
+});
 
