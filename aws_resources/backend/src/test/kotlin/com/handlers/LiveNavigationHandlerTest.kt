@@ -5,6 +5,7 @@ import com.amazonaws.services.lambda.runtime.LambdaLogger
 import com.amazonaws.services.lambda.runtime.events.APIGatewayV2WebSocketEvent
 import com.amazonaws.services.lambda.runtime.events.APIGatewayV2WebSocketEvent.RequestContext
 import com.models.LandmarkDetails
+import com.models.BoundingBox
 import com.services.DynamoDbTableClient
 import com.services.RdsMapClient
 import io.mockk.*
@@ -57,6 +58,89 @@ class LiveNavigationHandlerTest {
     @AfterEach
     fun teardown() {
         unmockkAll() // Clean up mocks after every test to prevent cross-contamination
+    }
+
+    // --- Helper for Private Method Testing ---
+    
+    private fun invokeFuseLocationWithLandmarks(
+        pdrX: Double,
+        pdrY: Double,
+        headingDegrees: Double,
+        detectedObjects: List<DetectedObject>,
+        logger: LambdaLogger
+    ): Pair<Double, Double> {
+        val method = LiveNavigationHandler::class.java.getDeclaredMethod(
+            "fuseLocationWithLandmarks",
+            Double::class.java,
+            Double::class.java,
+            Double::class.java,
+            List::class.java,
+            LambdaLogger::class.java
+        )
+        method.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        return method.invoke(handler, pdrX, pdrY, headingDegrees, detectedObjects, logger) as Pair<Double, Double>
+    }
+
+    // --- CV Localization Fusion Tests ---
+
+    @Test
+    fun `fuseLocationWithLandmarks should return PDR coordinates when no objects are detected`() {
+        val result = invokeFuseLocationWithLandmarks(10.0, 20.0, 90.0, emptyList(), mockLogger)
+        assertEquals(Pair(10.0, 20.0), result)
+    }
+
+    @Test
+    fun `fuseLocationWithLandmarks should return PDR coordinates when object is beyond 15ft threshold`() {
+        val detectedObj = DetectedObject(
+            obj = BoundingBox(0, 0, 10, 10, "door", 0.9f),
+            distanceMeters = 5.0 // 5.0 meters is ~16.4 ft (Exceeds 15ft threshold)
+        )
+        val result = invokeFuseLocationWithLandmarks(10.0, 20.0, 90.0, listOf(detectedObj), mockLogger)
+        assertEquals(Pair(10.0, 20.0), result)
+        verify { mockLogger.log(match<String> { it.contains("exceeds 15 ft threshold") }) }
+    }
+
+    @Test
+    fun `fuseLocationWithLandmarks should return PDR coordinates when landmark is not in RDS`() {
+        val detectedObj = DetectedObject(
+            obj = BoundingBox(0, 0, 10, 10, "unknown_landmark", 0.9f),
+            distanceMeters = 2.0 // ~6.5 ft, well within threshold
+        )
+        val result = invokeFuseLocationWithLandmarks(10.0, 20.0, 90.0, listOf(detectedObj), mockLogger)
+        assertEquals(Pair(10.0, 20.0), result)
+        verify { mockLogger.log(match<String> { it.contains("not found in RDS database") }) }
+    }
+
+    @Test
+    fun `fuseLocationWithLandmarks should apply complementary filter when valid landmark is close`() {
+        val mockLandmark = mockk<LandmarkDetails>()
+        every { mockLandmark.coordX } returns 100
+        every { mockLandmark.coordY } returns 0
+        every { anyConstructed<RdsMapClient>().getLandmarkByName("fire_extinguisher", any()) } returns mockLandmark
+
+        val detectedObj = DetectedObject(
+            obj = BoundingBox(0, 0, 10, 10, "fire_extinguisher", 0.9f),
+            distanceMeters = 3.048 // Exactly 10.0 feet
+        )
+
+        /*
+         * Setup constraints for math verification:
+         * PDR is at (120, 120)
+         * Heading is 0.0 (Looking North/Up)
+         * Landmark is at (100, 0)
+         * Distance is 10 ft -> 100 pixels.
+         * CV Estimate X: 100 - (100 * sin(0)) = 100
+         * CV Estimate Y: 0 + (100 * cos(0)) = 100
+         * Alpha calc: maxAlpha(0.9) * (1 - (10ft / 15ft)) = 0.9 * 0.3333 = 0.30
+         * Fused X: (0.3 * 100) + (0.7 * 120) = 30 + 84 = 114.0
+         * Fused Y: (0.3 * 100) + (0.7 * 120) = 30 + 84 = 114.0
+         */
+        val result = invokeFuseLocationWithLandmarks(120.0, 120.0, 0.0, listOf(detectedObj), mockLogger)
+        
+        // Asserting with a delta to handle floating point imprecision
+        assertEquals(114.0, result.first, 0.01)
+        assertEquals(114.0, result.second, 0.01)
     }
 
     @Test
