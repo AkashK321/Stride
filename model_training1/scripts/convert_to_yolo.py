@@ -20,12 +20,30 @@ Usage:
 import argparse
 import json
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import parse_qs, unquote, urlparse
 
 import yaml
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = SCRIPT_DIR.parent
+
+
+def image_stem_from_label_studio_field(image_field: str) -> str:
+    """
+    Label Studio stores `data.image` as a filename, a /data/local-files/?d=... URL,
+    or a full http(s) URL. Path().stem breaks on '?d=foo.jpg'. Extract the real stem.
+    """
+    if not image_field:
+        return ""
+    s = unquote(image_field.strip())
+    parsed = urlparse(s)
+    if parsed.query:
+        q = parse_qs(parsed.query)
+        if "d" in q and q["d"]:
+            return Path(q["d"][0]).stem
+    # strip query fragment for normal paths / URLs
+    base = s.split("?")[0].split("#")[0]
+    return Path(base).stem
 
 
 def load_classes(config_path=None):
@@ -55,11 +73,14 @@ def convert_label_studio_to_yolo(export_path, output_dir, classes):
 
     class_to_id = {name: idx for idx, name in enumerate(classes)}
 
-    stats = {"total_images": 0, "total_boxes": 0, "skipped_labels": set()}
+    stats = {"total_images": 0, "total_boxes": 0, "skipped_labels": set(), "skipped_tasks": 0}
 
     for task in tasks:
         image_url = task.get("data", {}).get("image", "")
-        image_name = Path(unquote(image_url)).stem
+        image_name = image_stem_from_label_studio_field(image_url)
+        if not image_name:
+            stats["skipped_tasks"] += 1
+            continue
 
         stats["total_images"] += 1
         lines = []
@@ -109,6 +130,8 @@ def convert_label_studio_to_yolo(export_path, output_dir, classes):
     print(f"Conversion complete (Label Studio -> YOLO):")
     print(f"  Images: {stats['total_images']}")
     print(f"  Boxes:  {stats['total_boxes']}")
+    if stats["skipped_tasks"]:
+        print(f"  Skipped tasks (no image filename): {stats['skipped_tasks']}")
     if stats["skipped_labels"]:
         print(f"  Skipped unknown labels: {stats['skipped_labels']}")
     print(f"  Output: {output_dir}")

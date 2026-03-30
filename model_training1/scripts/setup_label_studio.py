@@ -200,12 +200,12 @@ def setup(api_key=None, launch=True, import_preds=False):
     if api_key:
         project_id = create_project(api_key)
 
-        if image_dir.exists() and any(image_dir.iterdir()):
-            import_tasks_from_images(api_key, project_id, image_dir)
-
         if import_preds:
-            predictions_path = PROJECT_DIR / "annotations" / "label_studio_predictions.json"
-            import_predictions(api_key, project_id, predictions_path)
+            # Single import: every image + optional pre-labels (avoids duplicate tasks)
+            import_path = PROJECT_DIR / "annotations" / "label_studio_import.json"
+            import_predictions(api_key, project_id, import_path)
+        elif image_dir.exists() and any(image_dir.iterdir()):
+            import_tasks_from_images(api_key, project_id, image_dir)
 
         print(f"\nOpen {LABEL_STUDIO_URL}/projects/{project_id} to start annotating.\n")
         print("Annotation guidelines:")

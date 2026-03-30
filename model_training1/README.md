@@ -49,7 +49,8 @@ Options:
 
 This creates:
 - `annotations/raw/*.txt` — YOLO-format label files (one per image)
-- `annotations/label_studio_predictions.json` — for Label Studio import
+- `annotations/label_studio_import.json` — **all** images as Label Studio tasks, with pre-labels where the model found signs (use this with `--import-predictions`; matches local-file URLs so nothing duplicates)
+- `annotations/label_studio_predictions.json` — subset of tasks that only have pre-labels (legacy / smaller export)
 
 ### Step 2: Review & Correct in Label Studio
 

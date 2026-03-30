@@ -112,29 +112,32 @@ def run_prelabeling(image_dir, output_dir, confidence_threshold=0.15, model_size
     print(f"  Avg detections/image:    {stats['total_detections'] / max(stats['total_images'], 1):.2f}")
     print(f"  Labels saved to:         {output_dir}")
 
-    _generate_label_studio_predictions(image_files, output_dir, classes)
+    _generate_label_studio_import(image_files, output_dir, classes)
 
     return stats
 
 
-def _generate_label_studio_predictions(image_files, yolo_labels_dir, classes):
+def _generate_label_studio_import(image_files, yolo_labels_dir, classes):
     """
-    Convert YOLO .txt predictions to Label Studio pre-annotation JSON.
-
-    This file can be imported into Label Studio so annotators see the
-    auto-generated boxes already drawn on each image for review.
+    Build a single Label Studio import JSON: one task per image, with optional
+    pre-annotations. Uses the same `data.image` form as setup_label_studio.py
+    (`/data/local-files/?d=filename`) so imports merge correctly and local file
+    serving works.
     """
     from PIL import Image
 
-    predictions = []
+    # Must match import_tasks_from_images() in setup_label_studio.py
+    def image_ref(name: str) -> str:
+        return f"/data/local-files/?d={name}"
+
+    tasks_out = []
 
     for img_path in image_files:
         label_path = yolo_labels_dir / f"{img_path.stem}.txt"
-        if not label_path.exists():
-            continue
+        content = label_path.read_text().strip() if label_path.exists() else ""
 
-        content = label_path.read_text().strip()
         if not content:
+            tasks_out.append({"data": {"image": image_ref(img_path.name)}})
             continue
 
         img = Image.open(img_path)
@@ -173,19 +176,22 @@ def _generate_label_studio_predictions(image_files, yolo_labels_dir, classes):
                 }
             )
 
+        task = {"data": {"image": image_ref(img_path.name)}}
         if annotation_results:
-            predictions.append(
-                {
-                    "data": {"image": img_path.name},
-                    "predictions": [{"result": annotation_results}],
-                }
-            )
+            task["predictions"] = [{"result": annotation_results}]
+        tasks_out.append(task)
 
-    output_path = yolo_labels_dir.parent / "label_studio_predictions.json"
-    with open(output_path, "w") as f:
-        json.dump(predictions, f, indent=2)
+    out_dir = yolo_labels_dir.parent
+    import_path = out_dir / "label_studio_import.json"
+    with open(import_path, "w") as f:
+        json.dump(tasks_out, f, indent=2)
 
-    print(f"  Label Studio predictions: {output_path}")
+    # Backward-compatible alias (predictions-only subset) for older docs
+    legacy_path = out_dir / "label_studio_predictions.json"
+    with open(legacy_path, "w") as f:
+        json.dump([t for t in tasks_out if "predictions" in t], f, indent=2)
+
+    print(f"  Label Studio import (all images): {import_path}")
 
 
 if __name__ == "__main__":
