@@ -144,6 +144,14 @@ jobs:
           path: aws_resources/backend/build/libs/kotlin_app-1.0-all.jar
           retention-days: 1
 
+      # Step 7: Generate SBOM
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          format: cyclonedx-json
+          output-file: docs/SBOM.json
+
+
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
