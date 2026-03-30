@@ -4,3 +4,8 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Local runtime persistence (single-machine): SQLite dashboard + invocation artifacts.
+# Models under .data/models/ are intentionally tracked (custom weights).
+.data/artifacts/
+.data/*.sqlite3

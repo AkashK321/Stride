@@ -95,11 +95,16 @@ class SqliteStore:
             ).fetchone()
             return dict(row) if row else {}
 
-    def list_models(self) -> list[dict[str, Any]]:
+    def list_models(self, *, include_inactive: bool = False) -> list[dict[str, Any]]:
         with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT id, display_name, file_path, created_at, is_active FROM models ORDER BY created_at DESC"
-            ).fetchall()
+            if include_inactive:
+                rows = conn.execute(
+                    "SELECT id, display_name, file_path, created_at, is_active FROM models ORDER BY created_at DESC"
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT id, display_name, file_path, created_at, is_active FROM models WHERE is_active = 1 ORDER BY created_at DESC"
+                ).fetchall()
             return [dict(r) for r in rows]
 
     def get_model(self, model_id: int) -> dict[str, Any] | None:
@@ -109,6 +114,21 @@ class SqliteStore:
                 (model_id,),
             ).fetchone()
             return dict(row) if row else None
+
+    def deactivate_model(self, model_id: int) -> dict[str, Any] | None:
+        with self._lock, self._conn() as conn:
+            row = conn.execute(
+                "SELECT id, display_name, file_path, created_at, is_active FROM models WHERE id = ?",
+                (model_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            conn.execute("UPDATE models SET is_active = 0 WHERE id = ?", (model_id,))
+            updated = conn.execute(
+                "SELECT id, display_name, file_path, created_at, is_active FROM models WHERE id = ?",
+                (model_id,),
+            ).fetchone()
+            return dict(updated) if updated else None
 
     # Sessions
     def start_session(self, *, name: str, model_id: int) -> dict[str, Any]:

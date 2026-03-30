@@ -162,6 +162,8 @@
   const topBarName = document.getElementById('top-bar-name');
   const topBarModel = document.getElementById('top-bar-model');
   const topBarTimer = document.getElementById('top-bar-timer');
+  const btnStart = document.getElementById('btn-start');
+  const btnEnd = document.getElementById('btn-end');
   const modelFileInput = document.getElementById('model-file');
   const modelFileName = document.getElementById('model-file-name');
   const tokenBox = document.getElementById('token-box');
@@ -175,6 +177,11 @@
   /** Unix seconds (float) when current session started; drives top-bar timer */
   let sessionStartTs = null;
   const POLL_MS = 4000;
+
+  function setSessionButtons(active) {
+    btnStart.disabled = !!active;
+    btnEnd.disabled = !active;
+  }
 
   function fillSelect(selectEl, rows, valueKey, textKey, includeAll) {
     const prev = selectEl.value;
@@ -242,20 +249,63 @@
     }
     modelListEl.innerHTML = '';
     cachedModels.forEach((m) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'model-list-item';
-      btn.setAttribute('data-model-id', String(m.id));
-      btn.setAttribute('role', 'option');
+      const row = document.createElement('div');
+      row.className = 'model-list-row';
+      row.setAttribute('data-model-id', String(m.id));
+
+      const selectBtn = document.createElement('button');
+      selectBtn.type = 'button';
+      selectBtn.className = 'model-list-item';
+      selectBtn.setAttribute('data-model-id', String(m.id));
+      selectBtn.setAttribute('role', 'option');
       const isSel = Number(m.id) === Number(selectedModelId);
-      btn.setAttribute('aria-selected', isSel ? 'true' : 'false');
-      if (isSel) btn.classList.add('is-selected');
-      btn.textContent = m.display_name || String(m.id);
-      modelListEl.appendChild(btn);
+      selectBtn.setAttribute('aria-selected', isSel ? 'true' : 'false');
+      if (isSel) selectBtn.classList.add('is-selected');
+      selectBtn.textContent = m.display_name || String(m.id);
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'model-delete-btn';
+      deleteBtn.setAttribute('data-model-id', String(m.id));
+      deleteBtn.setAttribute('title', 'Delete model');
+      deleteBtn.setAttribute('aria-label', 'Delete model ' + (m.display_name || String(m.id)));
+      deleteBtn.innerHTML =
+        '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+        '<path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-2 6h2v9H7V9Zm4 0h2v9h-2V9Zm4 0h2v9h-2V9Z"/>' +
+        '</svg>';
+
+      row.appendChild(selectBtn);
+      row.appendChild(deleteBtn);
+      modelListEl.appendChild(row);
     });
   }
 
   modelListEl.addEventListener('click', function (e) {
+    const del = e.target.closest('.model-delete-btn');
+    if (del) {
+      const modelId = Number(del.getAttribute('data-model-id'));
+      const model = cachedModels.find((m) => Number(m.id) === modelId);
+      const label = model ? (model.display_name || ('#' + modelId)) : ('#' + modelId);
+      const ok = confirm('Delete model "' + label + '"? Existing logs/sessions stay, but it will be removed from selection.');
+      if (!ok) return;
+      fetch('/api/models/' + modelId, { method: 'DELETE' })
+        .then(async function (r) {
+          if (r.status === 404) {
+            return fetch('/api/models/' + modelId + '/delete', { method: 'POST' });
+          }
+          return r;
+        })
+        .then(async function (r) {
+          const j = await r.json().catch(function () { return {}; });
+          if (!r.ok) throw new Error(j.detail || 'Delete failed');
+          return refreshModels();
+        })
+        .catch(function (err) {
+          alert(err && err.message ? err.message : 'Delete failed');
+        });
+      return;
+    }
+
     const btn = e.target.closest('.model-list-item');
     if (!btn) return;
     selectedModelId = Number(btn.getAttribute('data-model-id'));
@@ -398,6 +448,7 @@
       topBarModel.textContent = named.model_name ? ' · ' + named.model_name : '';
       statusEl.textContent =
         'Active session: ' + named.name + ' · model: ' + (named.model_name || '—');
+      setSessionButtons(true);
       updateTopBarTimer();
     } else {
       sessionStartTs = null;
@@ -408,10 +459,12 @@
       topBarModel.textContent = '';
       topBarTimer.textContent = '';
       statusEl.textContent = 'No active session — start one to issue a token and bind logs.';
+      setSessionButtons(false);
     }
   }
 
-  document.getElementById('btn-start').onclick = async function () {
+  btnStart.onclick = async function () {
+    if (btnStart.disabled) return;
     const name = (document.getElementById('session-name').value || '').trim();
     if (!name) { alert('Session name is required'); return; }
     if (selectedModelId == null) { alert('Select a model first'); return; }
@@ -443,7 +496,8 @@
     await refreshStatus();
   };
 
-  document.getElementById('btn-end').onclick = async function () {
+  btnEnd.onclick = async function () {
+    if (btnEnd.disabled) return;
     await fetch('/api/session/end', { method: 'POST' });
     tokenBox.classList.add('hidden');
     tokenDisplay.textContent = '';
@@ -516,6 +570,8 @@
     .then(refreshStatus)
     .then(refreshLogs)
     .then(refreshMetrics);
+
+  setSessionButtons(false);
 })();
   </script>
 </body>

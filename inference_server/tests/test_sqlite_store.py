@@ -63,3 +63,23 @@ def test_clear_all_sessions_detaches_logs(tmp_path: Path, monkeypatch):
     assert rows[0].get("session_id") is None
     assert rows[0].get("session_name") is None
 
+
+def test_deactivate_model_hides_from_list(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("INFERENCE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("INFERENCE_DB_PATH", str(tmp_path / "data" / "dash3.sqlite3"))
+
+    store = SqliteStore(tmp_path)
+    m1 = store.upsert_model(display_name="keep", file_path=str(tmp_path / "keep.pt"))
+    m2 = store.upsert_model(display_name="remove", file_path=str(tmp_path / "remove.pt"))
+
+    deactivated = store.deactivate_model(int(m2["id"]))
+    assert deactivated is not None
+    assert int(deactivated["is_active"]) == 0
+
+    active_ids = [int(m["id"]) for m in store.list_models()]
+    assert int(m1["id"]) in active_ids
+    assert int(m2["id"]) not in active_ids
+
+    all_ids = [int(m["id"]) for m in store.list_models(include_inactive=True)]
+    assert int(m2["id"]) in all_ids
+

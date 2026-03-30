@@ -136,18 +136,29 @@ async def api_session_status(request: Request) -> dict[str, Any]:
 
 @router.post("/api/session/start")
 async def api_session_start(request: Request) -> dict[str, Any]:
-    body = await request.json()
-    name = (body.get("name") or "").strip()
+    try:
+        body = await request.json()
+        if not isinstance(body, dict):
+            body = {}
+    except json.JSONDecodeError:
+        body = {}
+
     model_id = body.get("model_id")
-    if not name:
-        raise HTTPException(status_code=400, detail="Session name is required")
+    if model_id is None:
+        model_id = getattr(request.app.state, "current_model_id", None)
     if model_id is None:
         raise HTTPException(status_code=400, detail="model_id is required")
+
+    name = (body.get("name") or "").strip()
+    if not name:
+        name = f"session-{int(time.time())}"
 
     store = request.app.state.store
     model = store.get_model(int(model_id))
     if model is None:
         raise HTTPException(status_code=404, detail="Model not found")
+    if int(model.get("is_active", 1)) != 1:
+        raise HTTPException(status_code=400, detail="Selected model is inactive")
 
     started = store.start_session(name=name, model_id=int(model_id))
     request.app.state.current_session_id = int(started["id"])
@@ -199,6 +210,31 @@ async def api_models_upload(
     out_path.write_bytes(await model_file.read())
     row = request.app.state.store.upsert_model(display_name=display_name.strip(), file_path=str(out_path))
     return {"model": row}
+
+
+@router.delete("/api/models/{model_id}")
+async def api_models_delete(request: Request, model_id: int) -> dict[str, Any]:
+    store = request.app.state.store
+    model = store.get_model(model_id)
+    if model is None:
+        raise HTTPException(status_code=404, detail="Model not found")
+    active = store.get_active_session()
+    if active and int(active["selected_model_id"]) == int(model_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete the currently active session model. End the active session first.",
+        )
+
+    row = store.deactivate_model(model_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Model not found")
+    return {"model": row}
+
+
+@router.post("/api/models/{model_id}/delete")
+async def api_models_delete_post(request: Request, model_id: int) -> dict[str, Any]:
+    # Compatibility fallback for clients/environments that cannot issue DELETE.
+    return await api_models_delete(request, model_id)
 
 
 @router.get("/api/sessions")

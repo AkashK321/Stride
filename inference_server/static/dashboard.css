@@ -187,6 +187,46 @@ main.dashboard-grid {
   font-size: 0.9rem;
 }
 
+.model-list-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.model-list-row + .model-list-row {
+  margin-top: 0.2rem;
+}
+
+.model-list .model-list-row .model-list-item {
+  flex: 1;
+}
+
+.model-delete-btn {
+  margin: 0;
+  padding: 0;
+  width: 1.9rem;
+  height: 1.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid #3d444d;
+  background: #1f242c;
+  color: #f0f6fc;
+  line-height: 1;
+}
+
+.model-delete-btn:hover {
+  background: #6e2a2a;
+  border-color: #f85149;
+}
+
+.model-delete-btn svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  fill: currentColor;
+}
+
 .model-list .model-list-item:hover {
   background: #21262d;
 }
@@ -303,6 +343,16 @@ button,
 button:hover,
 .btn:hover {
   background: #30363d;
+}
+
+button:disabled,
+.btn:disabled {
+  background: #21262d !important;
+  border-color: #30363d !important;
+  color: #8b949e !important;
+  cursor: not-allowed;
+  opacity: 0.7;
+  box-shadow: none;
 }
 
 .btn-primary {
@@ -509,10 +559,36 @@ label {
   overflow: auto;
   border: 1px solid #30363d;
   border-radius: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: #3d444d #0d1117;
 }
 
 .logs-scroll table {
   min-width: 100%;
+}
+
+.logs-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.logs-scroll::-webkit-scrollbar-track {
+  background: #0d1117;
+  border-radius: 999px;
+}
+
+.logs-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #4b5560 0%, #3a424b 100%);
+  border-radius: 999px;
+  border: 2px solid #0d1117;
+}
+
+.logs-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #5f6b77 0%, #49535e 100%);
+}
+
+.logs-scroll::-webkit-scrollbar-corner {
+  background: #0d1117;
 }
 
 .logs-scroll thead th {
