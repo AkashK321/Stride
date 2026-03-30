@@ -98,9 +98,13 @@
     const fn = prompt('Lambda function name (for AWS CLI snippet, optional):', 'ObjectDetectionHandler');
     if (fn) {
       lambdaCli.textContent =
-        'aws lambda update-function-configuration --function-name ' + fn +
-        ' --environment "Variables={INFERENCE_HTTP_SECRET=' + j.token + '}"\n' +
-        '# Merge manually with existing Variables if needed — do not replace all env vars blindly.';
+        'aws lambda update-function-configuration \\\n' +
+        '  --function-name "' + fn + '" \\\n' +
+        '  --environment "Variables=$(aws lambda get-function-configuration \\\n' +
+        '    --function-name "' + fn + '" \\\n' +
+        "    --query 'Environment.Variables' \\\n" +
+        "    --output json | jq '. + {\"INFERENCE_HTTP_SECRET\":\"" + j.token + "\"}')" +
+        '"';
     } else {
       lambdaCli.textContent = 'INFERENCE_HTTP_SECRET=' + j.token;
     }
