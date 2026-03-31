@@ -94,8 +94,7 @@ export interface NavigationInstruction {
   heading_degrees?: number | null;
   turn_at_end?: "left" | "right" | "around" | "straight" | null;
   node_id: string;
-  coordinates: { x?: number; y?: number; x_feet?: number; y_feet?: number };
-  heading_degrees?: number | null;
+  coordinates: { x?: number; y?: number; x_feet?: number; y_feet?: number }; 
 }
 
 export interface NavigationStartResponse {
