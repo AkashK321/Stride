@@ -1,7 +1,15 @@
-# Face anonymization pipeline dependencies
+# Face anonymization
 opencv-python-headless>=4.8.0
 mediapipe>=0.10.9
 numpy>=1.24.0
+
+# Annotation & labeling
+label-studio>=1.12.0
+ultralytics>=8.3.0
+Pillow>=10.0.0
+PyYAML>=6.0
+requests>=2.31.0
+tqdm>=4.65.0
 
 # Testing
 pytest>=7.4.0
