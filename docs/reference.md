@@ -113,7 +113,6 @@
 | --- | --- | --- | --- | --- |
 | `GET /ping` | none | `200` with `{status: healthy}` when model loaded | `503` when model is not loaded | [inference.py](../aws_resources/sagemaker/inference.py) |
 | `POST /invocations` | Raw image bytes (`image/jpeg`, `image/png`, or `application/octet-stream`) | `200` JSON with `success`, `predictions[]`, `image{width,height}` | `400` unsupported/empty/invalid image, `500` model/inference errors | [inference.py](../aws_resources/sagemaker/inference.py) |
-| `ObjectDetectionHandler`| WebSocket message payload with base64 frame and metadata | Detection results merged into navigation/object response flow | Inference invocation failure logged and returned as error payload | [ObjectDetectionHandler.kt](../aws_resources/backend/src/main/kotlin/com/handlers/ObjectDetectionHandler.kt) |
 
 ### Inference Settings
 
@@ -131,9 +130,9 @@
 
 | Area | Responsibility | Source |
 | --- | --- | --- |
-| Root layout | App bootstrap, font load, providers, and stack config | [_layout.tsx](../frontend/app/_layout.tsx) |
-| Auth route group | Sign-in and registration flows | [index.tsx](../frontend/app/(auth)/index.tsx), [register-contact.tsx](../frontend/app/(auth)/register-contact.tsx) |
-| Main tab routes | Post-auth app surfaces (home/navigation/settings) | [home.tsx](../frontend/app/(tabs)/home.tsx), [navigation.tsx](../frontend/app/(tabs)/navigation.tsx), [settings.tsx](../frontend/app/(tabs)/settings.tsx) |
+| Root layout | App bootstrap, font load, providers, and stack config | [app/_layout.tsx](../frontend/app/_layout.tsx) |
+| Auth route group | Sign-in and registration flows | [(auth)/index.tsx](../frontend/app/(auth)/index.tsx), [(auth)/register-contact.tsx](../frontend/app/(auth)/register-contact.tsx) |
+| Main tab routes | Post-auth app surfaces (home/navigation/settings) | [(tabs)/home.tsx](../frontend/app/(tabs)/home.tsx), [(tabs)/navigation.tsx](../frontend/app/(tabs)/navigation.tsx), [(tabs)/settings.tsx](../frontend/app/(tabs)/settings.tsx) |
 
 ### Core Interfaces
 
