@@ -1,8 +1,28 @@
-# Reference Stride
+# Stride Reference
+
+## Table of Contents
+
+- [System Structure](#system-structure)
+  - [Component Index](#component-index)
+- [Key APIs](#key-apis)
+  - [REST Endpoints](#rest-endpoints)
+  - [WebSocket Contracts](#websocket-contracts)
+- [Configuration](#configuration)
+  - [Core Env Variables](#core-env-variables)
+  - [Feature Flags](#feature-flags)
+  - [Inference Server Settings](#inference-server-settings)
+- [DB Schemas](#db-schemas)
+  - [RDS](#rds)
+  - [DynamoDB](#dynamodb)
+- [Inference Server](#inference-server)
+  - [Interface Surface](#interface-surface)
+  - [Inference Settings (Quick Index)](#inference-settings-quick-index)
+- [Frontend](#frontend)
+  - [Entrypoints and Routing](#entrypoints-and-routing)
+  - [Core Interfaces](#core-interfaces)
+  - [Frontend Runtime Variables](#frontend-runtime-variables)
 
 ## System Structure
-
-
 
 ### Component Index
 
@@ -84,11 +104,6 @@
 | `FeatureFlagsTable` | `feature_name` (string) | No | Runtime feature toggles (manual flags) | [aws_resources/cdk/cdk_stack.py](../aws_resources/cdk/cdk_stack.py) |
 | `NavigationSessionTable` | `session_id` (string) | `ttl` | Live navigation session state and expiration cleanup | [aws_resources/cdk/cdk_stack.py](../aws_resources/cdk/cdk_stack.py) |
 
-### Schema Invariants
-
-- Navigation node identifiers are string-based (`NodeIDString`) and referenced by `Landmarks.NearestNodeID`, `MapEdges.StartNodeID`, and `MapEdges.EndNodeID`.
-- `LandmarkID` is the stable destination identifier returned by search and consumed by navigation start flows.
-
 
 ## Inference Server
 
@@ -99,12 +114,6 @@
 | `GET /ping` | none | `200` with `{status: healthy}` when model loaded | `503` when model is not loaded | [aws_resources/sagemaker/inference.py](../aws_resources/sagemaker/inference.py) |
 | `POST /invocations` | Raw image bytes (`image/jpeg`, `image/png`, or `application/octet-stream`) | `200` JSON with `success`, `predictions[]`, `image{width,height}` | `400` unsupported/empty/invalid image, `500` model/inference errors | [aws_resources/sagemaker/inference.py](../aws_resources/sagemaker/inference.py) |
 | `ObjectDetectionHandler` -> inference call path | WebSocket message payload with base64 frame and metadata | Detection results merged into navigation/object response flow | Inference invocation failure logged and returned as error payload | [aws_resources/backend/src/main/kotlin/com/handlers/ObjectDetectionHandler.kt](../aws_resources/backend/src/main/kotlin/com/handlers/ObjectDetectionHandler.kt) |
-
-### Runtime Assumptions
-
-- Model file is loaded from `/opt/program/yolo11n.pt` at process startup.
-- Prediction format is Ultralytics-style (`class`, `confidence`, `box{x1,y1,x2,y2}`).
-- SageMaker usage is feature-flag controlled (`enable_sagemaker_inference`) via DynamoDB feature flags table.
 
 ### Inference Settings (Quick Index)
 
