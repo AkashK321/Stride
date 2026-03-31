@@ -272,7 +272,7 @@ def watch_mode(input_dir, output_dir, detector_type, detector, interval=2.0):
     try:
         while True:
             stats = process_directory(input_dir, output_dir, detector_type, detector)
-            if stats["processed"] > 0:
+            if stats["processed"] > 0 or stats["errors"] > 0:
                 logger.info(
                     "Batch complete: %d processed, %d faces blurred, %d errors",
                     stats["processed"], stats["faces_found"], stats["errors"],

@@ -51,17 +51,27 @@ for arg in "$@"; do
     esac
 done
 
-# ── 1. Python check ─────────────────────────────────────────────────────────
+# ── 1. Python 3 check ───────────────────────────────────────────────────────
+PY=""
 if command -v python3 &>/dev/null; then
     PY=python3
 elif command -v python &>/dev/null; then
     PY=python
-else
+fi
+
+if [ -z "$PY" ]; then
     error "Python 3 is required but not found. Install it first."
     exit 1
 fi
 
 PY_VERSION=$($PY --version 2>&1)
+PY_MAJOR=$($PY -c "import sys; print(sys.version_info.major)" 2>/dev/null || echo "0")
+
+if [ "$PY_MAJOR" != "3" ]; then
+    error "Python 3 is required but found $PY_VERSION. Install Python 3."
+    exit 1
+fi
+
 info "Found $PY_VERSION"
 
 # ── 2. Virtual environment ──────────────────────────────────────────────────
@@ -107,12 +117,9 @@ if [ "$ANNOTATE_ONLY" = false ]; then
         ANON_ARGS+=("--force")
     fi
 
-    python "$ANON_SCRIPT" "${ANON_ARGS[@]+"${ANON_ARGS[@]}"}" "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
-
-    ANON_EXIT=$?
-    if [ $ANON_EXIT -ne 0 ]; then
-        error "Stage 1 failed (exit code $ANON_EXIT)"
-        exit $ANON_EXIT
+    if ! python "$ANON_SCRIPT" "${ANON_ARGS[@]+"${ANON_ARGS[@]}"}" "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"; then
+        error "Stage 1 failed — check logs/anonymize.log for details"
+        exit 1
     fi
     info "Stage 1 complete — anonymized images in bhee_clean_dataset/"
 fi
@@ -134,16 +141,16 @@ if [ "$ANONYMIZE_ONLY" = false ]; then
 
     # Step 2a: Auto pre-label with YOLO-World
     info "Running auto pre-labeling with YOLO-World zero-shot detection..."
-    python "$PRELABEL_SCRIPT" --images "$CLEAN_DIR"
+    if ! python "$PRELABEL_SCRIPT" --images "$CLEAN_DIR"; then
+        error "Auto pre-labeling failed"
+        exit 1
+    fi
 
     # Step 2b: Prepare the full dataset (clean labels → split → validate)
     info "Preparing final YOLO dataset (clean → split → validate)..."
-    python "$PREPARE_SCRIPT" --source yolo-prelabels
-
-    PREP_EXIT=$?
-    if [ $PREP_EXIT -ne 0 ]; then
-        error "Stage 2 failed (exit code $PREP_EXIT)"
-        exit $PREP_EXIT
+    if ! python "$PREPARE_SCRIPT" --source yolo-prelabels; then
+        error "Dataset preparation failed"
+        exit 1
     fi
     info "Stage 2 complete — YOLO dataset ready in dataset/"
 fi
