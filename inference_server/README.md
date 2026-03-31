@@ -18,7 +18,7 @@ cd inference_server
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-python scripts/download_model.py   # optional: generic yolo11n for smoke tests
+python scripts/download_model.py   # optional: generic yolo11l for smoke tests
 ```
 
 **CPU vs GPU:** `pip install -r requirements.txt` pulls a CPU-capable PyTorch by default on supported platforms. For GPU, install a CUDA build of PyTorch that matches your environment (see [PyTorch install matrix](https://pytorch.org/get-started/locally/)), then reinstall `ultralytics` if needed.
