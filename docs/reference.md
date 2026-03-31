@@ -6,35 +6,35 @@
 
 ### Component Index
 
-| Component | Responsibility | Platform | Files | Depends On |
+| Component | Responsibility | Platform | Source | Depends On |
 | --- | --- | --- | --- | --- |
 | Frontend mobile app | UI, auth input, REST requests, and live navigation client | Expo / React Native | `frontend/app/_layout.tsx`, `frontend/services/api.ts`, `frontend/services/navigationWebSocket.ts` | API Gateway REST + WebSocket endpoints |
-| REST API gateway | Public HTTPS entrypoint for login, registration, search, and navigation start | AWS API Gateway (REST) | `docs/openapi.yaml`, `aws_resources/cdk/cdk_stack.py` | Lambda handlers, Cognito, RDS |
-| WebSocket API gateway | Bidirectional live navigation/object-detection message transport | AWS API Gateway (WebSocket) | `docs/openapi.yaml`, `aws_resources/cdk/cdk_stack.py` | WebSocket Lambda handlers, DynamoDB session state |
-| Backend Lambda handlers | Request handling for auth, static navigation, live navigation, and object detection | AWS Lambda (Kotlin, Java 21) | `aws_resources/backend/src/main/kotlin/com/handlers/AuthHandler.kt`, `aws_resources/backend/src/main/kotlin/com/handlers/StaticNavigationHandler.kt`, `aws_resources/backend/src/main/kotlin/com/handlers/LiveNavigationHandler.kt`, `aws_resources/backend/src/main/kotlin/com/handlers/ObjectDetectionHandler.kt` | API Gateway, Cognito, RDS, DynamoDB, SageMaker inference endpoint |
+| REST API | Public HTTPS entrypoint for login, registration, search, and navigation start | AWS API Gateway (REST) | `docs/openapi.yaml`, `aws_resources/cdk/cdk_stack.py` | Lambda handlers, Cognito, RDS |
+| WebSocket API | Bidirectional live navigation/object-detection message transport | AWS API Gateway (WebSocket) | `docs/openapi.yaml`, `aws_resources/cdk/cdk_stack.py` | WebSocket Lambda handlers, DynamoDB session state |
+| Backend Lambda handlers | Request handling for auth, navigation, and object detection | AWS Lambda  | `aws_resources/backend/src/main/kotlin/com/handlers/AuthHandler.kt`, `aws_resources/backend/src/main/kotlin/com/handlers/StaticNavigationHandler.kt`, `aws_resources/backend/src/main/kotlin/com/handlers/LiveNavigationHandler.kt`, `aws_resources/backend/src/main/kotlin/com/handlers/ObjectDetectionHandler.kt` | API Gateway, Cognito, RDS, DynamoDB, SageMaker inference endpoint |
 | Identity service | User registration/authentication and token issuance | AWS Cognito User Pool | `aws_resources/cdk/cdk_stack.py`, `docs/openapi.yaml` | Auth Lambda handler |
 | Relational map datastore | Persistent indoor map graph and landmark metadata | Amazon RDS (PostgreSQL) | `aws_resources/cdk/cdk_stack.py`, `aws_resources/schema_initializer/populate_rds.py` | Backend map/navigation services |
 | Runtime state/config store | Session state, feature flags, and object-class height config | Amazon DynamoDB | `aws_resources/cdk/cdk_stack.py`, `aws_resources/schema_initializer/populate_obj_ddb.py` | Live/object-detection handlers |
-| Inference service | Vision inference used by object detection/live guidance flows | Amazon SageMaker (Flask + Gunicorn + Nginx container) | `aws_resources/sagemaker/inference.py`, `aws_resources/sagemaker/serve`, `aws_resources/sagemaker/nginx.conf` | Object detection and live navigation handlers |
+| Inference service | Computer vision inference used by object detection handlers | Amazon SageMaker | `aws_resources/sagemaker/inference.py`, `aws_resources/sagemaker/serve`, `aws_resources/sagemaker/nginx.conf` | Object detection and live navigation handlers |
 
 
 ## Key APIs
 
 ### REST Endpoints
 
-| Method | Path | Operation ID | Auth Requirement | Request Schema | Response Schema |  | Source |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `POST` | `/login` | `login` | No (credential exchange) | `LoginRequest` | `LoginResponse` |  `docs/openapi.yaml`, |
-| `POST` | `/register` | `register` | No (account creation) | `RegisterRequest` | `RegisterResponse` |  `docs/openapi.yaml`, |
-| `GET` | `/search` | `searchLandmarks` | Bearer token expected at runtime | Query params: `query` (required), `limit` (optional) | `SearchResponse` | `docs/openapi.yaml`, |
-| `POST` | `/navigation/start` | `startNavigation` | Bearer token expected at runtime | `NavigationStartRequest` | `NavigationStartResponse` |  `docs/openapi.yaml`,  |
+| Method | Path | Operation ID | Auth Requirement | Source |
+| --- | --- | --- | --- | --- |
+| `POST` | `/login` | `login` | No (credential exchange) | [aws_resources/backend/src/main/kotlin/com/handlers/AuthHandler.kt](../aws_resources/backend/src/main/kotlin/com/handlers/AuthHandler.kt) |
+| `POST` | `/register` | `register` | No (account creation) | `aws_resources/backend/src/main/kotlin/com/handlers/AuthHandler.kt` |
+| `GET` | `/search` | `searchLandmarks` | Bearer token expected at runtime | `aws_resources/backend/src/main/kotlin/com/handlers/StaticNavigationHandler.kt` |
+| `POST` | `/navigation/start` | `startNavigation` | Bearer token expected at runtime | `aws_resources/backend/src/main/kotlin/com/handlers/StaticNavigationHandler.kt` |
 
 ### WebSocket Contracts
 
 | Direction | Contract / Type | Required Fields | Trigger / When Sent | Consumer Behavior | Source |
 | --- | --- | --- | --- | --- | --- |
-| Client -> Server | `NavigationFrameMessage` | `session_id`, `image_base64`, `heading_degrees`, `accelerometer`, `gyroscope`, `focal_length_pixels`, `request_id` | Sent repeatedly during active navigation on WS route key (`navigation`) | Backend uses frame + sensors to localize and update instructions | `docs/openapi.yaml`, `frontend/services/navigationWebSocket.ts` |
-| Server -> Client | `NavigationUpdateMessage` (`type: navigation_update`) | `type`, `session_id`, `current_step`, `remaining_instructions` | Returned after valid frame processing | Client updates current step, instruction list, and may compute latency via echoed `request_id` | `docs/openapi.yaml`, `frontend/services/navigationWebSocket.ts` |
+| Client -> Server | `NavigationFrameMessage` | `session_id`, `image_base64`, `heading_degrees`, `accelerometer`, `gyroscope`, `focal_length_pixels`, `request_id` | Sent repeatedly during active navigation on WS route key (`navigation`) | Backend uses frame + sensors to localize and update instructions | `frontend/services/navigationWebSocket.ts` |
+| Server -> Client | `NavigationUpdateMessage` (`type: navigation_update`) | `type`, `session_id`, `current_step`, `remaining_instructions` | Returned after valid frame processing | Client updates current step, instruction list, and may compute latency via echoed `request_id` | `frontend/services/navigationWebSocket.ts` |
 
 
 ## Configuration
@@ -88,7 +88,7 @@
 
 - Navigation node identifiers are string-based (`NodeIDString`) and referenced by `Landmarks.NearestNodeID`, `MapEdges.StartNodeID`, and `MapEdges.EndNodeID`.
 - `LandmarkID` is the stable destination identifier returned by search and consumed by navigation start flows.
-- Floor-scoped querying is optimized via indexes on `MapNodes(FloorID)`, `MapEdges(FloorID)`, and `Landmarks(FloorID)`.
+
 
 ## Inference Server
 
@@ -120,7 +120,7 @@
 
 ### Entrypoints and Routing
 
-| Area | Responsibility | Primary Files |
+| Area | Responsibility | Source |
 | --- | --- | --- |
 | Root layout | App bootstrap, font load, providers, and stack config | `frontend/app/_layout.tsx` |
 | Auth route group | Sign-in and registration flows | `frontend/app/(auth)/index.tsx`, `frontend/app/(auth)/register-contact.tsx` |
@@ -140,5 +140,4 @@
 | Key | Used By | Purpose | Source |
 | --- | --- | --- | --- |
 | `EXPO_PUBLIC_API_BASE_URL` | `services/api.ts` | REST base URL | `frontend/.env.example` |
-| `EXPO_PUBLIC_WS_API_URL` | `services/navigationWebSocket.ts` | WebSocket URL for live navigation messages | `frontend/.env.example` |
-| `EXPO_PUBLIC_DEV_LOGGER_URL` | `services/navigationWebSocket.ts` (dev mode) | Optional local response logging endpoint | `frontend/.env.example` |
+| `EXPO_PUBLIC_WS_API_URL` | `services/navigationWebSocket.ts` | WebSocket URL for live navigation messages | `frontend/.env.example` | `EXPO_PUBLIC_DEV_LOGGER_URL` | `services/navigationWebSocket.ts` (dev mode) | Optional local response logging endpoint | `frontend/.env.example` |
