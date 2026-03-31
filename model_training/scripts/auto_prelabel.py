@@ -1,9 +1,9 @@
 """
 Auto pre-labeling using YOLO-World zero-shot object detection.
 
-Uses YOLO-World's open-vocabulary capability to detect "door_sign" in BHEE
-images without any prior training. Generates initial bounding box annotations
-in YOLO .txt format and Label Studio JSON format for human review.
+Uses YOLO-World's open-vocabulary capability to detect door signs in BHEE
+images without any prior training. Multiple descriptive prompts are used to
+maximize recall — all detections map back to the single "door_sign" class.
 
 Usage:
     python scripts/auto_prelabel.py
@@ -23,6 +23,19 @@ PROJECT_DIR = SCRIPT_DIR.parent
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"}
 
+# Multiple prompts to maximize recall. YOLO-World treats each as a separate
+# "class", but we map every detection back to class 0 (door_sign) when writing
+# YOLO labels. More varied prompts = better chance of catching signs in
+# different contexts (close-ups, hallway shots, angled views).
+DETECTION_PROMPTS = [
+    "door sign",
+    "room number sign",
+    "room number",
+    "sign on wall",
+    "number plate on door",
+    "nameplate",
+]
+
 
 def load_classes(config_path=None):
     if config_path is None:
@@ -40,21 +53,41 @@ def get_image_files(image_dir):
     return sorted(files)
 
 
+def _merge_overlapping_boxes(boxes, iou_thresh=0.5):
+    """Deduplicate boxes from multiple prompts via greedy NMS."""
+    if not boxes:
+        return boxes
+    import numpy as np
+
+    arr = np.array(boxes)
+    x1 = arr[:, 0] - arr[:, 2] / 2
+    y1 = arr[:, 1] - arr[:, 3] / 2
+    x2 = arr[:, 0] + arr[:, 2] / 2
+    y2 = arr[:, 1] + arr[:, 3] / 2
+    areas = arr[:, 2] * arr[:, 3]
+    order = areas.argsort()[::-1]
+    keep = []
+    while order.size > 0:
+        i = order[0]
+        keep.append(i)
+        xx1 = np.maximum(x1[i], x1[order[1:]])
+        yy1 = np.maximum(y1[i], y1[order[1:]])
+        xx2 = np.minimum(x2[i], x2[order[1:]])
+        yy2 = np.minimum(y2[i], y2[order[1:]])
+        inter = np.maximum(0, xx2 - xx1) * np.maximum(0, yy2 - yy1)
+        iou = inter / (areas[i] + areas[order[1:]] - inter + 1e-9)
+        remaining = np.where(iou <= iou_thresh)[0]
+        order = order[remaining + 1]
+    return [boxes[i] for i in keep]
+
+
 def run_prelabeling(image_dir, output_dir, confidence_threshold=0.15, model_size="s"):
     """
     Run YOLO-World zero-shot detection on all images.
 
-    YOLO-World accepts arbitrary text prompts as classes. We pass our class
-    names (e.g. "door_sign" -> "door sign") and it detects matching objects
-    without any fine-tuning.
-
-    Args:
-        image_dir: Directory containing raw BHEE images
-        output_dir: Where to write YOLO-format .txt label files
-        confidence_threshold: Minimum detection confidence (low default to
-                              catch more signs — false positives are corrected
-                              during human review)
-        model_size: YOLO-World variant: 's' (fast), 'm' (balanced), 'l' (accurate)
+    Uses multiple text prompts to maximize recall, then deduplicates
+    overlapping boxes via NMS. All detections are mapped to class 0
+    (door_sign) regardless of which prompt triggered the match.
     """
     from ultralytics import YOLO
 
@@ -65,17 +98,15 @@ def run_prelabeling(image_dir, output_dir, confidence_threshold=0.15, model_size
         print(f"No images found in {image_dir}")
         sys.exit(1)
 
-    # YOLO-World expects human-readable phrases, so convert underscores
-    class_prompts = [c.replace("_", " ") for c in classes]
-
     print(f"Found {len(image_files)} images in {image_dir}")
-    print(f"Classes: {classes} (prompts: {class_prompts})")
+    print(f"Target class: {classes[0]}")
+    print(f"Detection prompts: {DETECTION_PROMPTS}")
     print(f"Confidence threshold: {confidence_threshold}")
 
     model_name = f"yolov8{model_size}-worldv2.pt"
     print(f"Loading YOLO-World model: {model_name}")
     model = YOLO(model_name)
-    model.set_classes(class_prompts)
+    model.set_classes(DETECTION_PROMPTS)
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -94,13 +125,23 @@ def run_prelabeling(image_dir, output_dir, confidence_threshold=0.15, model_size
             label_path.write_text("")
             continue
 
+        # Collect all boxes (from any prompt) as normalized xywh
+        raw_boxes = []
+        for box in result.boxes:
+            x_center, y_center, width, height = box.xywhn[0].tolist()
+            raw_boxes.append((x_center, y_center, width, height))
+
+        # Deduplicate overlapping boxes from different prompts
+        merged = _merge_overlapping_boxes(raw_boxes)
+
+        if not merged:
+            label_path.write_text("")
+            continue
+
         stats["images_with_detections"] += 1
         lines = []
-
-        for box in result.boxes:
-            cls_id = int(box.cls[0])
-            x_center, y_center, width, height = box.xywhn[0].tolist()
-            lines.append(f"{cls_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}")
+        for (xc, yc, w, h) in merged:
+            lines.append(f"0 {xc:.6f} {yc:.6f} {w:.6f} {h:.6f}")
             stats["total_detections"] += 1
 
         label_path.write_text("\n".join(lines) + "\n")

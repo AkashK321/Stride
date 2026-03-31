@@ -1,25 +1,31 @@
 # Model Training — Data Preparation Pipeline
 
-End-to-end pipeline for preparing BHEE hallway images into a YOLO-formatted training dataset.
-Covers both [Issue #186](https://github.com/AkashK321/Stride/issues/186) (privacy anonymization) and [Issue #207](https://github.com/AkashK321/Stride/issues/207) (data annotation & labeling).
+End-to-end pipeline for preparing BHEE hallway images into a YOLOv11-formatted
+training dataset. Covers [Issue #186](https://github.com/AkashK321/Stride/issues/186)
+(privacy anonymization) and [Issue #207](https://github.com/AkashK321/Stride/issues/207)
+(data annotation & labeling via Roboflow).
 
 ## Pipeline Overview
 
 ```
-bhee_raw_dataset/          ──► Stage 1: Face Anonymization ──►  bhee_clean_dataset/
-(raw photos)                   (MediaPipe / Haar Cascades)       (faces blurred)
-                                                                       │
-                                                                       ▼
-                               Stage 2a: Auto Pre-Label  ◄─────────────┘
-                               (YOLO-World zero-shot)
+bhee_raw_dataset/        ──► Stage 1: Face Anonymization ──►  bhee_clean_dataset/
+(raw photos)                 (MediaPipe / Haar Cascades)       (faces blurred)
+                                                                     │
+                                                          ┌──────────┘
+                                                          ▼
+                                                Upload to Roboflow
+                                                Draw bounding boxes
+                                                Export as YOLOv11
+                                                          │
+                                                          ▼
+                                               roboflow_export/
+                                                          │
+                              Stage 2: Import ◄───────────┘
+                              (validate + preview)
                                        │
                                        ▼
-                               Stage 2b: Prepare Dataset
-                               (clean → split → validate)
-                                       │
-                                       ▼
-                               dataset/  (train/val/test)
-                               Ready for YOLO training
+                              dataset/  (train/val/test)
+                              Ready for YOLOv11 training
 ```
 
 ## Directory Structure
@@ -27,112 +33,96 @@ bhee_raw_dataset/          ──► Stage 1: Face Anonymization ──►  bhee
 ```
 model_training/
 ├── bhee_raw_dataset/          ← Drop your raw photos here
-├── bhee_clean_dataset/        ← Anonymized images (Stage 1 output → Stage 2 input)
-├── annotations/
-│   ├── raw/                   ← Auto-generated YOLO labels + Label Studio JSON
-│   └── yolo_labels/           ← Final cleaned YOLO .txt labels
-├── dataset/                   ← Split YOLO dataset (Stage 2 output)
+├── bhee_clean_dataset/        ← Anonymized images (Stage 1 output)
+├── roboflow_export/           ← Unzip your Roboflow export here
+├── dataset/                   ← Final YOLO dataset (Stage 2 output)
 │   ├── images/{train,val,test}/
 │   ├── labels/{train,val,test}/
 │   └── data.yaml
+├── previews/                  ← Images with bounding boxes drawn (for verification)
 ├── configs/
 │   └── classes.yaml           ← Class ontology (door_sign)
-├── scripts/                   ← Annotation & labeling scripts
-│   ├── auto_prelabel.py
-│   ├── setup_label_studio.py
-│   ├── export_annotations.py
-│   ├── convert_to_yolo.py
-│   ├── split_dataset.py
-│   ├── prepare_dataset.py
-│   └── validate_dataset.py
+├── scripts/
+│   ├── validate_dataset.py
+│   └── visualize_labels.py
 ├── logs/                      ← Processing logs
 ├── tests/                     ← Unit & integration tests
 ├── anonymize_faces.py         ← Face detection + blur script
 ├── run_pipeline.sh            ← One-command automation
+├── cleanup.sh                 ← Reset generated outputs
 ├── requirements.txt
 └── README.md
 ```
 
 ## Quick Start
 
-### 1. Add your raw images
-
-Copy your raw BHEE hallway photos into `bhee_raw_dataset/`.
-Supported formats: `.jpg`, `.jpeg`, `.png`, `.bmp`, `.tiff`, `.webp`
-
-### 2. Run the full pipeline (one command)
+### Step 1: Anonymize raw images
 
 ```bash
 cd model_training
+./run_pipeline.sh --anonymize-only
+```
+
+This blurs any faces in `bhee_raw_dataset/` and saves clean images to `bhee_clean_dataset/`.
+
+### Step 2: Label in Roboflow (manual)
+
+1. Go to [Roboflow](https://roboflow.com) and create a project
+2. Upload all images from `bhee_clean_dataset/`
+3. Draw tight bounding boxes around every door sign (include the full sign shape, not just text)
+4. Use class name: `door_sign`
+5. Let Roboflow split into train/valid/test (or configure your own split)
+6. Generate → Export as **YOLOv11** format → Download zip
+7. Unzip into `model_training/roboflow_export/`
+
+The export directory should look like:
+
+```
+roboflow_export/
+├── train/
+│   ├── images/
+│   └── labels/
+├── valid/          (or val/)
+│   ├── images/
+│   └── labels/
+├── test/
+│   ├── images/
+│   └── labels/
+└── data.yaml
+```
+
+### Step 3: Import, validate, and preview
+
+```bash
+./run_pipeline.sh --import-only
+```
+
+This copies the Roboflow export into `dataset/`, validates all labels, and generates
+preview images in `previews/` with bounding boxes drawn so you can visually confirm
+the labels are correct.
+
+### Or run both stages at once
+
+```bash
 ./run_pipeline.sh
 ```
 
-This runs both stages automatically:
-- **Stage 1**: Detects and blurs faces in all raw images → saves to `bhee_clean_dataset/`
-- **Stage 2**: Runs YOLO-World zero-shot detection to auto-label door signs → splits into train/val/test → validates
+(Requires the Roboflow export to already be in `roboflow_export/`.)
 
-### 3. Run individual stages
+## CLI Options
 
-```bash
-./run_pipeline.sh --anonymize-only    # Stage 1 only (face blurring)
-./run_pipeline.sh --annotate-only     # Stage 2 only (assumes clean images exist)
-./run_pipeline.sh --force             # Re-process everything from scratch
-./run_pipeline.sh --watch             # Watch mode: auto-anonymize new images as they appear
-```
+| Flag | Description |
+|------|-------------|
+| `--anonymize-only` | Stage 1 only — anonymize faces |
+| `--import-only` | Stage 2 only — import Roboflow export, validate, preview |
+| `--force` / `-f` | Re-process all images (ignore anonymization cache) |
+| `--watch` / `-w` | Watch mode — auto-anonymize new images as they appear |
 
-## Stage 1: Face Anonymization (Issue #186)
+## Augmentations
 
-Uses MediaPipe Face Detection (full-range model) as the primary detector with OpenCV Haar Cascades as fallback. Each detected face is padded by 25% and blurred with a 99x99 Gaussian kernel, making faces completely unrecognizable for FERPA compliance.
-
-A `.manifest.json` tracks file hashes so re-runs skip already-processed images.
-
-### Running directly
-
-```bash
-python anonymize_faces.py                          # process all
-python anonymize_faces.py --input DIR --output DIR  # custom directories
-python anonymize_faces.py --watch                   # watch mode
-python anonymize_faces.py --force                   # ignore cache
-```
-
-## Stage 2: Annotation & Labeling (Issue #207)
-
-### Step 2a: Auto Pre-Label
-
-Uses YOLO-World's open-vocabulary zero-shot detection to find "door sign" in images without any training. Generates YOLO `.txt` labels and Label Studio import JSON.
-
-```bash
-python scripts/auto_prelabel.py
-python scripts/auto_prelabel.py --confidence 0.2 --model-size m
-```
-
-### Step 2b: Review in Label Studio (optional)
-
-Launch the annotation UI to review and correct the auto-generated boxes:
-
-```bash
-python scripts/setup_label_studio.py
-python scripts/setup_label_studio.py --api-key YOUR_KEY --no-launch --import-predictions
-```
-
-### Step 2c: Prepare Final Dataset
-
-```bash
-# Using auto pre-labels directly
-python scripts/prepare_dataset.py --source yolo-prelabels
-
-# From Label Studio
-python scripts/prepare_dataset.py --source label-studio --api-key KEY --project-id 1
-
-# From exported JSON
-python scripts/prepare_dataset.py --source label-studio-file --file annotations/raw/label_studio_export.json
-```
-
-### Validate
-
-```bash
-python scripts/validate_dataset.py
-```
+You do **not** need to augment images before training. YOLOv11 (Ultralytics) applies
+augmentations on-the-fly during training — mosaic, mixup, HSV shifts, flips, scaling,
+etc. Just provide your labeled images and YOLO handles the rest.
 
 ## Classes
 
@@ -140,12 +130,20 @@ python scripts/validate_dataset.py
 |----|------|-------------|
 | 0 | `door_sign` | Any door sign in the BHEE building |
 
-## Training (Next Step)
+## Training
 
-Once the dataset is prepared:
+Once the dataset is validated:
 
 ```bash
 yolo detect train data=dataset/data.yaml model=yolo11n.pt epochs=100 imgsz=640
+```
+
+## Cleanup
+
+```bash
+./cleanup.sh              # remove generated outputs (keeps raw images + Roboflow export)
+./cleanup.sh --all        # also remove Roboflow export
+./cleanup.sh --yes        # skip confirmation prompt
 ```
 
 ## Running Tests

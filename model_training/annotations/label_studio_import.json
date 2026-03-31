@@ -1,0 +1,40 @@
+[
+  {
+    "data": {
+      "image": "/data/local-files/?d=IMG_2957_jpg.rf.300e47e9cf37bf2243a6731dff0e957d.jpg"
+    }
+  },
+  {
+    "data": {
+      "image": "/data/local-files/?d=IMG_2958_jpg.rf.19e5ccfe3d1444255494e143b6a3b73b.jpg"
+    }
+  },
+  {
+    "data": {
+      "image": "/data/local-files/?d=IMG_2959_jpg.rf.3f3706b631e8971b7c7facaf6d2889d3.jpg"
+    },
+    "predictions": [
+      {
+        "result": [
+          {
+            "type": "rectanglelabels",
+            "from_name": "label",
+            "to_name": "image",
+            "original_width": 360,
+            "original_height": 360,
+            "value": {
+              "x": 0.0,
+              "y": 0.004950000000000787,
+              "width": 16.025,
+              "height": 38.3847,
+              "rectanglelabels": [
+                "door_sign"
+              ],
+              "rotation": 0
+            }
+          }
+        ]
+      }
+    ]
+  }
+]
