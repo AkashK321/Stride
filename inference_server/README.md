@@ -1,15 +1,15 @@
 # Local inference server
 
-FastAPI app that exposes the same HTTP surface as the SageMaker container (`GET /ping`, `POST /invocations`) so you can develop and test YOLO inference without invoking AWS. See [aws_resources/sagemaker/inference.py](../aws_resources/sagemaker/inference.py) for the production Flask implementation.
+FastAPI app that exposes the same HTTP surface as the SageMaker container (`GET /ping`, `POST /invocations`) so you can develop and test YOLO inference without invoking AWS. See [aws_resources/sagemaker/inference.py](../aws_resources/sagemaker/inference.py) for the production (Flask) implementation that this endpoint mirrors.
 
 ## Model weights
 
 | Use case | Configuration |
 |----------|----------------|
 | **Trained checkpoint** | Set `YOLO_MODEL_PATH` to your `.pt` file (Ultralytics format, same as SageMaker). |
-| **Quick testing / baseline** | Omit `YOLO_MODEL_PATH` and use generic YOLOv11 nano: run `python scripts/download_model.py` to fetch `yolo11n.pt` into `inference_server/.cache/`. |
+| **Quick testing / baseline** | Omit `YOLO_MODEL_PATH` and use generic YOLOv11 large: run `python scripts/download_model.py` to fetch `yolo11l.pt` into `inference_server/.cache/`. |
 
-If `YOLO_MODEL_PATH` is set but the file is missing, the server falls back to `.cache/yolo11n.pt`.
+If `YOLO_MODEL_PATH` is set but the file is missing, the server falls back to `.cache/yolo11l.pt`.
 
 ## Setup
 
@@ -105,8 +105,8 @@ Bind on all interfaces (e.g. LAN): `--host 0.0.0.0`. This tooling is for local d
 | Variable | Description |
 |----------|-------------|
 | `YOLO_MODEL_PATH` | Path to trained `.pt` (optional). |
-| `LOG_MAX_ENTRIES` | Max invocation rows in memory (default `100`). |
-| `LOG_MAX_IMAGE_BYTES` | Max stored request bytes per log entry (default `2` MiB). |
+| `INFERENCE_DATA_DIR` | Base directory for local dashboard persistence (SQLite + artifacts). Default: `inference_server/.data/`. |
+| `INFERENCE_DB_PATH` | Full path to the dashboard SQLite DB file. Default: `${INFERENCE_DATA_DIR}/dashboard.sqlite3`. |
 | `INFERENCE_REQUIRE_SESSION` | If `1` / `true` / `yes`, `POST /invocations` is allowed only while a dashboard session is active **and** the client sends header `X-Stride-Inference-Secret` matching the session token. Recommended when using a public tunnel. Default (unset) = off for local curl. |
 
 ### Tunnel + session security
@@ -143,7 +143,7 @@ OpenAPI is available at `/docs` for auxiliary routes; for `/invocations` contrac
 pytest
 ```
 
-The suite uses mocks for most contract checks. A full forward pass runs only when `.cache/yolo11n.pt` exists (after `download_model.py`).
+The suite uses mocks for most contract checks. A full forward pass runs only when `.cache/yolo11l.pt` exists (after `download_model.py`).
 
 On pull requests that touch `inference_server/`, GitHub Actions runs the same tests (see [.github/workflows/inference-server.yaml](../.github/workflows/inference-server.yaml)); the real-YOLO case may skip in CI if weights are not cached.
 
