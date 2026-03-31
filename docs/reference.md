@@ -99,7 +99,7 @@
 ### DynamoDB
 
 | Table (CDK Logical Name) | Partition Key  | Purpose | Source |
-| --- | --- | --- | --- | --- |
+| --- | --- | --- | --- |
 | `CocoConfigTable` | `class_id` (number) | Object class configuration (e.g., height map for distance estimation) | [cdk_stack.py](../aws_resources/cdk/cdk_stack.py) |
 | `FeatureFlagsTable` | `feature_name` (string) | Runtime feature toggles (manual flags) | [cdk_stack.py](../aws_resources/cdk/cdk_stack.py) |
 | `NavigationSessionTable` | `session_id` (string) | Live navigation session state and expiration cleanup | [cdk_stack.py](../aws_resources/cdk/cdk_stack.py) |
@@ -110,7 +110,7 @@
 ### Interface Surface
 
 | Endpoint / Interface | Input | Output | Failure Modes | Source |
-| --- | --- | --- | --- | --- |
+| --- | --- | --- | --- |
 | `GET /ping` | none | `200` with `{status: healthy}` when model loaded | `503` when model is not loaded | [inference.py](../aws_resources/sagemaker/inference.py) |
 | `POST /invocations` | Raw image bytes (`image/jpeg`, `image/png`, or `application/octet-stream`) | `200` JSON with `success`, `predictions[]`, `image{width,height}` | `400` unsupported/empty/invalid image, `500` model/inference errors | [inference.py](../aws_resources/sagemaker/inference.py) |
 | `ObjectDetectionHandler`| WebSocket message payload with base64 frame and metadata | Detection results merged into navigation/object response flow | Inference invocation failure logged and returned as error payload | [ObjectDetectionHandler.kt](../aws_resources/backend/src/main/kotlin/com/handlers/ObjectDetectionHandler.kt) |
