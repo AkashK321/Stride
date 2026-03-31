@@ -41,6 +41,7 @@ on:
     paths:
       - 'aws_resources/**'
       - 'frontend/**'
+      - 'model_training/**'
       - '.github/workflows/**'
 
 # Permissions required for test-reporter
@@ -244,6 +245,51 @@ jobs:
           name: Frontend Test Results
           path: frontend/coverage/junit.xml
           reporter: jest-junit
+          fail-on-error: false
+          list-suites: all
+          list-tests: all
+
+  model-training-tests:
+    name: Model Training Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: model_training/requirements.txt
+
+      - name: Install dependencies
+        working-directory: model_training
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run unit tests
+        working-directory: model_training
+        run: |
+          python -m pytest tests/unit/ -v --junitxml=test-results/unit-tests.xml
+
+      - name: Run integration tests
+        working-directory: model_training
+        run: |
+          python -m pytest tests/integration/ -v --junitxml=test-results/integration-tests.xml
+
+      - name: Publish test results
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Model Training Test Results
+          path: model_training/test-results/*.xml
+          reporter: java-junit
           fail-on-error: false
           list-suites: all
           list-tests: all

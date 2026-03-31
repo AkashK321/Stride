@@ -28,6 +28,11 @@ import java.sql.Connection
 import java.sql.DriverManager
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.max
+
+private val METERS_TO_FEET = 3.28084
+private val FEET_TO_PIXELS = 10.0
+private val MAX_DISTANCE_FEET = 15.0
 
 class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGatewayV2WebSocketResponse> {
 
@@ -98,6 +103,69 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         }
         
         return Pair(currentX, currentY)
+    }
+
+    private fun fuseLocationWithLandmarks(
+        pdrX: Double, 
+        pdrY: Double, 
+        headingDegrees: Double, 
+        detectedObjects: List<DetectedObject>,
+        logger: LambdaLogger
+    ): Pair<Double, Double> {
+        
+        // Return early if no objects detected
+        if (detectedObjects.isEmpty()) {
+            return Pair(pdrX, pdrY)
+        }
+
+        // Find the closest confident landmark
+        val primaryLandmark = detectedObjects.minByOrNull { it.distanceMeters } ?: return Pair(pdrX, pdrY)
+        
+        val distanceFeet = primaryLandmark.distanceMeters * METERS_TO_FEET
+        
+        // Distance Threshold Check (Ignore CV if > 15 feet)
+        if (distanceFeet > MAX_DISTANCE_FEET) {
+            logger.log("Landmark '${primaryLandmark.obj.className}' detected, but ignored. Distance ($distanceFeet ft) exceeds 15 ft threshold.")
+            return Pair(pdrX, pdrY)
+        }
+
+        // Get Landmark Object from RDS
+        val dbLandmark = rdsMapClient.getDbConnection().use { conn -> 
+                rdsMapClient.getLandmarkByName(primaryLandmark.obj.className, conn)
+            }
+        if (dbLandmark == null) {
+            logger.log("Detected landmark '${primaryLandmark.obj.className}' not found in RDS database.")
+            return Pair(pdrX, pdrY)
+        }
+
+        // Calculate Absolute Position from CV & Compass
+        val distancePixels = distanceFeet * FEET_TO_PIXELS
+        val headingRad = Math.toRadians(headingDegrees)
+
+        // Y increases downwards, Heading 0 is North
+        val cvEstimatedX = dbLandmark.coordX - (distancePixels * Math.sin(headingRad))
+        val cvEstimatedY = dbLandmark.coordY + (distancePixels * Math.cos(headingRad))
+
+        // Calculate Dynamic Alpha (CV Weight)
+        // alpha = maxAlpha at 0 ft, linearly decaying to 0.0 at 15 ft
+        val maxAlpha = 0.90 // Cap trust at 90% to prevent jitter if bounding boxes fluctuate
+        var alpha = maxAlpha * (1.0 - (distanceFeet / MAX_DISTANCE_FEET))
+        
+        // Safety clamp to ensure alpha stays between 0.0 and 1.0
+        alpha = max(0.0, Math.min(1.0, alpha))
+
+        // Apply Complementary Filter
+        val fusedX = (alpha * cvEstimatedX) + ((1.0 - alpha) * pdrX)
+        val fusedY = (alpha * cvEstimatedY) + ((1.0 - alpha) * pdrY)
+
+        logger.log(
+            String.format(
+                "Fusion Applied | Landmark: %s | Dist: %.2f ft | Alpha: %.2f | PDR: (%.1f, %.1f) | CV: (%.1f, %.1f) | Fused: (%.1f, %.1f)",
+                primaryLandmark.obj.className, distanceFeet, alpha, pdrX, pdrY, cvEstimatedX, cvEstimatedY, fusedX, fusedY
+            )
+        )
+
+        return Pair(fusedX, fusedY)
     }
 
     override fun handleRequest(
@@ -204,7 +272,7 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         val previousY = sessionData?.get("current_y")?.toDoubleOrNull() ?: 0.0
         val previousTime = sessionData?.get("last_updated_ms")?.toLongOrNull() ?: 0L
         val destLandmarkId = sessionData?.get("destLandmarkId")?.toString() ?: "unknown"
-        val pathNodesRaw = sessionData?.get("path") as String? ?: ""
+        val pathNodesRaw = sessionData?.get("path") ?: ""
         val currentStep = sessionData?.get("currentStep")?.toIntOrNull()?.plus(1) ?: 0
         val pathNodes = pathNodesRaw.split(",")
 
@@ -215,7 +283,13 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         }
 
         // Execute Location Estimation based purely on PDR
-        val (estimatedX, estimatedY) = estimateUserLocation(payload, previousX, previousY, previousTime, logger)
+        val (pdrX, pdrY) = estimateUserLocation(payload, previousX, previousY, previousTime, logger)
+
+        // TODO - Integrate sagemaker inference here
+        val detectedObjects: List<DetectedObject> = emptyList() // Placeholder for CV detections
+
+        val headingDegrees = (payload["heading_degrees"] as Number).toDouble()
+        val (estimatedX, estimatedY) = fuseLocationWithLandmarks(pdrX, pdrY, headingDegrees, detectedObjects, logger)
         
         // Execute Closest Node Search
         var closestNodeId: String = "unknown"

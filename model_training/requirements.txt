@@ -1,0 +1,7 @@
+# Face anonymization pipeline dependencies
+opencv-python-headless>=4.8.0
+mediapipe>=0.10.9
+numpy>=1.24.0
+
+# Testing
+pytest>=7.4.0
