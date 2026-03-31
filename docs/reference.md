@@ -98,11 +98,11 @@
 
 ### DynamoDB
 
-| Table (CDK Logical Name) | Partition Key | TTL | Purpose | Source |
+| Table (CDK Logical Name) | Partition Key  | Purpose | Source |
 | --- | --- | --- | --- | --- |
-| `CocoConfigTable` | `class_id` (number) | No | Object class configuration (e.g., height map for distance estimation) | [aws_resources/cdk/cdk_stack.py](../aws_resources/cdk/cdk_stack.py) |
-| `FeatureFlagsTable` | `feature_name` (string) | No | Runtime feature toggles (manual flags) | [aws_resources/cdk/cdk_stack.py](../aws_resources/cdk/cdk_stack.py) |
-| `NavigationSessionTable` | `session_id` (string) | `ttl` | Live navigation session state and expiration cleanup | [aws_resources/cdk/cdk_stack.py](../aws_resources/cdk/cdk_stack.py) |
+| `CocoConfigTable` | `class_id` (number) | Object class configuration (e.g., height map for distance estimation) | [aws_resources/cdk/cdk_stack.py](../aws_resources/cdk/cdk_stack.py) |
+| `FeatureFlagsTable` | `feature_name` (string) | Runtime feature toggles (manual flags) | [aws_resources/cdk/cdk_stack.py](../aws_resources/cdk/cdk_stack.py) |
+| `NavigationSessionTable` | `session_id` (string) | Live navigation session state and expiration cleanup | [aws_resources/cdk/cdk_stack.py](../aws_resources/cdk/cdk_stack.py) |
 
 
 ## Inference Server
@@ -113,9 +113,9 @@
 | --- | --- | --- | --- | --- |
 | `GET /ping` | none | `200` with `{status: healthy}` when model loaded | `503` when model is not loaded | [aws_resources/sagemaker/inference.py](../aws_resources/sagemaker/inference.py) |
 | `POST /invocations` | Raw image bytes (`image/jpeg`, `image/png`, or `application/octet-stream`) | `200` JSON with `success`, `predictions[]`, `image{width,height}` | `400` unsupported/empty/invalid image, `500` model/inference errors | [aws_resources/sagemaker/inference.py](../aws_resources/sagemaker/inference.py) |
-| `ObjectDetectionHandler` -> inference call path | WebSocket message payload with base64 frame and metadata | Detection results merged into navigation/object response flow | Inference invocation failure logged and returned as error payload | [aws_resources/backend/src/main/kotlin/com/handlers/ObjectDetectionHandler.kt](../aws_resources/backend/src/main/kotlin/com/handlers/ObjectDetectionHandler.kt) |
+| `ObjectDetectionHandler`| WebSocket message payload with base64 frame and metadata | Detection results merged into navigation/object response flow | Inference invocation failure logged and returned as error payload | [aws_resources/backend/src/main/kotlin/com/handlers/ObjectDetectionHandler.kt](../aws_resources/backend/src/main/kotlin/com/handlers/ObjectDetectionHandler.kt) |
 
-### Inference Settings (Quick Index)
+### Inference Settings
 
 | Key | Purpose | Required | Source |
 | --- | --- | --- | --- |
