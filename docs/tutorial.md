@@ -1,38 +1,47 @@
 # Tutorial Stride
 
 ## Overview
-This tutorial helps a first-time user run Stride for the first time and complete one full navigation session inside BHEE.
 
-You will learn by doing:
-- opening the app
-- signing in
-- choosing a destination
-- starting navigation
-- following turn-by-turn audio prompts
-- ending the session successfully
+This tutorial is aimed to help a first-time user run Stride for the first time and complete one full navigation session inside BHEE.
 
-By the end, you should be able to repeat this workflow on your own.
+You will learn to do the following:
+
+- open the application
+- login
+- select a location
+- begin navigation
+- complete audio instructions
+- end the navigation session
+
+You will be able to complete this navigation session by yourself.
 
 ## Prerequisites
-Before you start, make sure:
-- You have a phone with the Stride app installed.
-- You are physically inside the BHEE building.
-- You are connected to Wi-Fi.
-- Your phone battery is at least 20%.
-- Your phone volume is turned up enough to hear voice guidance.
+
+Please ensure:
+
+- you have a phone and the Stride app.
+- you are inside the BHEE building.
+- you are connected to Wi-Fi.
+- your phone battery is at least 20%
+- your phone volume is high enough to hear voice instructions.
 
 Account and permissions:
-- You have a Stride account (or are ready to create one).
-- You allow the app to use location, camera, and microphone when prompted.
+
+- you have a Stride account (or are ready to create one)
+
+- you have allowed the app to access your location, camera and microphone.
 
 ## Setup / Installation
+
 If Stride is not installed yet:
+
 1. Install the Stride app build shared by your team.
 2. Open the app.
 3. If you are a new user, complete sign up with email and password.
 4. If you already have an account, log in with your existing credentials.
 
 Device setup check:
+
 1. Confirm Wi-Fi is connected.
 2. Confirm volume is not muted.
 3. Keep your phone upright and pointed forward while walking.
@@ -40,45 +49,74 @@ Device setup check:
 When setup is done, stay on the app home screen.
 
 ## First Workflow (step-by-step guide)
-Follow these steps in order:
 
-1. Start from the home screen after login.
-2. Choose your destination (for example, room 226).
-3. Tap **Start Navigation**.
-4. Wait for the confirmation tone that indicates navigation is active.
-5. Listen to the first instruction (example: "Walk 13 feet" or "Turn left").
-6. Walk slowly and follow each spoken instruction.
-7. Keep the phone steady and pointed forward so the app can keep updating guidance.
-8. If obstacle beeps speed up, reduce speed and prepare to stop.
-9. Continue until you hear the arrival message.
-10. Tap **End Navigation** to close the session.
+Follow the instructions in the following order.
+
+1. Start at the home screen after you log in.
+
+2. Select your desired destination (i.e., Room 226).
+
+3. Click on Start Navigation.
+
+4. Wait for the beep that tells you that the navigation is on.
+
+5. Pay attention to the first command (i.e., “ travers 13 ft” or “left turn”).
+
+6. Move and do exactly what the teacher said.
+
+7. Hold the phone in front your eyes and don’t move it if you want the app to give you directions.
+
+8. If you hear the beeping noise, reduce your pace and get ready to stop.
+
+9. Keep going until you reach your destination.
+
+10. Click On End Navigation to stop your navigation session.
 
 Practice tip:
-- Repeat the same route once more so you can get comfortable with the instruction timing and beeping patterns.
 
-## Expected Results
-If everything worked correctly, you should see and hear the following:
-- Navigation starts after tapping **Start Navigation**.
-- Voice instructions update as you move.
-- Obstacle feedback beeps change as you approach obstacles.
-- You hear an arrival message at your destination.
-- After tapping **End Navigation**, the app returns to idle/home state.
+- Do the same thing again until you have mastered the timing of the instruction and the beeping noise.
 
-## Troubleshooting
-If navigation does not start:
-- Check Wi-Fi connection and try again.
-- Make sure location, camera, and microphone permissions are enabled.
-- Close and reopen the app, then restart the workflow.
+## Anticipated Outcomes
 
-If instructions are hard to hear:
-- Increase volume and disable silent mode.
-- Move to a quieter area if possible.
+If you did everything you were supposed to do, you will see and hear the following:
 
-If directions seem inaccurate:
-- Keep the phone upright and stable.
-- Walk at a steady pace instead of abrupt movements.
-- End session and restart navigation to reinitialize guidance.
+- After you Initiate Navigation, it will start.
 
-If login fails:
-- Verify email/password.
-- Try password reset or create a new test account if allowed by your course instructions.
+- As you move, the audio instructions will change.
+
+- As you come closer to an object, the feedback beeping sound will change.
+
+- You will get to your destination.
+
+- The app changes to the waiting/ home screen again after you End Navigation.
+
+## Navigation Issues
+
+- If your navigation is stuck:
+
+- Retry after ensuring that your Wi-Fi is on.
+
+- Confirm that your location, camera, and microphone access are turned on.
+
+- Exit the app completely and then open it again to start the process from the beginning.
+
+- If you can’t clearly hear the instructions.
+
+- Increase the volume and turn the phone to the opposing side of the silent side.
+
+- Move to a quieter area.
+
+- If the instructions seem to be off.
+
+- Ensure the device is in an upright and steady position.
+
+- Maintain a consistent walking pace to avoid abrupt pace movements.
+
+- The session must be stopped in order to restart the navigation to reset the guidance.
+
+If you are unable to log in:
+
+- Check your email and password.
+
+- As per your course instructions, you can attempt to reset your password or create a new test account.
+
