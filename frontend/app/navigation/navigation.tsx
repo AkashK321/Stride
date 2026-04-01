@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Pressable,
   PanResponder,
+  Image,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -33,6 +34,17 @@ import { useHeading } from "../../hooks/useHeading";
 import { useSensorData } from "../../hooks/useSensorData";
 import { getFocalLengthPixels } from "../../services/focalLength";
 
+/** After centered square crop, resize to this width (output is square, e.g. 360×360). */
+const LIVE_NAV_FRAME_WIDTH = 360;
+
+/** How often to send `action: "navigation"` on the WebSocket (live nav updates). */
+const LIVE_NAV_WS_INTERVAL_MS = 1000;
+
+function getImageSize(uri: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    Image.getSize(uri, (width, height) => resolve({ width, height }), reject);
+  });
+}
 
 export default function NavigationSession() {
   const params = useLocalSearchParams();
@@ -55,8 +67,7 @@ export default function NavigationSession() {
   const [speakerMode, setSpeakerMode] = React.useState(false);
   const [currentStepIndex, setCurrentStepIndex] = React.useState(0);
   const focalLengthPixels = React.useMemo(() => getFocalLengthPixels(), []);
-  const { getSnapshot, start: startSensors, stop: stopSensors, isActive: sensorsActive } =
-    useSensorData();
+  const { getSnapshot, start: startSensors, stop: stopSensors } = useSensorData();
 
   const { getAlignment } = useHeading();
   const activeInstruction = navigationInstructions?.[currentStepIndex] ?? null;
@@ -96,12 +107,36 @@ export default function NavigationSession() {
       base64: false,
     });
     if (!photo?.uri) return null;
-    const resized = await manipulateAsync(
-      photo.uri,
-      [{ resize: { width: 360 } }],
-      { base64: true, compress: 0.5, format: SaveFormat.JPEG },
-    );
-    return resized.base64 ?? null;
+
+    const encodeOptions = {
+      base64: true,
+      compress: 0.4,
+      format: SaveFormat.JPEG as const,
+    };
+
+    try {
+      const { width, height } = await getImageSize(photo.uri);
+      const side = Math.min(width, height);
+      const originX = Math.floor((width - side) / 2);
+      const originY = Math.floor((height - side) / 2);
+
+      const resized = await manipulateAsync(
+        photo.uri,
+        [
+          { crop: { originX, originY, width: side, height: side } },
+          { resize: { width: LIVE_NAV_FRAME_WIDTH } },
+        ],
+        encodeOptions,
+      );
+      return resized.base64 ?? null;
+    } catch {
+      const resized = await manipulateAsync(
+        photo.uri,
+        [{ resize: { width: LIVE_NAV_FRAME_WIDTH } }],
+        encodeOptions,
+      );
+      return resized.base64 ?? null;
+    }
   }, []);
 
   const sendNavigationFrame = React.useCallback(async () => {
@@ -207,54 +242,19 @@ export default function NavigationSession() {
     }
   }, []);
 
-  const ensureStreamingReady = React.useCallback(async () => {
-    if (!navigationSessionId) return;
-    try {
-      if (!wsRef.current) {
-        const wsUrl = getWebSocketUrl();
-        if (!wsUrl) {
-          throw new Error("WebSocket URL is not configured");
-        }
-        const ws = new NavigationWebSocket(wsUrl);
-        ws.autoReconnect = true;
-        ws.setStatusHandler((status) => {
-          if (status === "error") {
-            setNavigationError("WebSocket connection error");
-          }
-        });
-        ws.setMessageHandler(handleSocketMessage);
-        wsRef.current = ws;
-      }
-      if (!wsRef.current.isConnected()) {
-        await wsRef.current.connect();
-      }
-      if (!sensorsActive) {
-        await startSensors();
-      }
-      if (!navLoopRef.current) {
-        navLoopRef.current = setInterval(() => {
-          void sendNavigationFrame();
-        }, 5000);
-      }
-      if (!collisionLoopRef.current) {
-        collisionLoopRef.current = setInterval(() => {
-          void sendCollisionFrame();
-        }, 500);
-      }
-      // send immediately so users don't wait for first interval.
-      void sendNavigationFrame();
-      void sendCollisionFrame();
-    } catch (e) {
-      setNavigationError(e instanceof Error ? e.message : "Failed to initialize live streaming");
-    }
-  }, [
-    handleSocketMessage,
-    navigationSessionId,
-    sendCollisionFrame,
-    sendNavigationFrame,
-    sensorsActive,
-    startSensors,
-  ]);
+  /** Always latest send fns so WebSocket intervals do not need effect re-runs when sensors/state change. */
+  const sendNavigationFrameRef = React.useRef(sendNavigationFrame);
+  const sendCollisionFrameRef = React.useRef(sendCollisionFrame);
+  sendNavigationFrameRef.current = sendNavigationFrame;
+  sendCollisionFrameRef.current = sendCollisionFrame;
+
+  const handleSocketMessageRef = React.useRef(handleSocketMessage);
+  handleSocketMessageRef.current = handleSocketMessage;
+
+  const startSensorsRef = React.useRef(startSensors);
+  const stopSensorsRef = React.useRef(stopSensors);
+  startSensorsRef.current = startSensors;
+  stopSensorsRef.current = stopSensors;
 
   const instructionCountRef = React.useRef(0);
   instructionCountRef.current = navigationInstructions?.length ?? 0;
@@ -351,18 +351,67 @@ export default function NavigationSession() {
     };
   }, [params.landmark_id]);
 
+  // WebSocket + loops: run only when session id appears or changes — not when send callbacks
+  // or sensorsActive change (that was causing disconnect/reconnect churn).
   React.useEffect(() => {
     if (!navigationSessionId) {
       return;
     }
-    void ensureStreamingReady();
+
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        const wsUrl = getWebSocketUrl();
+        if (!wsUrl) {
+          setNavigationError("WebSocket URL is not configured");
+          return;
+        }
+        const ws = new NavigationWebSocket(wsUrl);
+        ws.autoReconnect = true;
+        ws.setStatusHandler((status) => {
+          if (status === "error") {
+            setNavigationError("WebSocket connection error");
+          }
+        });
+        ws.setMessageHandler((response) => {
+          handleSocketMessageRef.current(response);
+        });
+        wsRef.current = ws;
+        await ws.connect();
+        if (cancelled) return;
+
+        await startSensorsRef.current();
+        if (cancelled) return;
+
+        navLoopRef.current = setInterval(() => {
+          void sendNavigationFrameRef.current();
+        }, LIVE_NAV_WS_INTERVAL_MS);
+        collisionLoopRef.current = setInterval(() => {
+          void sendCollisionFrameRef.current();
+        }, 500);
+
+        void sendNavigationFrameRef.current();
+        void sendCollisionFrameRef.current();
+      } catch (e) {
+        if (!cancelled) {
+          setNavigationError(
+            e instanceof Error ? e.message : "Failed to initialize live streaming",
+          );
+        }
+      }
+    };
+
+    void run();
+
     return () => {
+      cancelled = true;
       stopStreamingLoops();
       wsRef.current?.disconnect();
       wsRef.current = null;
-      stopSensors();
+      stopSensorsRef.current();
     };
-  }, [ensureStreamingReady, navigationSessionId, stopSensors, stopStreamingLoops]);
+  }, [navigationSessionId, stopStreamingLoops]);
 
   const handleExitNavigation = React.useCallback(() => {
     stopStreamingLoops();

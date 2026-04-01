@@ -68,6 +68,40 @@ export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "er
 type MessageHandler = (response: NavigationResponse) => void;
 type StatusHandler = (status: ConnectionStatus) => void;
 
+/** Pretty-print JSON like `jq .` (2-space indent). */
+function formatJq(obj: unknown): string {
+  return JSON.stringify(obj, null, 2);
+}
+
+function isLiveNavigationResponse(data: NavigationResponse): boolean {
+  return (
+    data.type === "navigation_update" ||
+    data.type === "navigation_complete" ||
+    data.type === "navigation_error"
+  );
+}
+
+/** Logs live-nav `action: "navigation"` sends without image bytes. */
+function logLiveNavigationRequest(message: NavigationFrameMessage): void {
+  if (message.action !== "navigation") return;
+  const { image_base64, ...rest } = message;
+  const rawLen = image_base64.length;
+  const decodedApprox = Math.round((rawLen * 3) / 4);
+  const safe = {
+    ...rest,
+    image_base64_omitted: true,
+    image_base64_length_chars: rawLen,
+    image_decoded_kb_approx: Math.round(decodedApprox / 1024),
+  };
+  console.log(`[WS][nav] → REQ\n${formatJq(safe)}`);
+}
+
+/** Logs live navigation responses (no image payload on this route). */
+function logLiveNavigationResponse(data: NavigationResponse): void {
+  if (!isLiveNavigationResponse(data)) return;
+  console.log(`[WS][nav] ← RES\n${formatJq(data)}`);
+}
+
 /**
  * WebSocket manager for navigation frame transmission.
  */
@@ -177,12 +211,13 @@ export class NavigationWebSocket {
                 const latency = Date.now() - sentTime;
                 data.latency_ms = latency;
                 this._pendingRequests.delete(data.request_id);
-                console.log(`[WebSocket] Request ${data.request_id} latency: ${latency}ms`);
               } else {
                 console.warn(`[WebSocket] Received response with unknown request_id: ${data.request_id}`);
               }
             }
-            
+
+            logLiveNavigationResponse(data);
+
             // In development mode, send response to local CSV logger server
             if (__DEV__ && typeof fetch !== "undefined") {
               this.logResponseToDevServer(data).catch((err) => {
@@ -295,14 +330,6 @@ export class NavigationWebSocket {
       // - Any WebSocket frame overhead
       const MAX_PAYLOAD_SIZE_BYTES = 25 * 1024;
       
-      // Always log payload size for debugging
-      console.log(
-        `[WebSocket] Payload size check: ` +
-        `Image=${Math.round(imageSizeBytes / 1024)} KB (base64=${Math.round(imageBase64Length / 1024)} KB), ` +
-        `Metadata=${Math.round(metadataSizeBytes / 1024)} KB, ` +
-        `Total=${Math.round(payloadSizeBytes / 1024)} KB (limit=${MAX_PAYLOAD_SIZE_BYTES / 1024} KB)`
-      );
-      
       if (payloadSizeBytes > MAX_PAYLOAD_SIZE_BYTES) {
         console.warn(
           `[WebSocket] ❌ Frame payload too large (${Math.round(payloadSizeBytes / 1024)} KB), skipping send to prevent disconnection. ` +
@@ -322,8 +349,9 @@ export class NavigationWebSocket {
       if (message.session_id) {
         this._currentSessionId = message.session_id;
       }
-      
-      console.log(`[WebSocket] ✅ Sending frame (request_id: ${message.request_id}, ${Math.round(payloadSizeBytes / 1024)} KB)`);
+
+      logLiveNavigationRequest(message);
+
       this.ws.send(payload);
       return true;
     } catch (e) {

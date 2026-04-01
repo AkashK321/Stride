@@ -1166,31 +1166,27 @@ paths:
       summary: Send navigation frame (WebSocket)
       description: |
         **⚠️ WebSocket Endpoint - Not a REST endpoint**
-        
-        This is a WebSocket message exchange, not a traditional REST endpoint.
-        To use this:
-        
-        1. Connect to WebSocket: `wss://{wsApiId}.execute-api.{region}.amazonaws.com/prod`
-        2. Use route key: `"navigation"` (configured in AWS API Gateway)
-        3. Send `NavigationFrameMessage` as JSON via WebSocket
-        4. Receive `NavigationUpdateMessage` responses via WebSocket
-        
-        **Message Flow:**
-        - Client sends `NavigationFrameMessage` with camera frame, focal length, GPS, and IMU sensor data
-        - Server responds with `NavigationUpdateMessage` containing updated navigation instructions
-        - This exchange happens continuously while navigation is active (every 1-2 seconds)
-        
-        **Sensor Data:**
-        - `focal_length_pixels`: Per-device focal length for distance estimation (from hardcoded device map via `expo-device`)
-        - `gps`: GPS coordinates from `expo-location`
-        - `accelerometer`: Raw accelerometer data from `expo-sensors`
-        - `gyroscope`: Raw gyroscope data from `expo-sensors`
-        - `heading_degrees`: Device compass heading from `expo-location` or `expo-sensors`
-        
-        **Connection:**
-        - WebSocket URL: `wss://{wsApiId}.execute-api.{region}.amazonaws.com/prod`
-        - Route: `"navigation"` (configured in CDK stack)
-        - Protocol: JSON messages over WebSocket
+
+        This documents the JSON body shape for messages sent **over** the WebSocket.
+        API Gateway uses **`$request.body.action`** to choose the integration (see CDK `route_selection_expression`).
+
+        **Routing**
+
+        | `action` value | Lambda | Typical client interval | Server response shape |
+        | --- | --- | --- | --- |
+        | `"navigation"` | Live navigation | ~1 s during active session | `NavigationUpdateMessage` (`type: navigation_update`) |
+        | `"frame"` | Object detection | ~500 ms (collision loop) | `ObjectDetectionWebSocketResponse` (distances, no `type` field) |
+
+        **Connection**
+
+        1. Connect to the WebSocket URL (e.g. `wss://{apiId}.execute-api.{region}.amazonaws.com/{stage}`).
+        2. Send JSON messages; each must include **`action`**: `"navigation"` or `"frame"`.
+        3. Responses are pushed on the same connection; match outbound messages using **`request_id`**.
+
+        **Sensor data** (shared shape for both actions when using the mobile client)
+
+        - `focal_length_pixels`: Per-device focal length for distance estimation (device map + `expo-device`)
+        - `gps`, `accelerometer`, `gyroscope`, `heading_degrees`, `timestamp_ms`: as in `NavigationFrameMessage`
       operationId: sendNavigationFrame
       requestBody:
         required: true
@@ -1201,8 +1197,9 @@ paths:
               $ref: '#/components/schemas/NavigationFrameMessage'
             examples:
               navigationFrame:
-                summary: Navigation frame with image, focal length, GPS, and IMU sensors
+                summary: Live navigation (`action` routes to LiveNavigationHandler)
                 value:
+                  action: "navigation"
                   session_id: "nav_session_abc123"
                   image_base64: "<base64-encoded-image>"
                   focal_length_pixels: 1435.2
@@ -1224,14 +1221,42 @@ paths:
                     z: 0.005
                   timestamp_ms: 1739052345123
                   request_id: 42
+              objectDetectionFrame:
+                summary: Object detection only (`action` routes to ObjectDetectionHandler)
+                value:
+                  action: "frame"
+                  session_id: "nav_session_abc123"
+                  image_base64: "<base64-encoded-image>"
+                  focal_length_pixels: 1435.2
+                  heading_degrees: 270.0
+                  gps:
+                    latitude: 39.1653
+                    longitude: -86.5264
+                    altitude: 230.5
+                    accuracy: 5.0
+                    altitude_accuracy: 10.0
+                    speed: 1.2
+                  accelerometer:
+                    x: 0.1
+                    y: 0.0
+                    z: 9.8
+                  gyroscope:
+                    x: 0.01
+                    y: -0.02
+                    z: 0.005
+                  timestamp_ms: 1739052345123
+                  request_id: 43
       responses:
         '200':
-          description: Navigation update response (sent via WebSocket)
+          description: |
+            Response is sent over the WebSocket (not as an HTTP body). Shape depends on `action`:
+            navigation updates vs object-detection distances.
           content:
             application/json:
               schema:
                 oneOf:
                   - $ref: '#/components/schemas/NavigationUpdateMessage'
+                  - $ref: '#/components/schemas/ObjectDetectionWebSocketResponse'
                   - $ref: '#/components/schemas/NavigationErrorMessage'
                   - $ref: '#/components/schemas/NavigationCompleteMessage'
               examples:
@@ -1254,7 +1279,17 @@ paths:
                       coordinates:
                         x_feet: -13
                         y_feet: 0
-                    confidence: 0.87
+                    message: "Localization: PDR + landmark fusion; closest map node returned in estimated_position."
+                    request_id: 42
+                objectDetectionResponse:
+                  summary: Object-detection response (`action` was `frame`)
+                  value:
+                    frameSize: 245760
+                    valid: true
+                    estimatedDistances:
+                      - className: "person"
+                        distance: "2.500"
+                    request_id: 43
                 navigationComplete:
                   summary: Navigation completed
                   value:
@@ -1571,15 +1606,12 @@ components:
     NavigationFrameMessage:
       type: object
       description: |
-        Client → Server WebSocket message for live navigation.
-        Sent on the WebSocket route (e.g., "navigation" or "frame") to provide a new
-        camera frame plus sensor data so the backend can localize the user and update
-        navigation instructions.
-        
-        **Note:** Routing is handled by AWS API Gateway WebSocket route keys configured
-        in the infrastructure (e.g., "navigation" route). The message itself does not
-        need an action field for routing.
-        
+        Client → Server WebSocket message for camera + sensors.
+
+        **`action` is required for API Gateway:** the stack uses `route_selection_expression:
+        $request.body.action`, so each message must set **`action`** to **`"navigation"`** (live
+        localization and path updates) or **`"frame"`** (object detection / distances only).
+
         **Sensor Data Sources (Expo):**
         - `focal_length_pixels`: Computed on the frontend from a hardcoded device model → focal length map
           using `expo-device` to detect the device. Focal length in mm and sensor width in mm are mapped
@@ -1589,6 +1621,7 @@ components:
         - `gyroscope`: From `expo-sensors` (`Gyroscope`).
         - `heading_degrees`: From `expo-location` (`Location.watchHeadingAsync`) or `expo-sensors` (`Magnetometer`).
       required:
+        - action
         - session_id
         - image_base64
         - heading_degrees
@@ -1597,6 +1630,13 @@ components:
         - focal_length_pixels
         - request_id
       properties:
+        action:
+          type: string
+          description: Selects WebSocket integration (`navigation` vs `frame`)
+          enum:
+            - navigation
+            - frame
+          example: "navigation"
         session_id:
           type: string
           description: Active navigation session ID from /navigation/start
@@ -1719,8 +1759,8 @@ components:
     NavigationUpdateMessage:
       type: object
       description: |
-        Server → Client WebSocket message containing an updated estimate of the
-        user's location and the remaining navigation instructions.
+        Server → Client WebSocket message for **`action: "navigation"`** requests.
+        Contains fused position estimate and optional instruction list refresh.
       required:
         - type
         - session_id
@@ -1739,11 +1779,17 @@ components:
           example: "nav_session_abc123"
         current_step:
           type: integer
-          description: Index (1-based) of the step the user is currently on
+          description: |
+            Increments once per successfully processed **`navigation`** frame (session counter
+            persisted in DynamoDB). This is **not** tied to completing a turn-by-turn instruction;
+            use for debugging or coarse progress only until instruction-based progression exists.
           example: 2
         remaining_instructions:
           type: array
-          description: Updated instructions from the current step onward
+          description: |
+            New instructions when the path was recalculated (e.g., user off original path).
+            May be **empty** when the closest node remains on the stored path—position still updates
+            in session state.
           items:
             $ref: '#/components/schemas/NavigationInstruction'
         estimated_position:
@@ -1783,8 +1829,48 @@ components:
           example: 42
         message:
           type: string
-          description: Optional text summary for debugging or logging
-          example: "You are near the west staircase intersection"
+          description: Short description of what the backend did for this update
+          example: "Localization: PDR + landmark fusion; closest map node returned in estimated_position."
+
+    ObjectDetectionWebSocketResponse:
+      type: object
+      description: |
+        Server → Client WebSocket message for **`action: "frame"`** requests (object detection
+        Lambda). Not a navigation protocol message—no `type` field.
+      required:
+        - frameSize
+        - valid
+        - estimatedDistances
+        - request_id
+      properties:
+        frameSize:
+          type: integer
+          description: Decoded image size in bytes
+          example: 245760
+        valid:
+          type: boolean
+          description: Whether the payload decoded to a supported image
+          example: true
+        estimatedDistances:
+          type: array
+          description: Per-detection class name and distance estimate (meters, formatted string)
+          items:
+            type: object
+            required:
+              - className
+              - distance
+            properties:
+              className:
+                type: string
+                example: "person"
+              distance:
+                type: string
+                description: Distance in meters (decimal string)
+                example: "2.500"
+        request_id:
+          type: integer
+          description: Echoed from the client frame for latency matching
+          example: 43
 
     NavigationErrorMessage:
       type: object

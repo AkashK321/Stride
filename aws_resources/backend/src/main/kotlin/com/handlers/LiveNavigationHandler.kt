@@ -270,7 +270,6 @@ class LiveNavigationHandler(
         val imageBase64 = payload["image_base64"] as String
         val focalLength = (payload["focal_length_pixels"] as Number).toDouble()
 
-        // TODO(business-logic): run live localization using image.
         val sessionData = sessionTableClient.getItemDetails(sessionId)
         val previousX = sessionData?.get("current_x")?.toDoubleOrNull() ?: 0.0
         val previousY = sessionData?.get("current_y")?.toDoubleOrNull() ?: 0.0
@@ -389,7 +388,7 @@ class LiveNavigationHandler(
             "current_step" to currentStep,
             "remaining_instructions" to instructions,
             "request_id" to requestId,
-            "message" to "Live navigation infrastructure is wired. Business logic pending.",
+            "message" to "Localization: PDR + landmark fusion; closest map node returned in estimated_position.",
             "estimated_position" to mapOf(
                 "node_id" to closestNodeId,
                 "coordinates" to mapOf(
