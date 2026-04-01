@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Stride inference dashboard</title>
+  <link rel="stylesheet" href="/static/dashboard.css"/>
+</head>
+<body>
+  <div class="app-top-bar">
+    <div class="app-top-bar__inner">
+      <h1 class="app-top-bar__title">Stride inference dashboard</h1>
+      <div class="app-top-bar__session" id="top-bar-session" role="status" aria-live="polite">
+        <span class="top-bar-pill top-bar-pill--inactive" id="top-bar-pill">Inactive</span>
+        <span id="top-bar-name" class="top-bar-name">No session</span>
+        <span id="top-bar-model" class="top-bar-model"></span>
+        <span class="top-bar-timer" id="top-bar-timer" title="Session duration"></span>
+      </div>
+    </div>
+  </div>
+
+  <header class="page-subheader">
+    <p class="muted">Manage models, run named sessions, and inspect logs/artifacts from <code>POST /invocations</code>. Logs refresh automatically.</p>
+  </header>
+
+  <main class="dashboard-grid">
+    <div class="models-session-row">
+    <section class="session-panel session-panel--models">
+      <h2>Models</h2>
+      <div class="models-session-stack">
+        <div class="model-picker-block">
+          <div class="model-picker-label" id="model-list-label">Available models</div>
+          <div id="model-list" class="model-list" role="listbox" aria-labelledby="model-list-label"></div>
+          <p class="muted small">Click a model to select it for the next session.</p>
+        </div>
+        <form id="model-upload-form" class="model-upload-form">
+          <label for="model-name">Add model</label>
+          <input id="model-name" type="text" placeholder="Display name (e.g. tuned-v3)"/>
+          <div class="file-field">
+            <span class="file-field__label">Weights file</span>
+            <div class="file-input">
+              <input id="model-file" class="file-input__native" type="file" accept=".pt,.onnx,.bin"/>
+              <label for="model-file" class="file-input__btn">Choose file</label>
+              <span class="file-input__name" id="model-file-name">No file selected</span>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-secondary">Upload model</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="session-panel" id="session-panel">
+      <h2>Named session</h2>
+      <p class="muted">Start a session with a name and selected model. Logs/metrics group by session.</p>
+      <div class="session-controls-block">
+        <div>
+          <label for="session-name">Session name</label>
+          <input id="session-name" type="text" placeholder="e.g. hallway-lowlight-run-1"/>
+        </div>
+        <div class="session-actions">
+          <label class="session-actions__label">Session controls</label>
+          <div class="session-actions__buttons">
+            <button type="button" id="btn-start" class="btn btn-primary">Start session</button>
+            <button type="button" id="btn-end" class="btn btn-danger">End session</button>
+          </div>
+        </div>
+      </div>
+      <p id="session-status" class="session-hint muted small"></p>
+      <div id="token-box" class="token-box hidden">
+        <p><strong>Copy once</strong> — set on Lambda:</p>
+        <pre id="token-display"></pre>
+        <button type="button" id="btn-copy-token">Copy token</button>
+        <p class="muted small">AWS CLI (merge with existing Lambda env vars):</p>
+        <pre id="lambda-cli" class="cli-snippet"></pre>
+        <button type="button" id="btn-copy-cli">Copy aws command</button>
+      </div>
+    </section>
+    </div>
+
+    <section class="session-panel">
+      <h2>Metrics</h2>
+      <div class="grid-four">
+        <div class="metric"><div class="muted small">Requests</div><div id="m-requests">0</div></div>
+        <div class="metric"><div class="muted small">Avg latency (ms)</div><div id="m-latency">0</div></div>
+        <div class="metric"><div class="muted small">Detections</div><div id="m-detections">0</div></div>
+        <div class="metric"><div class="muted small">Error rate</div><div id="m-errors">0%</div></div>
+      </div>
+    </section>
+
+    <section class="logs-detail-grid">
+      <section class="session-panel">
+        <h2>Logs</h2>
+        <div class="grid-four">
+          <div>
+            <label for="filter-session">Session</label>
+            <select id="filter-session"><option value="">All</option></select>
+          </div>
+          <div>
+            <label for="filter-model">Model</label>
+            <select id="filter-model"><option value="">All</option></select>
+          </div>
+          <div>
+            <label for="filter-status">HTTP status</label>
+            <input id="filter-status" type="number" placeholder="e.g. 200"/>
+          </div>
+          <div>
+            <label>&nbsp;</label>
+            <div>
+              <button type="button" id="btn-refresh">Refresh</button>
+              <button type="button" id="btn-clear-logs">Clear logs</button>
+            </div>
+          </div>
+        </div>
+        <div class="logs-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Time</th>
+                <th>Session</th>
+                <th>Model</th>
+                <th>Latency (ms)</th>
+                <th>HTTP</th>
+                <th>Artifacts</th>
+              </tr>
+            </thead>
+            <tbody id="logs-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="session-panel">
+        <h2>Selected log detail</h2>
+        <div id="detail-meta" class="muted">Select a log row to view artifacts and response.</div>
+        <div class="detail images">
+          <figure>
+            <figcaption>Request image</figcaption>
+            <img id="detail-image" alt="request image" class="hidden-media"/>
+          </figure>
+          <figure>
+            <figcaption>Overlay</figcaption>
+            <img id="detail-overlay" alt="overlay image" class="hidden-media"/>
+          </figure>
+        </div>
+        <pre id="detail-json"></pre>
+      </section>
+    </section>
+  </main>
+  <script>
+(function () {
+  const modelListEl = document.getElementById('model-list');
+  let selectedModelId = null;
+  const filterSession = document.getElementById('filter-session');
+  const filterModel = document.getElementById('filter-model');
+  const logsBody = document.getElementById('logs-body');
+  const detailMeta = document.getElementById('detail-meta');
+  const detailJson = document.getElementById('detail-json');
+  const detailImage = document.getElementById('detail-image');
+  const detailOverlay = document.getElementById('detail-overlay');
+  const statusEl = document.getElementById('session-status');
+  const topBarPill = document.getElementById('top-bar-pill');
+  const topBarName = document.getElementById('top-bar-name');
+  const topBarModel = document.getElementById('top-bar-model');
+  const topBarTimer = document.getElementById('top-bar-timer');
+  const btnStart = document.getElementById('btn-start');
+  const btnEnd = document.getElementById('btn-end');
+  const modelFileInput = document.getElementById('model-file');
+  const modelFileName = document.getElementById('model-file-name');
+  const tokenBox = document.getElementById('token-box');
+  const tokenDisplay = document.getElementById('token-display');
+  const lambdaCli = document.getElementById('lambda-cli');
+  let cachedLogs = [];
+  let cachedSessions = [];
+  let cachedModels = [];
+  /** Log id shown in detail pane; preserved across auto-refresh when still in the list */
+  let detailLogId = null;
+  /** Unix seconds (float) when current session started; drives top-bar timer */
+  let sessionStartTs = null;
+  const POLL_MS = 4000;
+
+  function setSessionButtons(active) {
+    btnStart.disabled = !!active;
+    btnEnd.disabled = !active;
+  }
+
+  function fillSelect(selectEl, rows, valueKey, textKey, includeAll) {
+    const prev = selectEl.value;
+    selectEl.innerHTML = includeAll ? '<option value="">All</option>' : '';
+    rows.forEach((r) => {
+      const opt = document.createElement('option');
+      opt.value = String(r[valueKey]);
+      opt.textContent = String(r[textKey]);
+      selectEl.appendChild(opt);
+    });
+    if ([...selectEl.options].some((o) => o.value === prev)) {
+      selectEl.value = prev;
+    }
+  }
+
+  /** Each Start session inserts a new DB row; reusing the same name yields multiple ids — label with id + time so options are distinct. */
+  function formatSessionShortStamp(tsMs) {
+    const d = new Date(tsMs);
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    let h = d.getHours();
+    const mins = d.getMinutes();
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12;
+    if (h === 0) h = 12;
+    const mStr = String(mins).padStart(2, '0');
+    return mm + '/' + dd + ' ' + h + ':' + mStr + ' ' + ampm;
+  }
+
+  function formatSessionFilterLabel(row) {
+    const name = row.name || '—';
+    const id = row.id;
+    const ts = row.created_at != null ? Number(row.created_at) * 1000 : NaN;
+    if (!Number.isNaN(ts)) {
+      return name + ' · ' + formatSessionShortStamp(ts) + ' · #' + id;
+    }
+    return name + ' · #' + id;
+  }
+
+  function fillSessionFilter(selectEl, rows) {
+    const prev = selectEl.value;
+    selectEl.innerHTML = '<option value="">All</option>';
+    rows.forEach((r) => {
+      const opt = document.createElement('option');
+      opt.value = String(r.id);
+      opt.textContent = formatSessionFilterLabel(r);
+      selectEl.appendChild(opt);
+    });
+    if ([...selectEl.options].some((o) => o.value === prev)) {
+      selectEl.value = prev;
+    }
+  }
+
+  function renderModelList() {
+    if (!cachedModels.length) {
+      selectedModelId = null;
+      modelListEl.innerHTML = '<div class="model-list-empty">No models yet. Upload weights below.</div>';
+      return;
+    }
+    const prev = selectedModelId;
+    const stillExists =
+      prev != null && cachedModels.some((m) => Number(m.id) === Number(prev));
+    if (!stillExists) {
+      selectedModelId = cachedModels[0].id;
+    }
+    modelListEl.innerHTML = '';
+    cachedModels.forEach((m) => {
+      const row = document.createElement('div');
+      row.className = 'model-list-row';
+      row.setAttribute('data-model-id', String(m.id));
+
+      const selectBtn = document.createElement('button');
+      selectBtn.type = 'button';
+      selectBtn.className = 'model-list-item';
+      selectBtn.setAttribute('data-model-id', String(m.id));
+      selectBtn.setAttribute('role', 'option');
+      const isSel = Number(m.id) === Number(selectedModelId);
+      selectBtn.setAttribute('aria-selected', isSel ? 'true' : 'false');
+      if (isSel) selectBtn.classList.add('is-selected');
+      selectBtn.textContent = m.display_name || String(m.id);
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'model-delete-btn';
+      deleteBtn.setAttribute('data-model-id', String(m.id));
+      deleteBtn.setAttribute('title', 'Delete model');
+      deleteBtn.setAttribute('aria-label', 'Delete model ' + (m.display_name || String(m.id)));
+      deleteBtn.innerHTML =
+        '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+        '<path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-2 6h2v9H7V9Zm4 0h2v9h-2V9Zm4 0h2v9h-2V9Z"/>' +
+        '</svg>';
+
+      row.appendChild(selectBtn);
+      row.appendChild(deleteBtn);
+      modelListEl.appendChild(row);
+    });
+  }
+
+  modelListEl.addEventListener('click', function (e) {
+    const del = e.target.closest('.model-delete-btn');
+    if (del) {
+      const modelId = Number(del.getAttribute('data-model-id'));
+      const model = cachedModels.find((m) => Number(m.id) === modelId);
+      const label = model ? (model.display_name || ('#' + modelId)) : ('#' + modelId);
+      const ok = confirm('Delete model "' + label + '"? Existing logs/sessions stay, but it will be removed from selection.');
+      if (!ok) return;
+      fetch('/api/models/' + modelId, { method: 'DELETE' })
+        .then(async function (r) {
+          if (r.status === 404) {
+            return fetch('/api/models/' + modelId + '/delete', { method: 'POST' });
+          }
+          return r;
+        })
+        .then(async function (r) {
+          const j = await r.json().catch(function () { return {}; });
+          if (!r.ok) throw new Error(j.detail || 'Delete failed');
+          return refreshModels();
+        })
+        .catch(function (err) {
+          alert(err && err.message ? err.message : 'Delete failed');
+        });
+      return;
+    }
+
+    const btn = e.target.closest('.model-list-item');
+    if (!btn) return;
+    selectedModelId = Number(btn.getAttribute('data-model-id'));
+    modelListEl.querySelectorAll('.model-list-item').forEach((el) => {
+      const mid = Number(el.getAttribute('data-model-id'));
+      const on = mid === selectedModelId;
+      el.classList.toggle('is-selected', on);
+      el.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+  });
+
+  async function refreshModels() {
+    const r = await fetch('/api/models');
+    const j = await r.json();
+    cachedModels = j.models || [];
+    renderModelList();
+    fillSelect(filterModel, cachedModels, 'id', 'display_name', true);
+  }
+
+  async function refreshSessions() {
+    const r = await fetch('/api/sessions');
+    const j = await r.json();
+    cachedSessions = j.sessions || [];
+    fillSessionFilter(filterSession, cachedSessions);
+  }
+
+  async function refreshMetrics() {
+    const p = new URLSearchParams();
+    if (filterSession.value) p.set('session_id', filterSession.value);
+    if (filterModel.value) p.set('model_id', filterModel.value);
+    const r = await fetch('/api/metrics?' + p.toString());
+    const j = await r.json();
+    document.getElementById('m-requests').textContent = String(j.total_requests || 0);
+    document.getElementById('m-latency').textContent = Number(j.avg_latency_ms || 0).toFixed(1);
+    document.getElementById('m-detections').textContent = String(j.total_detections || 0);
+    document.getElementById('m-errors').textContent = (100 * Number(j.error_rate || 0)).toFixed(1) + '%';
+  }
+
+  async function refreshLogs() {
+    const p = new URLSearchParams();
+    if (filterSession.value) p.set('session_id', filterSession.value);
+    if (filterModel.value) p.set('model_id', filterModel.value);
+    const status = document.getElementById('filter-status').value;
+    if (status) p.set('status', status);
+    const r = await fetch('/api/logs?' + p.toString());
+    const j = await r.json();
+    cachedLogs = j.entries || [];
+    logsBody.innerHTML = '';
+    if (!cachedLogs.length) {
+      detailLogId = null;
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td colspan="8" class="muted">No logs yet.</td>';
+      logsBody.appendChild(tr);
+      return;
+    }
+    const keep =
+      detailLogId != null &&
+      cachedLogs.some(function (l) { return Number(l.id) === Number(detailLogId); });
+    const showId = keep ? detailLogId : cachedLogs[0].id;
+
+    cachedLogs.forEach((row) => {
+      const tr = document.createElement('tr');
+      tr.setAttribute('data-log-id', String(row.id));
+      tr.className = 'log-row';
+      if (Number(row.id) === Number(showId)) tr.classList.add('log-row--active');
+      tr.innerHTML =
+        '<td>' + row.id + '</td>' +
+        '<td>' + Number(row.created_at).toFixed(3) + '</td>' +
+        '<td>' + (row.session_name || '—') + '</td>' +
+        '<td>' + (row.model_name || '—') + '</td>' +
+        '<td>' + Number(row.latency_ms || 0).toFixed(2) + '</td>' +
+        '<td>' + row.http_status + '</td>' +
+        '<td>' + (row.has_image ? 'img' : '') + (row.has_overlay ? ' + overlay' : '') + '</td>';
+      logsBody.appendChild(tr);
+    });
+
+    await showLog(showId);
+  }
+
+  async function showLog(logId) {
+    detailLogId = logId;
+    const r = await fetch('/api/logs/' + logId);
+    const j = await r.json();
+    detailMeta.textContent =
+      'Log #' + j.id + ' · Session: ' + (j.session_name || '—') +
+      ' · Model: ' + (j.model_name || '—') +
+      ' · HTTP ' + j.http_status +
+      ' · Latency ' + Number(j.latency_ms || 0).toFixed(2) + 'ms';
+    detailJson.textContent = JSON.stringify(j.response || {}, null, 2);
+    if (j.has_image) {
+      detailImage.src = '/api/logs/' + j.id + '/image';
+      detailImage.classList.remove('hidden-media');
+    } else {
+      detailImage.removeAttribute('src');
+      detailImage.classList.add('hidden-media');
+    }
+    if (j.has_overlay) {
+      detailOverlay.src = '/api/logs/' + j.id + '/overlay';
+      detailOverlay.classList.remove('hidden-media');
+    } else {
+      detailOverlay.removeAttribute('src');
+      detailOverlay.classList.add('hidden-media');
+    }
+  }
+
+  function formatDuration(totalSeconds) {
+    const s = Math.floor(totalSeconds % 60);
+    const m = Math.floor((totalSeconds / 60) % 60);
+    const h = Math.floor(totalSeconds / 3600);
+    if (h > 0) {
+      return h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+    }
+    return m + ':' + String(s).padStart(2, '0');
+  }
+
+  function updateTopBarTimer() {
+    if (sessionStartTs == null) {
+      topBarTimer.textContent = '';
+      return;
+    }
+    const elapsed = Math.max(0, Date.now() / 1000 - sessionStartTs);
+    topBarTimer.textContent = formatDuration(elapsed);
+  }
+
+  async function refreshStatus() {
+    const r = await fetch('/api/session/status');
+    const j = await r.json();
+    const named = j.active_named_session;
+    if (named) {
+      sessionStartTs =
+        j.started_at != null
+          ? Number(j.started_at)
+          : named.created_at != null
+            ? Number(named.created_at)
+            : null;
+      topBarPill.textContent = 'Active';
+      topBarPill.classList.remove('top-bar-pill--inactive');
+      topBarPill.classList.add('top-bar-pill--active');
+      topBarName.textContent = named.name || '—';
+      topBarModel.textContent = named.model_name ? ' · ' + named.model_name : '';
+      statusEl.textContent =
+        'Active session: ' + named.name + ' · model: ' + (named.model_name || '—');
+      setSessionButtons(true);
+      updateTopBarTimer();
+    } else {
+      sessionStartTs = null;
+      topBarPill.textContent = 'Inactive';
+      topBarPill.classList.remove('top-bar-pill--active');
+      topBarPill.classList.add('top-bar-pill--inactive');
+      topBarName.textContent = 'No session';
+      topBarModel.textContent = '';
+      topBarTimer.textContent = '';
+      statusEl.textContent = 'No active session — start one to issue a token and bind logs.';
+      setSessionButtons(false);
+    }
+  }
+
+  btnStart.onclick = async function () {
+    if (btnStart.disabled) return;
+    const name = (document.getElementById('session-name').value || '').trim();
+    if (!name) { alert('Session name is required'); return; }
+    if (selectedModelId == null) { alert('Select a model first'); return; }
+    const r = await fetch('/api/session/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, model_id: Number(selectedModelId) }),
+    });
+    const j = await r.json();
+    if (!r.ok) { alert(j.detail || 'Start failed'); return; }
+    tokenDisplay.textContent = j.token;
+    const fn = prompt('Lambda function name (for AWS CLI snippet, optional):', 'ObjectDetectionHandler');
+    if (fn) {
+      lambdaCli.textContent =
+        'aws lambda update-function-configuration \\\n' +
+        '  --function-name "' + fn + '" \\\n' +
+        '  --environment "Variables=$(aws lambda get-function-configuration \\\n' +
+        '    --function-name "' + fn + '" \\\n' +
+        "    --query 'Environment.Variables' \\\n" +
+        "    --output json | jq '. + {\"INFERENCE_HTTP_SECRET\":\"" + j.token + "\"}')" +
+        '"';
+    } else {
+      lambdaCli.textContent = 'INFERENCE_HTTP_SECRET=' + j.token;
+    }
+    tokenBox.classList.remove('hidden');
+    await refreshSessions();
+    await refreshLogs();
+    await refreshMetrics();
+    await refreshStatus();
+  };
+
+  btnEnd.onclick = async function () {
+    if (btnEnd.disabled) return;
+    await fetch('/api/session/end', { method: 'POST' });
+    tokenBox.classList.add('hidden');
+    tokenDisplay.textContent = '';
+    lambdaCli.textContent = '';
+    await refreshSessions();
+    await refreshLogs();
+    await refreshMetrics();
+    await refreshStatus();
+  };
+
+  document.getElementById('model-upload-form').onsubmit = async function (e) {
+    e.preventDefault();
+    const name = (document.getElementById('model-name').value || '').trim();
+    const file = document.getElementById('model-file').files[0];
+    if (!name || !file) { alert('Provide model name and file'); return; }
+    const fd = new FormData();
+    fd.append('display_name', name);
+    fd.append('model_file', file);
+    const r = await fetch('/api/models/upload', { method: 'POST', body: fd });
+    const j = await r.json();
+    if (!r.ok) { alert(j.detail || 'Upload failed'); return; }
+    document.getElementById('model-name').value = '';
+    document.getElementById('model-file').value = '';
+    modelFileName.textContent = 'No file selected';
+    await refreshModels();
+  };
+
+  modelFileInput.addEventListener('change', function () {
+    const f = modelFileInput.files[0];
+    modelFileName.textContent = f ? f.name : 'No file selected';
+  });
+
+  document.getElementById('btn-copy-token').onclick = function () {
+    navigator.clipboard.writeText(tokenDisplay.textContent);
+  };
+  document.getElementById('btn-copy-cli').onclick = function () {
+    navigator.clipboard.writeText(lambdaCli.textContent);
+  };
+
+  document.getElementById('btn-refresh').onclick = async function () {
+    await refreshLogs();
+    await refreshMetrics();
+  };
+
+  document.getElementById('btn-clear-logs').onclick = async function () {
+    if (!confirm('Clear all logs?')) return;
+    await fetch('/api/logs/clear', { method: 'POST' });
+    await refreshLogs();
+    await refreshMetrics();
+  };
+
+  logsBody.addEventListener('click', function (e) {
+    const row = e.target.closest('tr[data-log-id]');
+    if (!row) return;
+    showLog(Number(row.getAttribute('data-log-id')));
+  });
+
+  setInterval(updateTopBarTimer, 1000);
+
+  setInterval(function () {
+    refreshStatus()
+      .then(function () { return refreshLogs(); })
+      .then(function () { return refreshMetrics(); })
+      .catch(function () {});
+  }, POLL_MS);
+
+  Promise.resolve()
+    .then(refreshModels)
+    .then(refreshSessions)
+    .then(refreshStatus)
+    .then(refreshLogs)
+    .then(refreshMetrics);
+
+  setSessionButtons(false);
+})();
+  </script>
+</body>
+</html>

@@ -80,8 +80,20 @@ def test_live_navigation_missing_fields(ws_api_url, ws_endpoint_healthy, dummy_b
         }
         ws.send(json.dumps(payload))
         response = json.loads(ws.recv())
-        
-        assert response.get("type") == "navigation_error"
+
+        # If this hit $default → ObjectDetectionHandler, routing is broken (missing route or wrong API).
+        err = response.get("error", "")
+        if response.get("status") == "error" and "$default" in err:
+            pytest.fail(
+                "WebSocket message was handled on the $default route (ObjectDetectionHandler), not "
+                "'navigation'. Redeploy the stack so API Gateway defines a 'navigation' route and "
+                "RouteSelectionExpression is $request.body.action. "
+                f"Full response: {response}"
+            )
+
+        assert response.get("type") == "navigation_error", (
+            f"Expected navigation_error from LiveNavigationHandler, got: {response}"
+        )
         assert "focal_length_pixels" in response.get("error", "")
         print(f"✅ Missing field correctly rejected: {response}")
     finally:

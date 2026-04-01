@@ -202,6 +202,15 @@ class CdkStack(Stack):
             region
         )
 
+        # Optional: SageMaker-compatible HTTP POST /invocations when feature flag disables SageMaker.
+        # Set in cdk.context.json, e.g. "inferenceHttpUrl": "http://internal-host:8080" (VPC/LB/tunnel).
+        inference_http_url = self.node.try_get_context("inferenceHttpUrl")
+        if inference_http_url:
+            object_detection_handler.add_environment(
+                "INFERENCE_HTTP_URL",
+                str(inference_http_url),
+            )
+
         # Define the API Gateway REST API
         api = apigw.LambdaRestApi(
             self, "BusinessApi",
@@ -226,7 +235,12 @@ class CdkStack(Stack):
         start.add_method("POST", integration=apigw.LambdaIntegration(static_navigation_handler))
 
         # Define the API Gateway WebSocket API
-        ws_api = apigw_v2.WebSocketApi(self, "StreamAPI")
+        # Explicit selection: client JSON must include "action": "frame" | "navigation" (etc.)
+        ws_api = apigw_v2.WebSocketApi(
+            self,
+            "StreamAPI",
+            route_selection_expression="$request.body.action",
+        )
         # Create a Stage (required for WebSockets)
         apigw_v2.WebSocketStage(self, "ProdStage",
             web_socket_api=ws_api,

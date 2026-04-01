@@ -66,8 +66,16 @@ class ObjectDetectionHandlerTest {
             )
         )
         
-        // Mock the public getDetections function which accepts a single ByteArray
-        every { handler.getDetections(false, any<ByteArray>(), mockLogger) } returns fakeDetections
+        // Mock getDetections (SageMaker/HTTP path) — bypass real inference backends
+        every {
+            handler.getDetections(
+                false,
+                any<ByteArray>(),
+                mockLogger,
+                any(),
+                any(),
+            )
+        } returns fakeDetections
 
         // 3. Create Input Event
         val imageBytes = "fake_image_bytes".toByteArray()
