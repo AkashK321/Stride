@@ -187,6 +187,7 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
                     "currentNodeId" to startNodeId,
                     "destLandmarkId" to destLandmarkId,
                     "path" to pathNodes.joinToString(","),
+                    "pathRecalculated" to false,
                     "last_updated_ms" to System.currentTimeMillis(), // Initial timestamp for delta-t calculations
                     "ttl" to ttlSeconds
                 ))
