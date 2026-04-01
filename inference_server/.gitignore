@@ -8,5 +8,4 @@ __pycache__/
 # Local runtime persistence (single-machine): SQLite dashboard + invocation artifacts.
 # Models under .data/models/ are intentionally tracked (custom weights).
 .data/artifacts/
-.data/models/
 .data/*.sqlite3
