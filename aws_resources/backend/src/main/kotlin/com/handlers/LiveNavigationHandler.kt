@@ -276,7 +276,7 @@ class LiveNavigationHandler(
         val previousTime = sessionData?.get("last_updated_ms")?.toLongOrNull() ?: 0L
         val destLandmarkId = sessionData?.get("destLandmarkId")?.toString() ?: "unknown"
         val pathNodesRaw = sessionData?.get("path") ?: ""
-        val currentStep = sessionData?.get("currentStep")?.toIntOrNull()?.plus(1) ?: 0
+        var currentStep = sessionData?.get("currentStep")?.toIntOrNull() ?: 0
         val pathNodes = pathNodesRaw.split(",")
 
         if (sessionData != null) {
@@ -316,10 +316,13 @@ class LiveNavigationHandler(
 
         val instructions: List<NavigationInstruction>
         var pathNodesNew: List<String> = emptyList()
+        var pathRecalculated = false
         try {
             // Recalculate path if the closes node is not on the origina path
             if (closestNodeId == "unknown" || !pathNodes.contains(closestNodeId)) {
                 logger.log("Estimated closest node $closestNodeId is not on the original path. Recalculating path")
+                pathRecalculated = true
+                currentStep = 0 // Reset step to 0 since we are generating a new path from the current location
                 rdsMapClient.getDbConnection().use { conn ->
                     // 1. Resolve Landmark to Nearest Node
                     val landmark = rdsMapClient.getLandmark(destLandmarkId.toInt(), conn)
@@ -332,7 +335,6 @@ class LiveNavigationHandler(
                         buildingId = rdsMapClient.getBuildingIdForNode(closestNodeId, conn)
                             ?: throw IllegalArgumentException("Closest node does not belong to a recognized building.")
                     }
-
                     // 3. Find Shortest Path
                     pathNodesNew = rdsMapClient.calculateShortestPath(buildingId, closestNodeId, destNodeId, conn).first
                     if (pathNodesNew.isEmpty()) {
@@ -349,7 +351,15 @@ class LiveNavigationHandler(
                 }
             } else {
                 logger.log("Closest node $closestNodeId is on the original path. No need to recalculate.")
-                instructions = emptyList()
+                pathNodesNew = pathNodes.dropWhile({ it != closestNodeId }) // Get remaining path starting from closest node
+                if (pathNodesNew.size < pathNodes.size) {
+                    currentStep = pathNodes.indexOf(closestNodeId)
+                }
+                instructions = rdsMapClient.getDbConnection().use { conn ->
+                    val landmark = rdsMapClient.getLandmark(destLandmarkId.toInt(), conn)
+                        ?: throw IllegalArgumentException("Landmark not found or has no associated node.")
+                    rdsMapClient.buildInstructions(conn, pathNodesNew, landmark)
+                }
             }
         } catch (e: Exception) {
             logger.log("Error during path recalculation or instruction generation: ${e.message}")
@@ -378,6 +388,7 @@ class LiveNavigationHandler(
             "path" to (pathNodesNew.takeIf { 
                             it.isNotEmpty() 
                         }?.joinToString(",") ?: pathNodes.joinToString(",")),
+            "pathRecalculated" to pathRecalculated,
             "last_updated_ms" to currentTimestampMs,
             "ttl" to ttlSeconds
         ))
