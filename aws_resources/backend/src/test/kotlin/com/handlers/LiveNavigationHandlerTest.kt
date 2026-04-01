@@ -19,6 +19,7 @@ class LiveNavigationHandlerTest {
 
     private val mockContext = mockk<Context>()
     private val mockLogger = mockk<LambdaLogger>(relaxed = true)
+    private val mockObjectDetectionHandler = mockk<ObjectDetectionHandler>()
     
     private lateinit var handler: LiveNavigationHandler
 
@@ -52,7 +53,11 @@ class LiveNavigationHandlerTest {
         every { anyConstructed<RdsMapClient>().calculateShortestPath(any(), any(), any(), any()) } returns Pair(listOf("1", "2"), 10.0)
         every { anyConstructed<RdsMapClient>().buildInstructions(any(), any(), any()) } returns emptyList()
 
-        handler = LiveNavigationHandler()
+        every {
+            mockObjectDetectionHandler.detectObjectsFromImage(any(), any(), any())
+        } returns emptyList()
+
+        handler = LiveNavigationHandler(mockObjectDetectionHandler)
     }
 
     @AfterEach
@@ -313,5 +318,8 @@ class LiveNavigationHandlerTest {
 
         assertEquals(200, response.statusCode)
         assertEquals("OK", response.body)
+        verify {
+            mockObjectDetectionHandler.detectObjectsFromImage(validBase64, mockLogger, 800.0)
+        }
     }
 }

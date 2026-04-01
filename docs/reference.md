@@ -51,10 +51,19 @@
 
 ### WebSocket Contracts
 
-| Direction | Contract / Type | Required Fields | Trigger / When Sent | Consumer Behavior | Source |
+API Gateway selects the Lambda integration using **`$request.body.action`** (see [cdk_stack.py](../aws_resources/cdk/cdk_stack.py)). The client must send JSON whose top-level **`action`** is exactly **`"navigation"`** or **`"frame"`** so the message routes to the correct handler.
+
+| Direction | `action` | Contract / response | Typical interval (app) | Purpose | Source |
 | --- | --- | --- | --- | --- | --- |
-| Client -> Server | `NavigationFrameMessage` | `session_id`, `image_base64`, `heading_degrees`, `accelerometer`, `gyroscope`, `focal_length_pixels`, `request_id` | Sent repeatedly during active navigation on WS route key (`navigation`) | Backend uses frame + sensors to localize and update instructions | [navigationWebSocket.ts](../frontend/services/navigationWebSocket.ts) |
-| Server -> Client | `NavigationUpdateMessage` (`type: navigation_update`) | `type`, `session_id`, `current_step`, `remaining_instructions` | Returned after valid frame processing | Client updates current step, instruction list, and may compute latency via echoed `request_id` | [navigationWebSocket.ts](../frontend/services/navigationWebSocket.ts) |
+| Client → Server | `"navigation"` | `NavigationFrameMessage` (camera + IMU + GPS + `request_id`) | ~1 s (`LIVE_NAV_WS_INTERVAL_MS` in [navigation.tsx](../frontend/app/navigation/navigation.tsx)) | Live localization: PDR + landmark fusion, closest node, path/instruction updates | [LiveNavigationHandler.kt](../aws_resources/backend/src/main/kotlin/com/handlers/LiveNavigationHandler.kt), [navigationWebSocket.ts](../frontend/services/navigationWebSocket.ts) |
+| Server → Client | — | `NavigationUpdateMessage` (`type: navigation_update`) | Per navigation frame | Echoes `request_id`, returns `estimated_position`, `remaining_instructions` (often empty when still on-path), **`current_step`** | Same |
+| Client → Server | `"frame"` | Same frame shape as navigation (image + sensors + `request_id`) | ~500 ms (collision loop in [navigation.tsx](../frontend/app/navigation/navigation.tsx)) | Object detection only; response has **`estimatedDistances`**, not `navigation_update` | [ObjectDetectionHandler.kt](../aws_resources/backend/src/main/kotlin/com/handlers/ObjectDetectionHandler.kt) |
+| Server → Client | — | Object-detection payload (`estimatedDistances`, `frameSize`, `valid`, `request_id`) | Per frame message | Client uses distances for collision / person detection signaling | Same |
+
+**Semantics notes**
+
+- **`current_step`**: The live handler increments a stored counter on **every processed `navigation` message**; it does **not** indicate completion of a turn-by-turn instruction leg. Treat it as a session tick counter unless/until instruction-based progression is implemented.
+- **`remaining_instructions`**: When the user’s estimated node stays on the original path, the backend often returns an **empty** list and only updates stored position; new instructions appear after **off-path** recalculation.
 
 
 ## Configuration

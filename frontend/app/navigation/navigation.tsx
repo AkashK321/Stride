@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Pressable,
   PanResponder,
+  Image,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -13,30 +14,60 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Speech from "expo-speech";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
+import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 import NavigationInstructionsDropdown from "../../components/NavigationInstructions/NavigationInstructionsDropdown";
 import { formatInstruction } from "../../components/NavigationInstructions/NavigationInstructionItem";
 import {
   NavigationInstruction,
   startNavigation,
 } from "../../services/api";
+import {
+  NavigationFrameMessage,
+  NavigationResponse,
+  NavigationWebSocket,
+  getWebSocketUrl,
+} from "../../services/navigationWebSocket";
 import { colors } from "../../theme/colors";
 import { typography } from "../../theme/typography";
 import { spacing } from "../../theme/spacing";
 import { useHeading } from "../../hooks/useHeading";
+import { useSensorData } from "../../hooks/useSensorData";
+import { getFocalLengthPixels } from "../../services/focalLength";
 
+/** After centered square crop, resize to this width (output is square, e.g. 360×360). */
+const LIVE_NAV_FRAME_WIDTH = 360;
+
+/** How often to send `action: "navigation"` on the WebSocket (live nav updates). */
+const LIVE_NAV_WS_INTERVAL_MS = 1000;
+
+function getImageSize(uri: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    Image.getSize(uri, (width, height) => resolve({ width, height }), reject);
+  });
+}
 
 export default function NavigationSession() {
   const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const cameraRef = React.useRef<CameraView>(null);
   const [navigationInstructions, setNavigationInstructions] =
     React.useState<NavigationInstruction[] | null>(null);
+  const [navigationSessionId, setNavigationSessionId] = React.useState<string | null>(null);
   const [navigationError, setNavigationError] = React.useState<string | null>(
     null,
   );
   const [navigationLoading, setNavigationLoading] = React.useState(false);
+  const collisionPersonDetectedRef = React.useRef(false);
+  const wsRef = React.useRef<NavigationWebSocket | null>(null);
+  const navLoopRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const collisionLoopRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const frameInFlightRef = React.useRef(false);
+  const requestCounterRef = React.useRef(0);
   const [speakerMode, setSpeakerMode] = React.useState(false);
   const [currentStepIndex, setCurrentStepIndex] = React.useState(0);
+  const focalLengthPixels = React.useMemo(() => getFocalLengthPixels(), []);
+  const { getSnapshot, start: startSensors, stop: stopSensors } = useSensorData();
 
   const { getAlignment } = useHeading();
   const activeInstruction = navigationInstructions?.[currentStepIndex] ?? null;
@@ -50,6 +81,180 @@ export default function NavigationSession() {
   const handleSelectedIndexChange = React.useCallback((index: number) => {
     setCurrentStepIndex(index);
   }, []);
+
+  const stopStreamingLoops = React.useCallback(() => {
+    if (navLoopRef.current) {
+      clearInterval(navLoopRef.current);
+      navLoopRef.current = null;
+    }
+    if (collisionLoopRef.current) {
+      clearInterval(collisionLoopRef.current);
+      collisionLoopRef.current = null;
+    }
+  }, []);
+
+  const nextRequestId = React.useCallback(() => {
+    requestCounterRef.current += 1;
+    return requestCounterRef.current;
+  }, []);
+
+  const captureBase64Frame = React.useCallback(async (): Promise<string | null> => {
+    if (!cameraRef.current) {
+      return null;
+    }
+    const photo = await cameraRef.current.takePictureAsync({
+      quality: 0.7,
+      base64: false,
+    });
+    if (!photo?.uri) return null;
+
+    const encodeOptions = {
+      base64: true,
+      compress: 0.4,
+      format: SaveFormat.JPEG as const,
+    };
+
+    try {
+      const { width, height } = await getImageSize(photo.uri);
+      const side = Math.min(width, height);
+      const originX = Math.floor((width - side) / 2);
+      const originY = Math.floor((height - side) / 2);
+
+      const resized = await manipulateAsync(
+        photo.uri,
+        [
+          { crop: { originX, originY, width: side, height: side } },
+          { resize: { width: LIVE_NAV_FRAME_WIDTH } },
+        ],
+        encodeOptions,
+      );
+      return resized.base64 ?? null;
+    } catch {
+      const resized = await manipulateAsync(
+        photo.uri,
+        [{ resize: { width: LIVE_NAV_FRAME_WIDTH } }],
+        encodeOptions,
+      );
+      return resized.base64 ?? null;
+    }
+  }, []);
+
+  const sendNavigationFrame = React.useCallback(async () => {
+    const ws = wsRef.current;
+    if (!ws || !ws.isConnected() || !navigationSessionId || frameInFlightRef.current) {
+      return;
+    }
+    frameInFlightRef.current = true;
+    try {
+      const imageBase64 = await captureBase64Frame();
+      if (!imageBase64) return;
+      const snapshot = getSnapshot();
+      const message: NavigationFrameMessage = {
+        action: "navigation",
+        session_id: navigationSessionId,
+        image_base64: imageBase64,
+        focal_length_pixels: focalLengthPixels,
+        heading_degrees: snapshot.heading ?? 0,
+        gps: snapshot.gps,
+        accelerometer: snapshot.accelerometer ?? { x: 0, y: 0, z: 0 },
+        gyroscope: snapshot.gyroscope ?? { x: 0, y: 0, z: 0 },
+        timestamp_ms: Date.now(),
+        request_id: nextRequestId(),
+      };
+      ws.sendFrame(message);
+    } catch (e) {
+      setNavigationError(e instanceof Error ? e.message : "Failed to send navigation frame");
+    } finally {
+      frameInFlightRef.current = false;
+    }
+  }, [
+    captureBase64Frame,
+    focalLengthPixels,
+    getSnapshot,
+    navigationSessionId,
+    nextRequestId,
+  ]);
+
+  const sendCollisionFrame = React.useCallback(async () => {
+    const ws = wsRef.current;
+    if (!ws || !ws.isConnected() || !navigationSessionId || frameInFlightRef.current) {
+      return;
+    }
+    frameInFlightRef.current = true;
+    try {
+      const imageBase64 = await captureBase64Frame();
+      if (!imageBase64) return;
+      const snapshot = getSnapshot();
+      const message: NavigationFrameMessage = {
+        action: "frame",
+        session_id: navigationSessionId,
+        image_base64: imageBase64,
+        focal_length_pixels: focalLengthPixels,
+        heading_degrees: snapshot.heading,
+        gps: snapshot.gps,
+        accelerometer: snapshot.accelerometer,
+        gyroscope: snapshot.gyroscope,
+        timestamp_ms: Date.now(),
+        request_id: nextRequestId(),
+      };
+      ws.sendFrame(message);
+    } catch (e) {
+      setNavigationError(e instanceof Error ? e.message : "Failed to send collision frame");
+    } finally {
+      frameInFlightRef.current = false;
+    }
+  }, [
+    captureBase64Frame,
+    focalLengthPixels,
+    getSnapshot,
+    navigationSessionId,
+    nextRequestId,
+  ]);
+
+  const handleSocketMessage = React.useCallback((response: NavigationResponse) => {
+    if (response.type === "navigation_update") {
+      const remaining = response.remaining_instructions as NavigationInstruction[] | undefined;
+      if (Array.isArray(remaining) && remaining.length > 0) {
+        setNavigationInstructions(remaining);
+      }
+      if (typeof response.current_step === "number") {
+        setCurrentStepIndex(Math.max(0, response.current_step - 1));
+      }
+      setNavigationError(null);
+      return;
+    }
+
+    if (response.type === "navigation_error") {
+      setNavigationError(response.error || response.message || "Live navigation update failed");
+      return;
+    }
+
+    if (Array.isArray(response.estimatedDistances)) {
+      const hasPerson = response.estimatedDistances.some(
+        (entry) => entry.className?.toLowerCase() === "person",
+      );
+      if (hasPerson !== collisionPersonDetectedRef.current) {
+        collisionPersonDetectedRef.current = hasPerson;
+        if (hasPerson) {
+          console.log("[NavigationSession] collision signal emitted: person detected");
+        }
+      }
+    }
+  }, []);
+
+  /** Always latest send fns so WebSocket intervals do not need effect re-runs when sensors/state change. */
+  const sendNavigationFrameRef = React.useRef(sendNavigationFrame);
+  const sendCollisionFrameRef = React.useRef(sendCollisionFrame);
+  sendNavigationFrameRef.current = sendNavigationFrame;
+  sendCollisionFrameRef.current = sendCollisionFrame;
+
+  const handleSocketMessageRef = React.useRef(handleSocketMessage);
+  handleSocketMessageRef.current = handleSocketMessage;
+
+  const startSensorsRef = React.useRef(startSensors);
+  const stopSensorsRef = React.useRef(stopSensors);
+  startSensorsRef.current = startSensors;
+  stopSensorsRef.current = stopSensors;
 
   const instructionCountRef = React.useRef(0);
   instructionCountRef.current = navigationInstructions?.length ?? 0;
@@ -124,6 +329,7 @@ export default function NavigationSession() {
         });
         if (cancelled) return;
         // Use instructions exactly as returned from the backend
+        setNavigationSessionId(response.session_id);
         setNavigationInstructions(response.instructions);
       } catch (err) {
         if (cancelled) return;
@@ -145,9 +351,75 @@ export default function NavigationSession() {
     };
   }, [params.landmark_id]);
 
+  // WebSocket + loops: run only when session id appears or changes — not when send callbacks
+  // or sensorsActive change (that was causing disconnect/reconnect churn).
+  React.useEffect(() => {
+    if (!navigationSessionId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        const wsUrl = getWebSocketUrl();
+        if (!wsUrl) {
+          setNavigationError("WebSocket URL is not configured");
+          return;
+        }
+        const ws = new NavigationWebSocket(wsUrl);
+        ws.autoReconnect = true;
+        ws.setStatusHandler((status) => {
+          if (status === "error") {
+            setNavigationError("WebSocket connection error");
+          }
+        });
+        ws.setMessageHandler((response) => {
+          handleSocketMessageRef.current(response);
+        });
+        wsRef.current = ws;
+        await ws.connect();
+        if (cancelled) return;
+
+        await startSensorsRef.current();
+        if (cancelled) return;
+
+        navLoopRef.current = setInterval(() => {
+          void sendNavigationFrameRef.current();
+        }, LIVE_NAV_WS_INTERVAL_MS);
+        collisionLoopRef.current = setInterval(() => {
+          void sendCollisionFrameRef.current();
+        }, 500);
+
+        void sendNavigationFrameRef.current();
+        void sendCollisionFrameRef.current();
+      } catch (e) {
+        if (!cancelled) {
+          setNavigationError(
+            e instanceof Error ? e.message : "Failed to initialize live streaming",
+          );
+        }
+      }
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+      stopStreamingLoops();
+      wsRef.current?.disconnect();
+      wsRef.current = null;
+      stopSensorsRef.current();
+    };
+  }, [navigationSessionId, stopStreamingLoops]);
+
   const handleExitNavigation = React.useCallback(() => {
+    stopStreamingLoops();
+    wsRef.current?.disconnect();
+    wsRef.current = null;
+    stopSensors();
     router.back();
-  }, []);
+  }, [stopSensors, stopStreamingLoops]);
 
   const totalDistanceFeet = React.useMemo(() => {
     if (!navigationInstructions || navigationInstructions.length === 0) {
@@ -200,6 +472,7 @@ export default function NavigationSession() {
     { style: styles.root },
 
     React.createElement(CameraView, {
+      ref: cameraRef,
       style: StyleSheet.absoluteFill,
       facing: "back",
     }),

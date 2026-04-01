@@ -34,7 +34,9 @@ private val METERS_TO_FEET = 3.28084
 private val FEET_TO_PIXELS = 10.0
 private val MAX_DISTANCE_FEET = 15.0
 
-class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGatewayV2WebSocketResponse> {
+class LiveNavigationHandler(
+    private val objectDetectionHandler: ObjectDetectionHandler = ObjectDetectionHandler(),
+) : RequestHandler<APIGatewayV2WebSocketEvent, APIGatewayV2WebSocketResponse> {
 
     private val mapper = jacksonObjectMapper()
 
@@ -265,8 +267,9 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         val sessionId = payload["session_id"] as String
         val requestId = (payload["request_id"] as Number).toInt()
         val currentTimestampMs = (payload["timestamp_ms"] as Number?)?.toLong() ?: System.currentTimeMillis()
+        val imageBase64 = payload["image_base64"] as String
+        val focalLength = (payload["focal_length_pixels"] as Number).toDouble()
 
-        // TODO(business-logic): run live localization using image.
         val sessionData = sessionTableClient.getItemDetails(sessionId)
         val previousX = sessionData?.get("current_x")?.toDoubleOrNull() ?: 0.0
         val previousY = sessionData?.get("current_y")?.toDoubleOrNull() ?: 0.0
@@ -285,8 +288,12 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         // Execute Location Estimation based purely on PDR
         val (pdrX, pdrY) = estimateUserLocation(payload, previousX, previousY, previousTime, logger)
 
-        // TODO - Integrate sagemaker inference here
-        val detectedObjects: List<DetectedObject> = emptyList() // Placeholder for CV detections
+        val detectedObjects: List<DetectedObject> =
+            objectDetectionHandler.detectObjectsFromImage(
+                imageBase64 = imageBase64,
+                logger = logger,
+                focalLength = focalLength,
+            )
 
         val headingDegrees = (payload["heading_degrees"] as Number).toDouble()
         val (estimatedX, estimatedY) = fuseLocationWithLandmarks(pdrX, pdrY, headingDegrees, detectedObjects, logger)
@@ -381,7 +388,7 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
             "current_step" to currentStep,
             "remaining_instructions" to instructions,
             "request_id" to requestId,
-            "message" to "Live navigation infrastructure is wired. Business logic pending.",
+            "message" to "Localization: PDR + landmark fusion; closest map node returned in estimated_position.",
             "estimated_position" to mapOf(
                 "node_id" to closestNodeId,
                 "coordinates" to mapOf(
