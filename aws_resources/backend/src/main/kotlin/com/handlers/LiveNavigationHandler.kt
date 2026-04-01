@@ -346,7 +346,7 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
                 logger.log("Closest node $closestNodeId is on the original path. No need to recalculate.")
                 pathNodesNew = pathNodes.dropWhile({ it != closestNodeId }) // Get remaining path starting from closest node
                 if (pathNodesNew.size < pathNodes.size) {
-                    currentStep = pathNodes.indexOf(closestNodeId)
+                    currentStep += 1 // Increment step to reflect progress along the path
                 }
                 instructions = rdsMapClient.getDbConnection().use { conn ->
                     val landmark = rdsMapClient.getLandmark(destLandmarkId.toInt(), conn)
