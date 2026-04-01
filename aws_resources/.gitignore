@@ -1,2 +1,10 @@
 .env
 create_tables.py
+
+# Gradle build artifacts
+build/
+.gradle/
+
+# Local configuration
+local.properties
+.buildscript/
