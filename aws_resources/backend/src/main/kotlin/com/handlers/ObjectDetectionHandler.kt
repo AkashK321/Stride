@@ -93,7 +93,7 @@ class ObjectDetectionHandler (
         return (avgHeight * focalLength) / perceivedHeight
     }
 
-    fun estimateDistances(detections: List<BoundingBox>): List<DetectedObject> {
+    fun estimateDistances(detections: List<BoundingBox>, focalLength: Double = 800.0): List<DetectedObject> {
         if (detections.isEmpty()) {
             return emptyList()
         }
@@ -101,10 +101,88 @@ class ObjectDetectionHandler (
         val detectedObjects = mutableListOf<DetectedObject>()
 
         detections.forEach( {
-            val distance = estimateDistance(it.height.toInt(), it.className)
+            val distance = estimateDistance(it.height.toInt(), it.className, focalLength)
             detectedObjects.add(DetectedObject(it, distance))
         })
         return detectedObjects
+    }
+
+    private fun decodeAndValidateImage(imageBase64: String, logger: LambdaLogger): Pair<Boolean, ByteArray> {
+        if (imageBase64.isEmpty()) {
+            return Pair(false, ByteArray(0))
+        }
+        return try {
+            val imageBytes = Base64.getDecoder().decode(imageBase64)
+            val isJpeg = imageBytes.size > 2 &&
+                imageBytes[0] == 0xFF.toByte() &&
+                imageBytes[1] == 0xD8.toByte()
+            val isPng = imageBytes.size > 8 &&
+                imageBytes[0] == 0x89.toByte() &&
+                imageBytes[1] == 0x50.toByte() &&
+                imageBytes[2] == 0x4E.toByte() &&
+                imageBytes[3] == 0x47.toByte()
+
+            if (!isJpeg && !isPng) {
+                logger.log("Data received, but header is not JPEG or PNG.")
+            }
+            Pair(isJpeg || isPng, imageBytes)
+        } catch (e: IllegalArgumentException) {
+            logger.log("Error: Payload is not valid Base64. ${e.message}")
+            Pair(false, ByteArray(0))
+        }
+    }
+
+    private fun resolveDetections(
+        validImage: Boolean,
+        imageBytes: ByteArray,
+        logger: LambdaLogger,
+    ): List<BoundingBox> {
+        val sageMakerEnabled =
+            featureFlagsTableClient.getStringItem(itemName = "enable_sagemaker_inference") == true
+        val httpInferenceUrl = HttpInferenceClient.baseUrl()
+
+        return when {
+            sageMakerEnabled -> {
+                logger.log("SageMaker inference is ENABLED via feature flag.")
+                getDetections(
+                    validImage,
+                    imageBytes,
+                    logger,
+                    { SageMakerClient.invokeEndpoint(it) },
+                    "SageMaker",
+                )
+            }
+            httpInferenceUrl != null -> {
+                logger.log(
+                    "SageMaker disabled; using HTTP inference at $httpInferenceUrl " +
+                        "(${HttpInferenceClient.ENV_INFERENCE_HTTP_URL}).",
+                )
+                getDetections(
+                    validImage,
+                    imageBytes,
+                    logger,
+                    { HttpInferenceClient.invokeEndpoint(it) },
+                    "HTTP inference",
+                )
+            }
+            else -> {
+                logger.log(
+                    "Inference skipped: SageMaker disabled and ${HttpInferenceClient.ENV_INFERENCE_HTTP_URL} is unset.",
+                )
+                emptyList()
+            }
+        }
+    }
+
+    fun detectObjectsFromImage(
+        imageBase64: String,
+        logger: LambdaLogger,
+        focalLength: Double = 800.0,
+    ): List<DetectedObject> {
+        loadClassHeightCache(logger)
+        val (validImage, imageBytes) = decodeAndValidateImage(imageBase64, logger)
+        val detections = resolveDetections(validImage, imageBytes, logger)
+        return estimateDistances(detections, focalLength)
     }
 
     /**
@@ -157,7 +235,7 @@ class ObjectDetectionHandler (
         val routeKey = input.requestContext.routeKey ?: "unknown"
         val rawData = input.body ?: "{}"
         var imageBytes: ByteArray = ByteArray(0)
-        var detections: List<BoundingBox> = emptyList()
+        var detections: List<BoundingBox>
 
         
         val domainName = input.requestContext.domainName
@@ -250,34 +328,13 @@ class ObjectDetectionHandler (
             logger.log("Base64 string length: ${imageBase64.length}")
 
             if (imageBase64.isNotEmpty()) {
-                try {
-                    logger.log("Decoding base64...")
-                    imageBytes = Base64.getDecoder().decode(imageBase64)
-                    logger.log("Decoded image size: ${imageBytes.size} bytes")
-
-                    // Check Magic Bytes for JPEG (First 2 bytes are FF D8)
-                    val isJpeg = imageBytes.size > 2 && 
-                        imageBytes[0] == 0xFF.toByte() && 
-                        imageBytes[1] == 0xD8.toByte()
-                    
-                    // Check Magic Bytes for PNG (First 8 bytes are 89 50 4E 47 0D 0A 1A 0A)
-                    val isPng = imageBytes.size > 8 &&
-                        imageBytes[0] == 0x89.toByte() &&
-                        imageBytes[1] == 0x50.toByte() &&  // P
-                        imageBytes[2] == 0x4E.toByte() &&  // N
-                        imageBytes[3] == 0x47.toByte()     // G
-
-                    if (isJpeg) {
-                        logger.log("Valid JPEG Frame detected. Size: ${imageBytes.size}")
-                        validImage = true
-                    } else if (isPng) {
-                        logger.log("Valid PNG Frame detected. Size: ${imageBytes.size}")
-                        validImage = true
-                    } else {
-                        logger.log("Data received, but header is not JPEG or PNG.")
-                    }
-                } catch (e: IllegalArgumentException) {
-                    logger.log("Error: Payload is not valid Base64. ${e.message}")
+                logger.log("Decoding base64...")
+                val decodeResult = decodeAndValidateImage(imageBase64, logger)
+                validImage = decodeResult.first
+                imageBytes = decodeResult.second
+                logger.log("Decoded image size: ${imageBytes.size} bytes")
+                if (validImage) {
+                    logger.log("Valid image frame detected. Size: ${imageBytes.size}")
                 }
             }
         } catch (e: Exception) {
@@ -294,43 +351,8 @@ class ObjectDetectionHandler (
             return APIGatewayV2WebSocketResponse().apply { statusCode = 400 }
         }
 
-        val sageMakerEnabled =
-            featureFlagsTableClient.getStringItem(itemName = "enable_sagemaker_inference") == true
-        val httpInferenceUrl = HttpInferenceClient.baseUrl()
-
-        detections = when {
-            sageMakerEnabled -> {
-                logger.log("SageMaker inference is ENABLED via feature flag.")
-                getDetections(
-                    validImage,
-                    imageBytes,
-                    logger,
-                    { SageMakerClient.invokeEndpoint(it) },
-                    "SageMaker",
-                )
-            }
-            httpInferenceUrl != null -> {
-                logger.log(
-                    "SageMaker disabled; using HTTP inference at $httpInferenceUrl " +
-                        "(${HttpInferenceClient.ENV_INFERENCE_HTTP_URL}).",
-                )
-                getDetections(
-                    validImage,
-                    imageBytes,
-                    logger,
-                    { HttpInferenceClient.invokeEndpoint(it) },
-                    "HTTP inference",
-                )
-            }
-            else -> {
-                logger.log(
-                    "Inference skipped: SageMaker disabled and ${HttpInferenceClient.ENV_INFERENCE_HTTP_URL} is unset.",
-                )
-                emptyList()
-            }
-        }
-
-        val estimatedDistances = estimateDistances(detections)
+        detections = resolveDetections(validImage, imageBytes, logger)
+        val estimatedDistances = estimateDistances(detections, focalLength)
 
         try {
             val distancesList = estimatedDistances.map { detected ->
