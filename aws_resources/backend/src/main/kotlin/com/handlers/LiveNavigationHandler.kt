@@ -273,7 +273,7 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         val previousTime = sessionData?.get("last_updated_ms")?.toLongOrNull() ?: 0L
         val destLandmarkId = sessionData?.get("destLandmarkId")?.toString() ?: "unknown"
         val pathNodesRaw = sessionData?.get("path") ?: ""
-        val currentStep = sessionData?.get("currentStep")?.toIntOrNull()?.plus(1) ?: 0
+        var currentStep = sessionData?.get("currentStep")?.toIntOrNull() ?: 0
         val pathNodes = pathNodesRaw.split(",")
 
         if (sessionData != null) {
@@ -310,13 +310,12 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
         val instructions: List<NavigationInstruction>
         var pathNodesNew: List<String> = emptyList()
         var pathRecalculated = false
-        var currentStepNew = currentStep
         try {
             // Recalculate path if the closes node is not on the origina path
             if (closestNodeId == "unknown" || !pathNodes.contains(closestNodeId)) {
                 logger.log("Estimated closest node $closestNodeId is not on the original path. Recalculating path")
                 pathRecalculated = true
-                currentStepNew = 0 // Reset step to 0 since we are generating a new path from the current location
+                currentStep = 0 // Reset step to 0 since we are generating a new path from the current location
                 rdsMapClient.getDbConnection().use { conn ->
                     // 1. Resolve Landmark to Nearest Node
                     val landmark = rdsMapClient.getLandmark(destLandmarkId.toInt(), conn)
@@ -346,6 +345,9 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
             } else {
                 logger.log("Closest node $closestNodeId is on the original path. No need to recalculate.")
                 pathNodesNew = pathNodes.dropWhile({ it != closestNodeId }) // Get remaining path starting from closest node
+                if (pathNodesNew.size < pathNodes.size) {
+                    currentStep = pathNodes.indexOf(closestNodeId)
+                }
                 instructions = rdsMapClient.getDbConnection().use { conn ->
                     val landmark = rdsMapClient.getLandmark(destLandmarkId.toInt(), conn)
                         ?: throw IllegalArgumentException("Landmark not found or has no associated node.")
@@ -373,7 +375,7 @@ class LiveNavigationHandler : RequestHandler<APIGatewayV2WebSocketEvent, APIGate
             "session_id" to sessionId,
             "current_x" to estimatedX,
             "current_y" to estimatedY,
-            "currentStep" to currentStepNew,
+            "currentStep" to currentStep,
             "currentNodeId" to closestNodeId,
             "destLandmarkId" to destLandmarkId,
             "path" to (pathNodesNew.takeIf { 
