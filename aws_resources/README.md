@@ -2,8 +2,8 @@
 
 This directory contains the CDK app for a two-stack architecture:
 
-- `StrideSharedStack`: persistent shared infrastructure (SageMaker now, RDS later)
-- `StrideStack-{branch}`: branch-specific app infrastructure (Lambda/API/Cognito/DynamoDB)
+- `StrideSharedStack`: persistent shared infrastructure—**one Amazon RDS (PostgreSQL) instance** for map/navigation data, shared by every branch stack
+- `StrideStack` / `StrideStack-{branch}`: branch-specific app infrastructure (Lambda/API/Cognito/DynamoDB). Static and live navigation Lambdas receive **DB connection settings from the shared RDS** via CDK cross-stack references (no per-branch database)
 
 ## One-time setup
 
@@ -22,12 +22,14 @@ npm install -g aws-cdk
 
 ## Stack model
 
-`app.py` always defines both stacks. You must deploy by explicit stack name.
+`app.py` always defines **both** stacks. The branch stack **depends on** `StrideSharedStack` (deploy order is enforced in CDK and in CI).
 
-- Shared stack is manual and persistent.
-- Branch stacks are CI/CD-managed for feature branches.
+**Deploy order:** `StrideSharedStack` first (or in the **same** `cdk deploy` invocation listing both stacks—CDK respects the dependency). The shared database must exist before navigation Lambdas can connect.
 
-Do not run `cdk deploy --all` in CI because it would include shared infra.
+- **CI:** the Infrastructure Deploy workflow runs `cdk deploy StrideSharedStack <branch-stack-name>` so shared RDS and the branch stack deploy together on pushes that trigger backend deploy.
+- **Manual:** you can deploy only `StrideSharedStack` when changing shared infra, or deploy both stacks when bringing up a new environment.
+
+Do not run `cdk deploy --all` in automation unless you intend to deploy every stack the app defines; prefer **explicit stack names**.
 
 ## Deploy shared stack (manual)
 
@@ -47,13 +49,15 @@ BRANCH_NAME=main cdk -a "python3 app.py" diff StrideSharedStack
 
 ## Deploy main app stack (`StrideStack`)
 
-`main` branch resolves to `StrideStack`.
+`main` branch resolves to `StrideStack`. Deploy **shared + main** together (recommended):
 
 ```bash
 cd aws_resources
 source .venv/bin/activate
-BRANCH_NAME=main cdk -a "python3 app.py" deploy StrideStack --require-approval never
+BRANCH_NAME=main cdk -a "python3 app.py" deploy StrideSharedStack StrideStack --require-approval never
 ```
+
+If `StrideSharedStack` is already current, deploying only `StrideStack` is enough.
 
 ## Deploy a branch stack manually (optional)
 
@@ -66,21 +70,16 @@ Example:
 ```bash
 BRANCH_NAME=feature/119-sagemaker-resource-management
 STACK_NAME=$(BRANCH_NAME="$BRANCH_NAME" python3 -c "import os; from app import sanitize_branch_name; print(sanitize_branch_name(os.environ['BRANCH_NAME']))")
-cdk -a "python3 app.py" deploy "$STACK_NAME" --require-approval never
+cdk -a "python3 app.py" deploy StrideSharedStack "$STACK_NAME" --require-approval never
 ```
 
 ## CI/CD behavior
 
-- Push to feature branch:
-  - Deploys only `StrideStack-{branch}`.
-- Push to `main`:
-  - Deploys `StrideStack`.
-- `StrideSharedStack`:
-  - Never auto-deployed by CI.
-  - Deployed manually only.
-- Cleanup workflow:
-  - Deletes branch stacks after merge.
-  - Explicitly protects `StrideSharedStack` from deletion.
+- **Infrastructure Deploy** (`.github/workflows/infrastructure-deploy.yaml`), when run after a successful backend build:
+  - Deploys **`StrideSharedStack` and the branch stack** in one `cdk deploy` (shared RDS secret and branch API outputs are both written to `cdk-outputs.json`).
+  - Runs shared **RDS schema** and **floor/map population** using `RdsSecretArn` from the shared stack (idempotent).
+- **Shared Stack Deploy** (manual `workflow_dispatch`): optional path to deploy or repair **only** `StrideSharedStack` and initialize/populate the shared DB—see that workflow for one-off maintenance.
+- **Cleanup** workflow: deletes branch stacks after merge; **does not** delete `StrideSharedStack`.
 
 ## Verify deployments
 
@@ -98,6 +97,6 @@ BRANCH_NAME=main cdk -a "python3 app.py" synth StrideSharedStack
 
 ## Important safety notes
 
-- Do not destroy `StrideSharedStack` from CI/CD.
-- Avoid `cdk deploy --all` for automated pipelines.
-- Shared SageMaker endpoint incurs cost while running.
+- Do not destroy `StrideSharedStack` from CI/CD; it holds the **shared** map database used by all environments.
+- Avoid `cdk deploy --all` for automated pipelines unless you explicitly want every stack deployed.
+- The **shared RDS instance** runs continuously and incurs cost while it exists. Inference for object detection may still use SageMaker or HTTP routing as configured on the **branch** stack; that is unchanged by moving RDS into the shared stack.

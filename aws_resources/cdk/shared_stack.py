@@ -1,109 +1,71 @@
 """
-Persistent shared infrastructure stack.
+Persistent shared infrastructure stack (singleton RDS for map data).
 """
 
 from aws_cdk import (
     CfnOutput,
     RemovalPolicy,
     Stack,
-    aws_ecr as ecr,
-    aws_iam as iam,
-    aws_sagemaker as sagemaker,
+    aws_ec2 as ec2,
+    aws_rds as rds,
 )
 from constructs import Construct
 
+# Keep in sync with navigation Lambdas and populate scripts.
+SHARED_DB_NAME = "StrideCore"
+
 
 class SharedPersistentStack(Stack):
-    """Persistent stack for singleton infra (SageMaker today, RDS later)."""
-
-    ECR_REPOSITORY_NAME = "stride-yolov11-inference"
-    SAGEMAKER_MODEL_NAME = "stride-yolov11-nano-model"
-    SAGEMAKER_ENDPOINT_CONFIG_NAME = "stride-yolov11-nano-config"
-    SAGEMAKER_ENDPOINT_NAME = "stride-yolov11-nano-endpoint"
+    """Persistent stack for account-wide singleton infra (shared Postgres for map data)."""
 
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        ecr_repo = ecr.Repository.from_repository_name(
-            self,
-            "YoloV11InferenceRepo",
-            repository_name=self.ECR_REPOSITORY_NAME,
-        )
+        default_vpc = ec2.Vpc.from_lookup(self, "DefaultVPC", is_default=True)
 
-        sagemaker_role = iam.Role(
+        self.shared_db = rds.DatabaseInstance(
             self,
-            "SageMakerExecutionRole",
-            assumed_by=iam.ServicePrincipal("sagemaker.amazonaws.com"),
-            managed_policies=[
-                iam.ManagedPolicy.from_aws_managed_policy_name(
-                    "AmazonSageMakerFullAccess"
-                )
-            ],
-        )
-        sagemaker_role.apply_removal_policy(RemovalPolicy.RETAIN)
-        ecr_repo.grant_pull(sagemaker_role)
-
-        account = Stack.of(self).account
-        region = Stack.of(self).region
-        ecr_image_uri = (
-            f"{account}.dkr.ecr.{region}.amazonaws.com/{ecr_repo.repository_name}:latest"
-        )
-
-        sagemaker_model = sagemaker.CfnModel(
-            self,
-            "YoloV11Model",
-            execution_role_arn=sagemaker_role.role_arn,
-            model_name=self.SAGEMAKER_MODEL_NAME,
-            primary_container=sagemaker.CfnModel.ContainerDefinitionProperty(
-                image=ecr_image_uri,
-                mode="SingleModel",
+            "StrideSharedDB",
+            engine=rds.DatabaseInstanceEngine.postgres(
+                version=rds.PostgresEngineVersion.VER_16_3
             ),
+            vpc=default_vpc,
+            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
+            instance_type=ec2.InstanceType.of(
+                ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.MICRO
+            ),
+            allocated_storage=20,
+            max_allocated_storage=50,
+            database_name=SHARED_DB_NAME,
+            publicly_accessible=True,
+            removal_policy=RemovalPolicy.DESTROY,
         )
-        sagemaker_model.apply_removal_policy(RemovalPolicy.RETAIN)
 
-        endpoint_config = sagemaker.CfnEndpointConfig(
-            self,
-            "YoloV11EndpointConfig",
-            endpoint_config_name=self.SAGEMAKER_ENDPOINT_CONFIG_NAME,
-            production_variants=[
-                sagemaker.CfnEndpointConfig.ProductionVariantProperty(
-                    variant_name="AllTraffic",
-                    model_name=sagemaker_model.model_name,
-                    initial_instance_count=1,
-                    instance_type="ml.g4dn.xlarge",
-                    initial_variant_weight=1.0,
-                )
-            ],
+        self.shared_db.connections.allow_from_any_ipv4(
+            ec2.Port.tcp(5432), "Allow Postgres from internet-facing Lambdas"
         )
-        endpoint_config.apply_removal_policy(RemovalPolicy.RETAIN)
-        endpoint_config.add_dependency(sagemaker_model)
-
-        sagemaker_endpoint = sagemaker.CfnEndpoint(
-            self,
-            "YoloV11Endpoint",
-            endpoint_name=self.SAGEMAKER_ENDPOINT_NAME,
-            endpoint_config_name=endpoint_config.endpoint_config_name,
-        )
-        sagemaker_endpoint.apply_removal_policy(RemovalPolicy.RETAIN)
-        sagemaker_endpoint.add_dependency(endpoint_config)
 
         CfnOutput(
             self,
-            "SageMakerEndpointName",
-            value=self.SAGEMAKER_ENDPOINT_NAME,
-            description="SageMaker endpoint name for YOLOv11 inference",
+            "RdsSecretArn",
+            value=self.shared_db.secret.secret_arn,
+            description="Secrets Manager ARN for shared RDS master credentials",
         )
         CfnOutput(
             self,
-            "SageMakerEndpointArn",
-            value=f"arn:aws:sagemaker:{region}:{account}:endpoint/{self.SAGEMAKER_ENDPOINT_NAME}",
-            description="SageMaker endpoint ARN",
+            "RdsEndpointAddress",
+            value=self.shared_db.db_instance_endpoint_address,
+            description="Shared RDS hostname",
         )
         CfnOutput(
             self,
-            "ECRRepositoryURI",
-            value=ecr_repo.repository_uri,
-            description="ECR repository URI for YOLOv11 inference container",
+            "RdsEndpointPort",
+            value=self.shared_db.db_instance_endpoint_port,
+            description="Shared RDS port",
         )
-
-        # TODO: RDS resources belong in this persistent stack when enabled.
+        CfnOutput(
+            self,
+            "RdsDatabaseName",
+            value=SHARED_DB_NAME,
+            description="Postgres database name",
+        )

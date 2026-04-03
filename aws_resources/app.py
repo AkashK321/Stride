@@ -149,8 +149,14 @@ def main():
     region = os.getenv("AWS_DEFAULT_REGION") or os.getenv("AWS_REGION") or "us-east-1"
     env = cdk.Environment(account=os.getenv("CDK_DEFAULT_ACCOUNT"), region=region)
 
-    SharedPersistentStack(app, "StrideSharedStack", env=env)
-    CdkStack(app, stack_name, env=env)
+    shared_stack = SharedPersistentStack(app, "StrideSharedStack", env=env)
+    branch_stack = CdkStack(
+        app,
+        stack_name,
+        env=env,
+        shared_persistent_stack=shared_stack,
+    )
+    branch_stack.add_dependency(shared_stack)
 
     app.synth()
 

@@ -2,7 +2,6 @@
 CloudFormation stack definition
 '''
 
-from time import time
 from aws_cdk import (
     Stack,
     Duration,
@@ -11,8 +10,6 @@ from aws_cdk import (
     aws_apigateway as apigw,
     aws_apigatewayv2 as apigw_v2,
     aws_apigatewayv2_integrations as integrations,
-    aws_ec2 as ec2,  
-    aws_rds as rds,  
     aws_dynamodb as ddb,
     RemovalPolicy,
     aws_cognito as cognito,
@@ -26,11 +23,21 @@ import os
 import subprocess
 import platform
 
+from cdk.shared_stack import SHARED_DB_NAME, SharedPersistentStack
+
+
 class CdkStack(Stack):
 
-    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+    def __init__(
+        self,
+        scope: Construct,
+        construct_id: str,
+        *,
+        shared_persistent_stack: SharedPersistentStack,
+        **kwargs,
+    ) -> None:
         super().__init__(scope, construct_id, **kwargs)
-        default_vpc = ec2.Vpc.from_lookup(self, "DefaultVPC", is_default=True)
+        shared_db = shared_persistent_stack.shared_db
 
         # Path to the Kotlin backend project
         this_dir = os.path.dirname(__file__)
@@ -356,42 +363,26 @@ class CdkStack(Stack):
         navigation_session_table.grant_read_write_data(static_navigation_handler)
         static_navigation_handler.add_environment("SESSION_TABLE_NAME", navigation_session_table.table_name)
 
-        # TODO: RDS setup disabled for now - to be re-enabled when ready
-        # Define RDS Resource
-        db_instance = rds.DatabaseInstance(
-            self, "StrideDB",
-            engine=rds.DatabaseInstanceEngine.postgres(
-                version=rds.PostgresEngineVersion.VER_16_3
-            ),
-            vpc=default_vpc,  # Mandatory, but now using the free default one
-            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
-            instance_type=ec2.InstanceType.of(
-                ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.MICRO
-            ),
-            allocated_storage=20,
-            max_allocated_storage=50, # Autoscaling storage
-            database_name="StrideCore",
-            publicly_accessible=True, # Allows Lambda to connect via standard internet
-            removal_policy=RemovalPolicy.DESTROY, # For dev/testing only
+        static_navigation_handler.add_environment(
+            "DB_HOST", shared_db.db_instance_endpoint_address
         )
-        
-        static_navigation_handler.add_environment("DB_HOST", db_instance.db_instance_endpoint_address)
-        static_navigation_handler.add_environment("DB_PORT", db_instance.db_instance_endpoint_port)
-        # Match this to the database name you created in RDS
-        static_navigation_handler.add_environment("DB_NAME", "StrideCore")
-        static_navigation_handler.add_environment("DB_SECRET_ARN", db_instance.secret.secret_arn)
-        db_instance.secret.grant_read(static_navigation_handler)
-
-        db_instance.connections.allow_from_any_ipv4(ec2.Port.tcp(5432), "Allow public access for Lambda")
-
-        live_navigation_handler.add_environment("DB_HOST", db_instance.db_instance_endpoint_address)
-        live_navigation_handler.add_environment("DB_PORT", db_instance.db_instance_endpoint_port)
-        live_navigation_handler.add_environment("DB_NAME", "StrideCore")
-        live_navigation_handler.add_environment("DB_SECRET_ARN", db_instance.secret.secret_arn)
-        db_instance.secret.grant_read(live_navigation_handler)
-
-        CfnOutput(
-            self, "DBSecretArn",
-            value=db_instance.secret.secret_arn,
-            description="ARN for RDS credentials secret"
+        static_navigation_handler.add_environment(
+            "DB_PORT", shared_db.db_instance_endpoint_port
         )
+        static_navigation_handler.add_environment("DB_NAME", SHARED_DB_NAME)
+        static_navigation_handler.add_environment(
+            "DB_SECRET_ARN", shared_db.secret.secret_arn
+        )
+        shared_db.secret.grant_read(static_navigation_handler)
+
+        live_navigation_handler.add_environment(
+            "DB_HOST", shared_db.db_instance_endpoint_address
+        )
+        live_navigation_handler.add_environment(
+            "DB_PORT", shared_db.db_instance_endpoint_port
+        )
+        live_navigation_handler.add_environment("DB_NAME", SHARED_DB_NAME)
+        live_navigation_handler.add_environment(
+            "DB_SECRET_ARN", shared_db.secret.secret_arn
+        )
+        shared_db.secret.grant_read(live_navigation_handler)
