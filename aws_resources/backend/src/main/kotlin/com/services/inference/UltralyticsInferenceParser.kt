@@ -10,7 +10,7 @@ import com.models.Metadata
 private val mapper = jacksonObjectMapper()
 
 /**
- * JSON body from SageMaker container or compatible HTTP POST /invocations (Ultralytics format).
+ * JSON body from HTTP POST /invocations (Ultralytics-compatible format).
  */
 internal data class UltralyticsInferenceResponse(
     val success: Boolean,
@@ -38,7 +38,7 @@ internal data class UltralyticsImageInfo(
 )
 
 /**
- * Parse Ultralytics-style JSON into [InferenceResult]. Used by SageMaker and HTTP inference backends.
+ * Parse Ultralytics-style JSON into [InferenceResult] (HTTP /invocations).
  */
 object UltralyticsInferenceParser {
     fun parse(json: String, inferenceTimeMs: Long = 0): InferenceResult {

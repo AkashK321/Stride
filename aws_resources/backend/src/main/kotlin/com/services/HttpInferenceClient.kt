@@ -9,8 +9,8 @@ import java.net.http.HttpResponse
 import java.time.Duration
 
 /**
- * POSTs image bytes to a SageMaker-compatible HTTP server ([INFERENCE_HTTP_URL]/invocations).
- * Used when the SageMaker feature flag is off and [INFERENCE_HTTP_URL] is set (e.g. VPC-local or tunneled dev server).
+ * POSTs image bytes to an Ultralytics-compatible HTTP server ([INFERENCE_HTTP_URL]/invocations).
+ * Used when [INFERENCE_HTTP_URL] is set (e.g. VPC-local endpoint, load balancer, or tunneled dev server).
  */
 object HttpInferenceClient {
 

@@ -1,1 +1,1 @@
-# Local FastAPI inference server (SageMaker-compatible /ping and /invocations).
+# Local FastAPI inference server (/ping and /invocations).

@@ -1,4 +1,4 @@
-# Local dev inference server (FastAPI). Align ultralytics with aws_resources/sagemaker/requirements.txt where practical.
+# Local dev inference server (FastAPI). Keep versions aligned with backend expectations where practical.
 #
 # To avoid very large CUDA wheels on Linux, install CPU PyTorch first, then the rest:
 #   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu

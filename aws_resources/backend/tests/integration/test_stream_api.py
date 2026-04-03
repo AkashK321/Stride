@@ -1,6 +1,5 @@
 import pytest
 from websocket import create_connection
-import boto3
 import json
 import base64
 import os
@@ -40,22 +39,16 @@ def ws_endpoint_healthy(api_base_url):
 
 
 @pytest.fixture
-def ddb_feature_flag_table():
-    """Fixture to access the DynamoDB table for feature flags."""
-    ddb = boto3.resource("dynamodb", region_name="us-east-1")
-    table_name = os.getenv("FEATURE_FLAG_TABLE_NAME", "FeatureFlags")
-    return ddb.Table(table_name)
+def inference_http_url():
+    """Optional HTTP inference endpoint used by ObjectDetectionHandler."""
+    return os.getenv("INFERENCE_HTTP_URL")
 
 
-def set_sagemaker_flag(table, enabled: bool):
-    """Helper to update the feature flag in DynamoDB."""
-    table.put_item(
-        Item={"feature_name": "enable_sagemaker_inference", "value": enabled}
-    )
-
-
-def test_inference_enabled(api_base_url, ddb_feature_flag_table, ws_endpoint_healthy):
-    set_sagemaker_flag(ddb_feature_flag_table, True)
+@pytest.mark.skipif(
+    not os.getenv("INFERENCE_HTTP_URL"),
+    reason="INFERENCE_HTTP_URL is unset in deployed stack; skipping HTTP inference-specific test",
+)
+def test_http_inference_enabled(api_base_url, ws_endpoint_healthy):
 
     ws = create_connection(api_base_url)
     try:
@@ -70,13 +63,19 @@ def test_inference_enabled(api_base_url, ddb_feature_flag_table, ws_endpoint_hea
         assert "estimatedDistances" in response
         # Verify request_id is echoed back
         assert response.get("request_id") == 1, "Expected request_id to be echoed back"
-        print(f"Inference Enabled Response: {response}")
+        # HTTP backend may validly return zero detections; shape is what's important here.
+        assert isinstance(response.get("estimatedDistances"), list)
+        assert response.get("inferenceStatus") != "unavailable"
+        print(f"HTTP inference response: {response}")
     finally:
         ws.close()
 
 
-def test_sagemaker_disabled_falls_back_to_http(api_base_url, ddb_feature_flag_table, ws_endpoint_healthy):
-    set_sagemaker_flag(ddb_feature_flag_table, False)
+@pytest.mark.skipif(
+    os.getenv("INFERENCE_HTTP_URL"),
+    reason="INFERENCE_HTTP_URL is set; unavailable-path test only applies when unset",
+)
+def test_inference_unavailable_when_http_url_missing(api_base_url, ws_endpoint_healthy):
 
     ws = create_connection(api_base_url)
     try:
@@ -87,13 +86,13 @@ def test_sagemaker_disabled_falls_back_to_http(api_base_url, ddb_feature_flag_ta
         response = json.loads(ws.recv())
 
         assert response.get("valid") is True
-        # With SageMaker disabled, handler should fall back to HTTP inference (if configured),
-        # so we only require the field to exist, not be empty.
         assert "estimatedDistances" in response
         assert isinstance(response.get("estimatedDistances"), list)
+        assert response.get("inferenceStatus") == "unavailable"
+        assert "error" in response
         # Verify request_id is echoed back
         assert response.get("request_id") == 1, "Expected request_id to be echoed back"
-        print(f"SageMaker-disabled fallback response: {response}")
+        print(f"Inference-unavailable response: {response}")
     finally:
         ws.close()
 
@@ -172,7 +171,7 @@ def test_dataflow(api_base_url, ws_endpoint_healthy):
         response_2 = ws.recv()
         print(f"📩 Received: {response_2}")
 
-        # Parse JSON response (new format with SageMaker inference)
+        # Parse JSON response
         try:
             result_2 = json.loads(response_2)
             assert result_2.get("valid") == True, (
@@ -194,12 +193,12 @@ def test_dataflow(api_base_url, ws_endpoint_healthy):
                 inference_time = result_2["metadata"].get("inferenceTimeMs", 0)
                 print(f"   Inference time: {inference_time}ms")
         except json.JSONDecodeError:
-            # Fallback for testing without SageMaker endpoint deployed
+            # Fallback for older/non-JSON response formats
             assert "valid" in response_2.lower() or "success" in response_2.lower(), (
                 f"Expected success for valid JPEG, got: {response_2}"
             )
             print(
-                "⚠️  Note: Received old response format (SageMaker endpoint may not be deployed)"
+                "⚠️  Note: Received old response format"
             )
 
     finally:

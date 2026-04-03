@@ -6,19 +6,20 @@ import com.amazonaws.services.lambda.runtime.events.APIGatewayV2WebSocketEvent
 import com.amazonaws.services.lambda.runtime.events.APIGatewayV2WebSocketEvent.RequestContext
 import io.mockk.*
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import software.amazon.awssdk.services.apigatewaymanagementapi.ApiGatewayManagementApiClient
 import software.amazon.awssdk.services.apigatewaymanagementapi.model.PostToConnectionRequest
 import com.models.BoundingBox
 import com.services.DynamoDbTableClient
+import com.services.HttpInferenceClient
 import java.util.Base64
 
 class ObjectDetectionHandlerTest {
 
     // Mocks for dependencies
     private val mockHeightDdb = mockk<DynamoDbTableClient>()
-    private val mockFeatureDdb = mockk<DynamoDbTableClient>()
     private val mockApiGateway = mockk<ApiGatewayManagementApiClient>(relaxed = true)
     private val mockContext = mockk<Context>()
     private val mockLogger = mockk<LambdaLogger>(relaxed = true)
@@ -36,12 +37,18 @@ class ObjectDetectionHandlerTest {
         // 2. Create the real handler instance with mocked dependencies
         val realHandler = ObjectDetectionHandler(
             heightTableClient = mockHeightDdb,
-            featureFlagsTableClient = mockFeatureDdb,
             apiGatewayFactory = { _ -> mockApiGateway }
         )
 
         // 3. SPY on the handler to allow mocking private methods
         handler = spyk(realHandler, recordPrivateCalls = true)
+        mockkObject(HttpInferenceClient)
+        every { HttpInferenceClient.baseUrl() } returns "http://localhost:8080"
+    }
+
+    @AfterEach
+    fun teardown() {
+        unmockkObject(HttpInferenceClient)
     }
 
     @Test
@@ -51,10 +58,9 @@ class ObjectDetectionHandlerTest {
         )
 
         every { mockHeightDdb.scanAll() } returns ddbHeightItems
-        every { mockFeatureDdb.getStringItem(itemName = "enable_sagemaker_inference") } returns true
 
         // 2. MOCK THE PRIVATE getDetections FUNCTION
-        // This bypasses the actual logic (and the TODO/SageMaker call) entirely
+        // This bypasses external inference calls and isolates response handling.
         val fakeDetections = listOf(
             BoundingBox(
                 x = 320,
@@ -66,7 +72,7 @@ class ObjectDetectionHandlerTest {
             )
         )
         
-        // Mock getDetections (SageMaker/HTTP path) — bypass real inference backends
+        // Mock getDetections (HTTP path) — bypass real inference backend
         every {
             handler.getDetections(
                 false,

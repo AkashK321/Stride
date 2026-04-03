@@ -1,4 +1,4 @@
-"""Decode image bytes, run YOLO, return SageMaker-compatible JSON dicts and HTTP status codes."""
+"""Decode image bytes, run YOLO, return /invocations JSON + HTTP status codes."""
 
 from __future__ import annotations
 
@@ -66,7 +66,7 @@ def normalize_content_type(raw: str | None) -> str | None:
 
 def predict_image_bytes(model: YOLO, image_bytes: bytes, content_type: str | None) -> tuple[dict[str, Any], int]:
     """
-    Mirror aws_resources/sagemaker/inference.py behavior.
+    Serve the Stride HTTP inference contract at POST /invocations.
     Returns (json_body, http_status).
     """
     ct = normalize_content_type(content_type)

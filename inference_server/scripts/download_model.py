@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download generic yolo11n.pt for local testing (same asset as SageMaker Docker image)."""
+"""Download generic yolo11n.pt for local HTTP inference testing."""
 
 from __future__ import annotations
 
