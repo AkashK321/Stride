@@ -13,11 +13,58 @@
 import * as React from "react";
 import { View, Text, ScrollView, Alert, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Pedometer } from "expo-sensors";
+import * as Device from "expo-device";
 import Button from "../../components/Button";
 import SensorService from "../../services/SensorService";
 import type { SensorReading, LocalizationData } from "../../services/SensorService";
 import { spacing } from "../../theme/spacing";
 import { typography } from "../../theme/typography";
+
+type DeadReckoningSample = {
+  timestamp_ms: number;
+  heading_raw_deg: number;
+  heading_avg_deg: number;
+  pedometer_steps: number;
+  step_delta: number;
+  estimated_distance_m: number;
+};
+
+const DEFAULT_STEP_LENGTH_M = 0.7;
+const HEADING_WINDOW_SIZE = 10;
+const TEST_SAMPLE_INTERVAL_MS = 200;
+
+function normalizeHeading(deg: number): number {
+  let value = deg % 360;
+  if (value < 0) value += 360;
+  return value;
+}
+
+function circularMean(values: number[]): number {
+  if (values.length === 0) return 0;
+  let sinSum = 0;
+  let cosSum = 0;
+  for (const angleDeg of values) {
+    const r = (angleDeg * Math.PI) / 180;
+    sinSum += Math.sin(r);
+    cosSum += Math.cos(r);
+  }
+  const mean = (Math.atan2(sinSum / values.length, cosSum / values.length) * 180) / Math.PI;
+  return normalizeHeading(mean);
+}
+
+function computeRawHeadingFromReading(reading: SensorReading): number {
+  const { x: ax, y: ay, z: az } = reading.accelerometer;
+  const { x: mx, y: my, z: mz } = reading.magnetometer;
+
+  const roll = Math.atan2(ay, az);
+  const pitch = Math.atan2(-ax, Math.sqrt(ay * ay + az * az));
+  const magX = mx * Math.cos(pitch) + mz * Math.sin(pitch);
+  const magY = mx * Math.sin(roll) * Math.sin(pitch) + my * Math.cos(roll) - mz * Math.sin(roll) * Math.cos(pitch);
+
+  const heading = (Math.atan2(-magY, magX) * 180) / Math.PI;
+  return normalizeHeading(heading);
+}
 
 export default function SensorDevScreen() {
   const [isLogging, setIsLogging] = React.useState(false);
@@ -38,6 +85,22 @@ export default function SensorDevScreen() {
   const [testGroundTruthDistanceM, setTestGroundTruthDistanceM] = React.useState("");
   const [testerName, setTesterName] = React.useState("");
   const [testerDeviceModel, setTesterDeviceModel] = React.useState("");
+  const [pedometerAvailable, setPedometerAvailable] = React.useState<boolean | null>(null);
+  const [pedometerStepsRaw, setPedometerStepsRaw] = React.useState(0);
+  const [runElapsedSeconds, setRunElapsedSeconds] = React.useState(0);
+  const [runSampleCount, setRunSampleCount] = React.useState(0);
+  const [runHeadingRaw, setRunHeadingRaw] = React.useState<number | null>(null);
+  const [runHeadingAvg, setRunHeadingAvg] = React.useState<number | null>(null);
+  const [runPedometerSteps, setRunPedometerSteps] = React.useState(0);
+  const [runEstimatedDistanceM, setRunEstimatedDistanceM] = React.useState(0);
+
+  const currentReadingRef = React.useRef<SensorReading | null>(null);
+  const pedometerStepsRawRef = React.useRef(0);
+  const testTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const testSamplesRef = React.useRef<DeadReckoningSample[]>([]);
+  const headingHistoryRef = React.useRef<number[]>([]);
+  const pedometerBaselineRef = React.useRef(0);
+  const prevRelativeStepsRef = React.useRef(0);
 
   React.useEffect(() => {
     // Don't auto-start monitoring - let user control it
@@ -49,6 +112,7 @@ export default function SensorDevScreen() {
 
     const unsubscribeUpdates = SensorService.subscribeToUpdates((reading) => {
       setCurrentReading(reading);
+      currentReadingRef.current = reading;
       if (SensorService.isCurrentlyLogging()) {
         setSampleCount(prev => prev + 1);
       }
@@ -61,7 +125,48 @@ export default function SensorDevScreen() {
     return () => {
       unsubscribeUpdates();
       unsubscribeLocalization();
+      if (testTimerRef.current) {
+        clearInterval(testTimerRef.current);
+        testTimerRef.current = null;
+      }
       SensorService.stopMonitoring(); // Clean up on unmount
+    };
+  }, []);
+
+  React.useEffect(() => {
+    setTesterDeviceModel(Device.modelName ?? "");
+  }, []);
+
+  React.useEffect(() => {
+    pedometerStepsRawRef.current = pedometerStepsRaw;
+  }, [pedometerStepsRaw]);
+
+  React.useEffect(() => {
+    let isCancelled = false;
+    let subscription: { remove: () => void } | null = null;
+
+    const setupPedometer = async () => {
+      try {
+        const available = await Pedometer.isAvailableAsync();
+        if (isCancelled) return;
+        setPedometerAvailable(available);
+        if (!available) return;
+        subscription = Pedometer.watchStepCount((result) => {
+          if (!isCancelled) {
+            setPedometerStepsRaw(result.steps);
+          }
+        });
+      } catch (error) {
+        console.warn("Pedometer setup failed:", error);
+        if (!isCancelled) setPedometerAvailable(false);
+      }
+    };
+
+    setupPedometer();
+
+    return () => {
+      isCancelled = true;
+      subscription?.remove();
     };
   }, []);
 
@@ -206,18 +311,74 @@ export default function SensorDevScreen() {
       setIsMonitoring(true);
     }
 
+    if (!pedometerAvailable) {
+      Alert.alert("Pedometer unavailable", "This device does not support pedometer step counting.");
+      return;
+    }
+
+    headingHistoryRef.current = [];
+    testSamplesRef.current = [];
+    pedometerBaselineRef.current = pedometerStepsRawRef.current;
+    prevRelativeStepsRef.current = 0;
+    setRunSampleCount(0);
+    setRunElapsedSeconds(0);
+    setRunHeadingRaw(null);
+    setRunHeadingAvg(null);
+    setRunPedometerSteps(0);
+    setRunEstimatedDistanceM(0);
+
     setIsTestModeRecording(true);
-    setTestStartedAtMs(Date.now());
+    const startedAt = Date.now();
+    setTestStartedAtMs(startedAt);
+
+    testTimerRef.current = setInterval(() => {
+      const reading = currentReadingRef.current;
+      if (!reading) return;
+      const now = Date.now();
+      const rawHeading = computeRawHeadingFromReading(reading);
+      headingHistoryRef.current.push(rawHeading);
+      if (headingHistoryRef.current.length > HEADING_WINDOW_SIZE) {
+        headingHistoryRef.current.shift();
+      }
+      const avgHeading = circularMean(headingHistoryRef.current);
+
+      const relativeSteps = Math.max(0, pedometerStepsRawRef.current - pedometerBaselineRef.current);
+      const stepDelta = relativeSteps - prevRelativeStepsRef.current;
+      prevRelativeStepsRef.current = relativeSteps;
+      const estimatedDistance = relativeSteps * DEFAULT_STEP_LENGTH_M;
+
+      const sample: DeadReckoningSample = {
+        timestamp_ms: now,
+        heading_raw_deg: rawHeading,
+        heading_avg_deg: avgHeading,
+        pedometer_steps: relativeSteps,
+        step_delta: stepDelta,
+        estimated_distance_m: estimatedDistance,
+      };
+      testSamplesRef.current.push(sample);
+
+      setRunSampleCount(testSamplesRef.current.length);
+      setRunElapsedSeconds(Math.max(0, (now - startedAt) / 1000));
+      setRunHeadingRaw(rawHeading);
+      setRunHeadingAvg(avgHeading);
+      setRunPedometerSteps(relativeSteps);
+      setRunEstimatedDistanceM(estimatedDistance);
+    }, TEST_SAMPLE_INTERVAL_MS);
+
     Alert.alert("Test mode", "Run started. Walk your route, then stop to save summary.");
   };
 
   const stopTestModeRun = () => {
+    if (testTimerRef.current) {
+      clearInterval(testTimerRef.current);
+      testTimerRef.current = null;
+    }
     const elapsedMs = testStartedAtMs ? Date.now() - testStartedAtMs : 0;
     setIsTestModeRecording(false);
     setTestStartedAtMs(null);
     Alert.alert(
       "Test mode",
-      `Run stopped.\nRun #${testRunNumber}\nElapsed: ${(elapsedMs / 1000).toFixed(1)}s`
+      `Run stopped.\nRun #${testRunNumber}\nElapsed: ${(elapsedMs / 1000).toFixed(1)}s\nSamples: ${testSamplesRef.current.length}\nEstimated distance: ${runEstimatedDistanceM.toFixed(2)} m`
     );
   };
 
@@ -642,6 +803,54 @@ export default function SensorDevScreen() {
             isTestModeRecording
               ? `Recording run #${testRunNumber}...`
               : "Idle"
+          ),
+          React.createElement(
+            View,
+            {
+              style: {
+                flexDirection: "row",
+                justifyContent: "space-between",
+              },
+            },
+            React.createElement(
+              Text,
+              { style: typography.caption },
+              `Elapsed: ${runElapsedSeconds.toFixed(1)}s`
+            ),
+            React.createElement(
+              Text,
+              { style: typography.caption },
+              `Samples: ${runSampleCount}`
+            ),
+            React.createElement(
+              Text,
+              { style: typography.caption },
+              `Steps: ${runPedometerSteps}`
+            )
+          ),
+          React.createElement(
+            View,
+            {
+              style: {
+                flexDirection: "row",
+                justifyContent: "space-between",
+              },
+            },
+            React.createElement(
+              Text,
+              { style: typography.caption },
+              `Heading raw: ${runHeadingRaw !== null ? runHeadingRaw.toFixed(1) : "--"}°`
+            ),
+            React.createElement(
+              Text,
+              { style: typography.caption },
+              `Heading avg: ${runHeadingAvg !== null ? runHeadingAvg.toFixed(1) : "--"}°`
+            ),
+            React.createElement(
+              Text,
+              { style: typography.caption },
+              `Est. dist: ${runEstimatedDistanceM.toFixed(2)}m`
+            )
           )
         ),
 
