@@ -87,6 +87,11 @@ class StaticNavigationHandlerTest {
         val mockStartNodeStmt = mockk<PreparedStatement>(relaxed = true)
         every { mockStartNodeStmt.executeQuery() } returns mockResultSet(listOf(mapOf("NodeIDString" to "staircase_main_2S01")))
 
+        val mockSingleNodeStmt = mockk<PreparedStatement>(relaxed = true)
+        every { mockSingleNodeStmt.executeQuery() } returns mockResultSet(listOf(
+            mapOf("NodeIDString" to "staircase_main_2S01", "CoordinateX" to -10, "CoordinateY" to 0)
+        ))
+
         val mockGraphStmt = mockk<PreparedStatement>(relaxed = true)
         every { mockGraphStmt.executeQuery() } returns mockResultSet(listOf(
             mapOf("StartNodeID" to "staircase_main_2S01", "EndNodeID" to "n1", "DistanceMeters" to 1.0, "IsBidirectional" to true),
@@ -115,6 +120,7 @@ class StaticNavigationHandlerTest {
                 sql.contains("FROM Landmarks") -> mockLandmarkStmt
                 sql.contains("BuildingID FROM MapNodes") -> mockBuildingStmt
                 sql.contains("NodeIDString FROM MapNodes WHERE NodeIDString") -> mockStartNodeStmt
+                sql.contains("SELECT NodeIDString, CoordinateX, CoordinateY FROM MapNodes WHERE NodeIDString") -> mockSingleNodeStmt
                 sql.contains("FROM MapEdges e") -> mockGraphStmt
                 sql.contains("FROM MapNodes WHERE NodeIDString IN") -> mockNodesStmt
                 sql.contains("WHERE StartNodeID IN") -> mockPathEdgesStmt
@@ -184,6 +190,11 @@ class StaticNavigationHandlerTest {
         val mockStartNodeStmt = mockk<PreparedStatement>(relaxed = true)
         every { mockStartNodeStmt.executeQuery() } returns mockResultSet(listOf(mapOf("NodeIDString" to "staircase_main_2S01")))
 
+        val mockSingleNodeStmt = mockk<PreparedStatement>(relaxed = true)
+        every { mockSingleNodeStmt.executeQuery() } returns mockResultSet(listOf(
+            mapOf("NodeIDString" to "staircase_main_2S01", "CoordinateX" to -10, "CoordinateY" to 0)
+        ))
+
         val mockGraphStmt = mockk<PreparedStatement>(relaxed = true)
         every { mockGraphStmt.executeQuery() } returns mockResultSet(listOf(
             mapOf("StartNodeID" to "staircase_main_2S01", "EndNodeID" to "n1", "DistanceMeters" to 1.0, "IsBidirectional" to true),
@@ -209,6 +220,7 @@ class StaticNavigationHandlerTest {
                 sql.contains("FROM Landmarks") -> mockLandmarkStmt
                 sql.contains("BuildingID FROM MapNodes") -> mockBuildingStmt
                 sql.contains("NodeIDString FROM MapNodes WHERE NodeIDString") -> mockStartNodeStmt
+                sql.contains("SELECT NodeIDString, CoordinateX, CoordinateY FROM MapNodes WHERE NodeIDString") -> mockSingleNodeStmt
                 sql.contains("FROM MapEdges e") -> mockGraphStmt
                 sql.contains("FROM MapNodes WHERE NodeIDString IN") -> mockNodesStmt
                 sql.contains("WHERE StartNodeID IN") -> mockPathEdgesStmt
