@@ -10,11 +10,10 @@
 # TRIGGERS:
 #   1. Called by infrastructure-deploy (workflow_call):
 #      - PRIMARY TRIGGER: Automatically triggered after successful stack deployment
-#      - Receives: api_endpoint
+#      - Receives: api_endpoint, ws_api_endpoint
 #      - Runs integration tests against the deployed stack
 #   2. Manual trigger (workflow_dispatch):
-#      - Can be run manually with required inputs:
-#        * api_endpoint: API Gateway endpoint URL
+#      - Can be run manually with required inputs (api_endpoint, ws_api_endpoint)
 #
 # WORKFLOW FLOW:
 #   workflow_call OR workflow_dispatch
@@ -55,10 +54,6 @@ on:
         required: true
         type: string
         description: 'WebSocket API Gateway endpoint URL'
-      feature_flag_table:
-        required: true
-        type: string
-        description: 'DynamoDB table name for feature flags'
   
   workflow_dispatch:
     inputs:
@@ -70,10 +65,6 @@ on:
         required: true
         type: string
         description: 'WebSocket API Gateway endpoint URL'
-      feature_flag_table:
-        required: true
-        type: string
-        description: 'DynamoDB table name for feature flags'
 
 # Permissions required for test-reporter
 permissions:
@@ -122,7 +113,6 @@ jobs:
         env:
           API_BASE_URL: ${{ inputs.api_endpoint }}
           WS_API_URL: ${{ inputs.ws_api_endpoint }}
-          FEATURE_FLAG_TABLE_NAME: ${{ inputs.feature_flag_table }}
         run: |
           python -m pytest -v -rs backend/tests/ --junitxml=test-results/integration-tests.xml
 

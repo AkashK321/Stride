@@ -15,7 +15,6 @@ from aws_cdk import (
     aws_cognito as cognito,
     custom_resources as cr,
     BundlingOptions,
-    aws_iam as iam,
     CustomResource,
 )
 from constructs import Construct
@@ -184,32 +183,7 @@ class CdkStack(Stack):
         auth_handler.add_environment("USER_POOL_ID", user_pool.user_pool_id)
         auth_handler.add_environment("USER_POOL_CLIENT_ID", user_pool_client.user_pool_client_id)
 
-        account = Stack.of(self).account
-        region = Stack.of(self).region
-        sagemaker_endpoint_name = "stride-yolov11-nano-endpoint"
-
-        # Grant Lambda permission to invoke shared SageMaker endpoint
-        object_detection_handler.add_to_role_policy(
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=["sagemaker:InvokeEndpoint"],
-                resources=[
-                    f"arn:aws:sagemaker:{region}:{account}:endpoint/{sagemaker_endpoint_name}"
-                ]
-            )
-        )
-
-        # Add environment variables to Lambda for shared SageMaker endpoint
-        object_detection_handler.add_environment(
-            "SAGEMAKER_ENDPOINT_NAME",
-            sagemaker_endpoint_name
-        )
-        object_detection_handler.add_environment(
-            "AWS_REGION_SAGEMAKER",
-            region
-        )
-
-        # Optional: SageMaker-compatible HTTP POST /invocations when feature flag disables SageMaker.
+        # Optional: HTTP POST /invocations (Ultralytics-compatible JSON).
         # Set in cdk.context.json, e.g. "inferenceHttpUrl": "http://internal-host:8080" (VPC/LB/tunnel).
         inference_http_url = self.node.try_get_context("inferenceHttpUrl")
         if inference_http_url:
@@ -313,28 +287,6 @@ class CdkStack(Stack):
             value=coco_config_table.table_name,
             description="DynamoDB Table for Object Detection Heights"
         )
-
-        # Setup DynamoDB Table for manual feature flags (e.g. to toggle object detection on/off without redeploying)
-        feature_flags_table = ddb.Table(
-            self, "FeatureFlagsTable",
-            partition_key=ddb.Attribute(
-                name="feature_name",
-                type=ddb.AttributeType.STRING
-            ),
-            # RETAIN = If you delete the stack, this table (and its manual flags) 
-            # will stay in AWS so you don't lose your settings.
-            removal_policy=RemovalPolicy.RETAIN, 
-            billing_mode=ddb.BillingMode.PAY_PER_REQUEST
-        )
-
-        CfnOutput(
-            self, "FeatureFlagsTableName",
-            value=feature_flags_table.table_name,
-            description="Table for manual feature toggles"
-        )
-
-        feature_flags_table.grant_read_data(object_detection_handler)
-        object_detection_handler.add_environment("FEATURE_FLAGS_TABLE_NAME", feature_flags_table.table_name)
 
         CfnOutput(self, "UserPoolId",
             value=user_pool.user_pool_id,

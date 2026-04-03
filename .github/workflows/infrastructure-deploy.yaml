@@ -101,7 +101,6 @@ jobs:
     outputs:
       api_endpoint: ${{ steps.stack-outputs.outputs.api_endpoint }}
       ws_api_endpoint: ${{ steps.stack-outputs.outputs.ws_api_endpoint }}
-      feature_flag_table: ${{ steps.stack-outputs.outputs.feature_flag_table }}
       coco_config_table: ${{ steps.stack-outputs.outputs.coco_config_table }}
       # Secrets Manager ARN for shared RDS (StrideSharedStack output RdsSecretArn)
       stride_db_secret_arn: ${{ steps.stack-outputs.outputs.stride_db_secret_arn }}
@@ -298,11 +297,6 @@ jobs:
             echo "Warning: Could not extract WebSocketURL from branch stack outputs"
           fi
 
-          FEATURE_FLAG_TABLE=$(jq -r ".\"$BRANCH_STACK_KEY\".FeatureFlagsTableName // empty" cdk-outputs.json 2>/dev/null || echo "")
-          if [ -z "$FEATURE_FLAG_TABLE" ] || [ "$FEATURE_FLAG_TABLE" == "null" ]; then
-            echo "Warning: Could not extract FeatureFlagsTableName from branch stack outputs"
-          fi
-          
           COCO_CONFIG_TABLE=$(jq -r ".\"$BRANCH_STACK_KEY\".CocoConfigTableName // empty" cdk-outputs.json 2>/dev/null || echo "")
           if [ -z "$COCO_CONFIG_TABLE" ] || [ "$COCO_CONFIG_TABLE" == "null" ]; then
             echo "Warning: Could not extract CocoConfigTableName from branch stack outputs"
@@ -328,11 +322,6 @@ jobs:
           if [ -n "$WS_API_ENDPOINT" ]; then
             echo "ws_api_endpoint=$WS_API_ENDPOINT" >> $GITHUB_OUTPUT
             echo "✅ WebSocket API Endpoint: $WS_API_ENDPOINT"
-          fi
-
-          if [ -n "$FEATURE_FLAG_TABLE" ]; then
-            echo "feature_flag_table=$FEATURE_FLAG_TABLE" >> $GITHUB_OUTPUT
-            echo "✅ Feature Flag Table: $FEATURE_FLAG_TABLE"
           fi
 
           if [ -n "$COCO_CONFIG_TABLE" ]; then
@@ -428,5 +417,4 @@ jobs:
     with:
       api_endpoint: ${{ needs.deploy.outputs.api_endpoint }}
       ws_api_endpoint: ${{ needs.deploy.outputs.ws_api_endpoint }}
-      feature_flag_table: ${{ needs.deploy.outputs.feature_flag_table }}
     secrets: inherit

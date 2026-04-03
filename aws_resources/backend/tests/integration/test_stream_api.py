@@ -54,6 +54,7 @@ def set_sagemaker_flag(table, enabled: bool):
     )
 
 
+@pytest.mark.skip(reason="FeatureFlags table removed; replace with HTTP-only inference tests")
 def test_inference_enabled(api_base_url, ddb_feature_flag_table, ws_endpoint_healthy):
     set_sagemaker_flag(ddb_feature_flag_table, True)
 
@@ -75,6 +76,7 @@ def test_inference_enabled(api_base_url, ddb_feature_flag_table, ws_endpoint_hea
         ws.close()
 
 
+@pytest.mark.skip(reason="FeatureFlags table removed; replace with HTTP-only inference tests")
 def test_sagemaker_disabled_falls_back_to_http(api_base_url, ddb_feature_flag_table, ws_endpoint_healthy):
     set_sagemaker_flag(ddb_feature_flag_table, False)
 
