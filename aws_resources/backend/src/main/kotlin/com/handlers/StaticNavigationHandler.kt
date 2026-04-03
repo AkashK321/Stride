@@ -145,6 +145,9 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
             val startNodeId = rdsMapClient.resolveStartNodeId(conn, request.start_location.node_id)
                 ?: throw IllegalArgumentException("Invalid start_location.node_id")
 
+            val startNode = rdsMapClient.getNode(startNodeId, conn)
+                ?: throw IllegalArgumentException("Start node not found in database.")
+
             // 1. Resolve Landmark to Nearest Node
             val landmark = rdsMapClient.getLandmark(destLandmarkId, conn)
                 ?: throw IllegalArgumentException("Landmark not found or has no associated node.")
@@ -174,8 +177,8 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
             // 5. Initialize the Live Navigation Session in DynamoDB
             try {
                 // The first instruction step is the starting node, which contains the start X and Y (in pixels)
-                val startX = instructions.firstOrNull()?.coordinates?.get("x") ?: 0.0
-                val startY = instructions.firstOrNull()?.coordinates?.get("y") ?: 0.0
+                val startX = startNode.coordX.toDouble() ?: 0.0
+                val startY = startNode.coordY.toDouble() ?: 0.0
                 
                 val ttlSeconds = (System.currentTimeMillis() / 1000) + 7200 // 2 hour expiration
                 
