@@ -6,12 +6,14 @@ import com.amazonaws.services.lambda.runtime.events.APIGatewayV2WebSocketEvent
 import com.amazonaws.services.lambda.runtime.events.APIGatewayV2WebSocketEvent.RequestContext
 import io.mockk.*
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import software.amazon.awssdk.services.apigatewaymanagementapi.ApiGatewayManagementApiClient
 import software.amazon.awssdk.services.apigatewaymanagementapi.model.PostToConnectionRequest
 import com.models.BoundingBox
 import com.services.DynamoDbTableClient
+import com.services.HttpInferenceClient
 import java.util.Base64
 
 class ObjectDetectionHandlerTest {
@@ -40,6 +42,13 @@ class ObjectDetectionHandlerTest {
 
         // 3. SPY on the handler to allow mocking private methods
         handler = spyk(realHandler, recordPrivateCalls = true)
+        mockkObject(HttpInferenceClient)
+        every { HttpInferenceClient.baseUrl() } returns "http://localhost:8080"
+    }
+
+    @AfterEach
+    fun teardown() {
+        unmockkObject(HttpInferenceClient)
     }
 
     @Test
