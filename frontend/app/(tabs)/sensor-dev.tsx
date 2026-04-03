@@ -33,6 +33,11 @@ type DeadReckoningSample = {
 const DEFAULT_STEP_LENGTH_M = 0.7;
 const HEADING_WINDOW_SIZE = 10;
 const TEST_SAMPLE_INTERVAL_MS = 200;
+const DEAD_RECKONING_LOGGER_BASE = (
+  process.env.EXPO_PUBLIC_DEAD_RECKONING_LOGGER_URL ||
+  process.env.EXPO_PUBLIC_DEV_LOGGER_URL ||
+  "http://localhost:3001"
+).replace(/\/+$/, "").replace(/\/log$/, "");
 
 function normalizeHeading(deg: number): number {
   let value = deg % 360;
@@ -93,6 +98,7 @@ export default function SensorDevScreen() {
   const [runHeadingAvg, setRunHeadingAvg] = React.useState<number | null>(null);
   const [runPedometerSteps, setRunPedometerSteps] = React.useState(0);
   const [runEstimatedDistanceM, setRunEstimatedDistanceM] = React.useState(0);
+  const [activeTestRunId, setActiveTestRunId] = React.useState<string | null>(null);
 
   const currentReadingRef = React.useRef<SensorReading | null>(null);
   const pedometerStepsRawRef = React.useRef(0);
@@ -101,6 +107,18 @@ export default function SensorDevScreen() {
   const headingHistoryRef = React.useRef<number[]>([]);
   const pedometerBaselineRef = React.useRef(0);
   const prevRelativeStepsRef = React.useRef(0);
+  const postDeadReckoningLog = React.useCallback(async (endpoint: string, payload: unknown) => {
+    try {
+      await fetch(`${DEAD_RECKONING_LOGGER_BASE}${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch (error) {
+      console.warn("[dead-reckoning] local logger request failed:", endpoint, error);
+    }
+  }, []);
+
 
   React.useEffect(() => {
     // Don't auto-start monitoring - let user control it
@@ -330,6 +348,19 @@ export default function SensorDevScreen() {
     setIsTestModeRecording(true);
     const startedAt = Date.now();
     setTestStartedAtMs(startedAt);
+    const runId = `${testRunNumber}-${startedAt}`;
+    setActiveTestRunId(runId);
+
+    void postDeadReckoningLog("/run/start", {
+      run_id: runId,
+      test_id: testRunNumber,
+      start_label: testStartLabel,
+      end_label: testEndLabel,
+      ground_truth_distance_m: Number(testGroundTruthDistanceM),
+      tester: testerName,
+      device_model: testerDeviceModel,
+      started_at_ms: startedAt,
+    });
 
     testTimerRef.current = setInterval(() => {
       const reading = currentReadingRef.current;
@@ -356,6 +387,10 @@ export default function SensorDevScreen() {
         estimated_distance_m: estimatedDistance,
       };
       testSamplesRef.current.push(sample);
+      void postDeadReckoningLog("/run/sample", {
+        run_id: runId,
+        sample,
+      });
 
       setRunSampleCount(testSamplesRef.current.length);
       setRunElapsedSeconds(Math.max(0, (now - startedAt) / 1000));
@@ -373,9 +408,19 @@ export default function SensorDevScreen() {
       clearInterval(testTimerRef.current);
       testTimerRef.current = null;
     }
+    const stoppedAt = Date.now();
+    if (activeTestRunId) {
+      void postDeadReckoningLog("/run/end", {
+        run_id: activeTestRunId,
+        stopped_at_ms: stoppedAt,
+        sample_count: testSamplesRef.current.length,
+        estimated_distance_m: runEstimatedDistanceM,
+      });
+    }
     const elapsedMs = testStartedAtMs ? Date.now() - testStartedAtMs : 0;
     setIsTestModeRecording(false);
     setTestStartedAtMs(null);
+    setActiveTestRunId(null);
     Alert.alert(
       "Test mode",
       `Run stopped.\nRun #${testRunNumber}\nElapsed: ${(elapsedMs / 1000).toFixed(1)}s\nSamples: ${testSamplesRef.current.length}\nEstimated distance: ${runEstimatedDistanceM.toFixed(2)} m`

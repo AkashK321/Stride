@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Development-only CSV logger server for WebSocket responses.
+ * Development-only CSV logger server for navigation/dev experiments.
  * 
  * This server runs on your laptop and receives response data from the React Native app
  * running in Expo Go, then writes it to CSV files for analysis.
@@ -8,7 +8,8 @@
  * Usage:
  *   npm run dev-logger
  * 
- * The server listens on http://localhost:3001 and writes CSV files to ./dev-logs/
+ * The server listens on http://localhost:3001 and writes CSV files to:
+ *   ../test_results/dead_reckoning/
  */
 
 const http = require('http');
@@ -17,7 +18,7 @@ const path = require('path');
 const os = require('os');
 
 const PORT = 3001;
-const LOGS_DIR = path.join(__dirname, 'dev-logs');
+const LOGS_DIR = path.join(__dirname, '..', 'test_results', 'dead_reckoning');
 
 /**
  * Get the local network IP address for network access from devices.
@@ -43,6 +44,70 @@ if (!fs.existsSync(LOGS_DIR)) {
 
 // Track active sessions
 const sessionFiles = new Map();
+const runFiles = new Map();
+
+function escapeCsv(field) {
+  const str = String(field ?? '');
+  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+function getRunFile(runId, metadata) {
+  if (runFiles.has(runId)) {
+    return runFiles.get(runId);
+  }
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `dead-reckoning-${runId}-${timestamp}.csv`;
+  const filepath = path.join(LOGS_DIR, filename);
+
+  const header = [
+    'timestamp_ms',
+    'test_id',
+    'tester',
+    'device_model',
+    'start_label',
+    'end_label',
+    'ground_truth_distance_m',
+    'heading_raw_deg',
+    'heading_avg_deg',
+    'pedometer_steps',
+    'step_delta',
+    'estimated_distance_m'
+  ].join(',');
+
+  fs.writeFileSync(filepath, header + '\n');
+  runFiles.set(runId, { filepath, metadata });
+  console.log(`🧭 Created run file: ${filepath}`);
+  return runFiles.get(runId);
+}
+
+function writeRunSample(runId, sample) {
+  const run = runFiles.get(runId);
+  if (!run) {
+    throw new Error(`Run ${runId} not initialized. Call /run/start first.`);
+  }
+
+  const m = run.metadata;
+  const row = [
+    sample.timestamp_ms,
+    m.test_id,
+    m.tester,
+    m.device_model,
+    m.start_label,
+    m.end_label,
+    m.ground_truth_distance_m,
+    sample.heading_raw_deg,
+    sample.heading_avg_deg,
+    sample.pedometer_steps,
+    sample.step_delta,
+    sample.estimated_distance_m
+  ].map(escapeCsv).join(',');
+
+  fs.appendFileSync(run.filepath, row + '\n');
+}
 
 /**
  * Get or create a CSV file for a session
@@ -97,14 +162,7 @@ function writeResponse(sessionId, response) {
     response.error ?? '',
     response.status ?? '',
     JSON.stringify(response)
-  ].map(field => {
-    // Escape commas and quotes in CSV
-    const str = String(field);
-    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-      return `"${str.replace(/"/g, '""')}"`;
-    }
-    return str;
-  }).join(',');
+  ].map(escapeCsv).join(',');
 
   fs.appendFileSync(filepath, row + '\n');
   console.log(`✅ Logged response (ID: ${response.request_id}, Latency: ${response.latency_ms}ms)`);
@@ -119,6 +177,75 @@ const server = http.createServer((req, res) => {
   if (req.method === 'OPTIONS') {
     res.writeHead(200);
     res.end();
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/run/start') {
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        const runId = data.run_id;
+        if (!runId) throw new Error('run_id is required');
+        getRunFile(runId, {
+          test_id: data.test_id || '',
+          tester: data.tester || '',
+          device_model: data.device_model || '',
+          start_label: data.start_label || '',
+          end_label: data.end_label || '',
+          ground_truth_distance_m: data.ground_truth_distance_m ?? '',
+        });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true }));
+      } catch (error) {
+        console.error('Error processing /run/start:', error);
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: error.message }));
+      }
+    });
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/run/sample') {
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        if (!data.run_id) throw new Error('run_id is required');
+        if (!data.sample) throw new Error('sample is required');
+        writeRunSample(data.run_id, data.sample);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true }));
+      } catch (error) {
+        console.error('Error processing /run/sample:', error);
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: error.message }));
+      }
+    });
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/run/end') {
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        const run = runFiles.get(data.run_id);
+        if (!run) throw new Error('unknown run_id');
+        console.log(
+          `🏁 Completed run ${data.run_id}: samples=${data.sample_count ?? 'n/a'}, estimated_distance_m=${data.estimated_distance_m ?? 'n/a'}`
+        );
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, filepath: run.filepath }));
+      } catch (error) {
+        console.error('Error processing /run/end:', error);
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: error.message }));
+      }
+    });
     return;
   }
 
@@ -154,8 +281,9 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Dev logger server running on http://localhost:${PORT}`);
   console.log(`🌐 Also accessible at http://${localIP}:${PORT}`);
   console.log(`📁 Logs will be written to: ${LOGS_DIR}`);
+  console.log(`🧪 Dead-reckoning endpoints: /run/start, /run/sample, /run/end`);
   console.log(`\n💡 If using Expo Go on a physical device:`);
-  console.log(`   Add to your .env file: EXPO_PUBLIC_DEV_LOGGER_URL=http://${localIP}:${PORT}/log`);
+  console.log(`   Add to your .env file: EXPO_PUBLIC_DEAD_RECKONING_LOGGER_URL=http://${localIP}:${PORT}`);
   console.log(`   Then restart Expo server for changes to take effect.\n`);
   console.log(`Press Ctrl+C to stop the server\n`);
 });
