@@ -1,6 +1,6 @@
 # Test Results Directory
 
-This directory contains inference results from testing the YOLOv11 SageMaker endpoint.
+This directory stores sample WebSocket object-detection result artifacts and summaries.
 
 ## Files
 
@@ -19,17 +19,14 @@ Each test image gets its own JSON file with detection results:
 ### Summary Report
 - `summary.json` - Aggregated statistics from all test runs
 
-## Running Tests
+## Running Inference Tests
 
 From the `aws_resources` directory:
 
 ```bash
-# Using environment variable
+# Run integration tests (HTTP-only inference behavior)
 export WS_API_URL="wss://your-api-id.execute-api.us-east-1.amazonaws.com"
-python test_sagemaker_inference.py
-
-# Or pass URL directly
-python test_sagemaker_inference.py --ws-url "wss://your-api-id.execute-api.us-east-1.amazonaws.com/prod"
+python -m pytest -v backend/tests/integration/test_stream_api.py
 ```
 
 ## Output Format
@@ -87,8 +84,8 @@ python test_sagemaker_inference.py --ws-url "wss://your-api-id.execute-api.us-ea
 
 ## Metrics Explained
 
-- **total_latency_ms**: End-to-end time from sending image to receiving response (includes network, Lambda cold start, SageMaker inference)
-- **inferenceTimeMs**: Time spent in SageMaker endpoint only (pure model inference time)
+- **total_latency_ms**: End-to-end time from sending image to receiving response (includes network and Lambda execution time)
+- **inferenceTimeMs**: Time spent in the configured HTTP inference backend (if returned by response metadata)
 - **detectionCount**: Number of objects detected in the image
 - **confidence**: Confidence score between 0.0 and 1.0
 

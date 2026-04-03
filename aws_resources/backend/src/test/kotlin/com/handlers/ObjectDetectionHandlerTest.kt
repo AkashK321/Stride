@@ -51,7 +51,7 @@ class ObjectDetectionHandlerTest {
         every { mockHeightDdb.scanAll() } returns ddbHeightItems
 
         // 2. MOCK THE PRIVATE getDetections FUNCTION
-        // This bypasses the actual logic (and the TODO/SageMaker call) entirely
+        // This bypasses external inference calls and isolates response handling.
         val fakeDetections = listOf(
             BoundingBox(
                 x = 320,
@@ -63,7 +63,7 @@ class ObjectDetectionHandlerTest {
             )
         )
         
-        // Mock getDetections (SageMaker/HTTP path) — bypass real inference backends
+        // Mock getDetections (HTTP path) — bypass real inference backend
         every {
             handler.getDetections(
                 false,
