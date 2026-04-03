@@ -177,8 +177,8 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
             // 5. Initialize the Live Navigation Session in DynamoDB
             try {
                 // The first instruction step is the starting node, which contains the start X and Y (in pixels)
-                val startX = startNode.coordX.toDouble() ?: 0.0
-                val startY = startNode.coordY.toDouble() ?: 0.0
+                val startX = startNode.coordX.toDouble()
+                val startY = startNode.coordY.toDouble()
                 
                 val ttlSeconds = (System.currentTimeMillis() / 1000) + 7200 // 2 hour expiration
                 
