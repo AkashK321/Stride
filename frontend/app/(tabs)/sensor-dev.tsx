@@ -11,7 +11,7 @@
  * Uses React.createElement (non-JSX) to match the project's TypeScript configuration.
  */
 import * as React from "react";
-import { View, Text, ScrollView, Alert } from "react-native";
+import { View, Text, ScrollView, Alert, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Button from "../../components/Button";
 import SensorService from "../../services/SensorService";
@@ -30,6 +30,14 @@ export default function SensorDevScreen() {
   const [sessions, setSessions] = React.useState<string[]>([]);
   const [showSessions, setShowSessions] = React.useState(false);
   const [isMonitoring, setIsMonitoring] = React.useState(false);
+  const [isTestModeRecording, setIsTestModeRecording] = React.useState(false);
+  const [testStartedAtMs, setTestStartedAtMs] = React.useState<number | null>(null);
+  const [testRunNumber, setTestRunNumber] = React.useState("");
+  const [testStartLabel, setTestStartLabel] = React.useState("");
+  const [testEndLabel, setTestEndLabel] = React.useState("");
+  const [testGroundTruthDistanceM, setTestGroundTruthDistanceM] = React.useState("");
+  const [testerName, setTesterName] = React.useState("");
+  const [testerDeviceModel, setTesterDeviceModel] = React.useState("");
 
   React.useEffect(() => {
     // Don't auto-start monitoring - let user control it
@@ -184,6 +192,32 @@ export default function SensorDevScreen() {
           },
         },
       ]
+    );
+  };
+
+  const startTestModeRun = async () => {
+    if (!testRunNumber || !testStartLabel || !testEndLabel || !testGroundTruthDistanceM || !testerName || !testerDeviceModel) {
+      Alert.alert("Missing metadata", "Please fill in all test-run fields before starting.");
+      return;
+    }
+
+    if (!isMonitoring) {
+      SensorService.startMonitoring();
+      setIsMonitoring(true);
+    }
+
+    setIsTestModeRecording(true);
+    setTestStartedAtMs(Date.now());
+    Alert.alert("Test mode", "Run started. Walk your route, then stop to save summary.");
+  };
+
+  const stopTestModeRun = () => {
+    const elapsedMs = testStartedAtMs ? Date.now() - testStartedAtMs : 0;
+    setIsTestModeRecording(false);
+    setTestStartedAtMs(null);
+    Alert.alert(
+      "Test mode",
+      `Run stopped.\nRun #${testRunNumber}\nElapsed: ${(elapsedMs / 1000).toFixed(1)}s`
     );
   };
 
@@ -439,6 +473,175 @@ export default function SensorDevScreen() {
                 "Duration"
               )
             )
+          )
+        ),
+
+        // Dead-reckoning Test Mode (MVP) Section
+        React.createElement(
+          View,
+          {
+            style: {
+              gap: spacing.md,
+              padding: spacing.md,
+              backgroundColor: "#F8F9FA",
+              borderRadius: 8,
+            },
+          },
+          React.createElement(
+            Text,
+            { style: typography.h3 },
+            "Dead-Reckoning Test Mode"
+          ),
+          React.createElement(
+            Text,
+            { style: typography.caption },
+            "Enter run metadata, then start/stop a route collection run."
+          ),
+          React.createElement(
+            TextInput,
+            {
+              value: testRunNumber,
+              onChangeText: setTestRunNumber,
+              placeholder: "Test ID / run number (e.g. 001)",
+              editable: !isTestModeRecording,
+              style: {
+                borderWidth: 1,
+                borderColor: "#D1D5DB",
+                borderRadius: 8,
+                paddingHorizontal: spacing.sm,
+                paddingVertical: spacing.sm,
+                backgroundColor: "white",
+              },
+            }
+          ),
+          React.createElement(
+            View,
+            { style: { flexDirection: "row", gap: spacing.sm } },
+            React.createElement(
+              TextInput,
+              {
+                value: testStartLabel,
+                onChangeText: setTestStartLabel,
+                placeholder: "Start label",
+                editable: !isTestModeRecording,
+                style: {
+                  flex: 1,
+                  borderWidth: 1,
+                  borderColor: "#D1D5DB",
+                  borderRadius: 8,
+                  paddingHorizontal: spacing.sm,
+                  paddingVertical: spacing.sm,
+                  backgroundColor: "white",
+                },
+              }
+            ),
+            React.createElement(
+              TextInput,
+              {
+                value: testEndLabel,
+                onChangeText: setTestEndLabel,
+                placeholder: "End label",
+                editable: !isTestModeRecording,
+                style: {
+                  flex: 1,
+                  borderWidth: 1,
+                  borderColor: "#D1D5DB",
+                  borderRadius: 8,
+                  paddingHorizontal: spacing.sm,
+                  paddingVertical: spacing.sm,
+                  backgroundColor: "white",
+                },
+              }
+            ),
+          ),
+          React.createElement(
+            View,
+            { style: { flexDirection: "row", gap: spacing.sm } },
+            React.createElement(
+              TextInput,
+              {
+                value: testGroundTruthDistanceM,
+                onChangeText: setTestGroundTruthDistanceM,
+                placeholder: "Ground truth distance (m)",
+                keyboardType: "decimal-pad",
+                editable: !isTestModeRecording,
+                style: {
+                  flex: 1,
+                  borderWidth: 1,
+                  borderColor: "#D1D5DB",
+                  borderRadius: 8,
+                  paddingHorizontal: spacing.sm,
+                  paddingVertical: spacing.sm,
+                  backgroundColor: "white",
+                },
+              }
+            ),
+            React.createElement(
+              TextInput,
+              {
+                value: testerName,
+                onChangeText: setTesterName,
+                placeholder: "Tester",
+                editable: !isTestModeRecording,
+                style: {
+                  flex: 1,
+                  borderWidth: 1,
+                  borderColor: "#D1D5DB",
+                  borderRadius: 8,
+                  paddingHorizontal: spacing.sm,
+                  paddingVertical: spacing.sm,
+                  backgroundColor: "white",
+                },
+              }
+            ),
+          ),
+          React.createElement(
+            TextInput,
+            {
+              value: testerDeviceModel,
+              onChangeText: setTesterDeviceModel,
+              placeholder: "Device model",
+              editable: !isTestModeRecording,
+              style: {
+                borderWidth: 1,
+                borderColor: "#D1D5DB",
+                borderRadius: 8,
+                paddingHorizontal: spacing.sm,
+                paddingVertical: spacing.sm,
+                backgroundColor: "white",
+              },
+            }
+          ),
+          React.createElement(
+            View,
+            { style: { flexDirection: "row", gap: spacing.sm } },
+            React.createElement(
+              View,
+              { style: { flex: 1 } },
+              React.createElement(Button, {
+                onPress: startTestModeRun,
+                title: "Start Test Run",
+                variant: "primary",
+                disabled: isTestModeRecording,
+              })
+            ),
+            React.createElement(
+              View,
+              { style: { flex: 1 } },
+              React.createElement(Button, {
+                onPress: stopTestModeRun,
+                title: "Stop Test Run",
+                variant: "danger",
+                disabled: !isTestModeRecording,
+              })
+            ),
+          ),
+          React.createElement(
+            Text,
+            { style: typography.caption },
+            isTestModeRecording
+              ? `Recording run #${testRunNumber}...`
+              : "Idle"
           )
         ),
 
