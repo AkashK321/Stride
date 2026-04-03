@@ -24,7 +24,6 @@ dependencies {
     implementation("software.amazon.awssdk:apigatewaymanagementapi")
     implementation("software.amazon.awssdk:url-connection-client")
     implementation("software.amazon.awssdk:dynamodb")
-    implementation("software.amazon.awssdk:sagemakerruntime")
     implementation("software.amazon.awssdk:apigatewaymanagementapi:2.21.0")
     implementation("software.amazon.awssdk:url-connection-client:2.21.0")
     implementation("software.amazon.awssdk:cognitoidentityprovider:2.21.0")

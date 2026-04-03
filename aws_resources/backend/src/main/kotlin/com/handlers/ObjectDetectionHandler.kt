@@ -14,11 +14,16 @@ import java.net.URI
 import java.util.Base64
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.services.HttpInferenceClient
-import com.services.SageMakerClient
 import com.services.DynamoDbTableClient
 import com.models.InferenceResult
 import com.models.BoundingBox
 import kotlin.collections.emptyList
+
+private data class InferenceResolution(
+    val detections: List<BoundingBox>,
+    /** Set when [INFERENCE_HTTP_URL] is unset and a valid image was provided. */
+    val unavailableReason: String? = null,
+)
 
 data class DetectedObject(
     val obj: BoundingBox,
@@ -29,11 +34,6 @@ class ObjectDetectionHandler (
     private val heightTableClient: DynamoDbTableClient = DynamoDbTableClient(
         System.getenv("HEIGHT_MAP_TABLE_NAME") ?: "default-height-table",
         primaryKeyName = "class_id"
-    ),
-    
-    private val featureFlagsTableClient: DynamoDbTableClient = DynamoDbTableClient(
-        System.getenv("FEATURE_FLAGS_TABLE_NAME") ?: "default-flags-table",
-        primaryKeyName = "feature_name"
     ),
 
     private val apiGatewayFactory: (String) -> ApiGatewayManagementApiClient = { endpointUrl ->
@@ -136,42 +136,37 @@ class ObjectDetectionHandler (
         validImage: Boolean,
         imageBytes: ByteArray,
         logger: LambdaLogger,
-    ): List<BoundingBox> {
-        val sageMakerEnabled =
-            featureFlagsTableClient.getStringItem(itemName = "enable_sagemaker_inference") == true
+    ): InferenceResolution {
         val httpInferenceUrl = HttpInferenceClient.baseUrl()
-
-        return when {
-            sageMakerEnabled -> {
-                logger.log("SageMaker inference is ENABLED via feature flag.")
-                getDetections(
-                    validImage,
-                    imageBytes,
-                    logger,
-                    { SageMakerClient.invokeEndpoint(it) },
-                    "SageMaker",
+        if (httpInferenceUrl == null) {
+            if (validImage && imageBytes.isNotEmpty()) {
+                val msg =
+                    "Object detection inference is not configured (${HttpInferenceClient.ENV_INFERENCE_HTTP_URL} is unset)."
+                logger.log("Inference unavailable: $msg")
+                return InferenceResolution(
+                    detections = emptyList(),
+                    unavailableReason = msg,
                 )
             }
-            httpInferenceUrl != null -> {
-                logger.log(
-                    "SageMaker disabled; using HTTP inference at $httpInferenceUrl " +
-                        "(${HttpInferenceClient.ENV_INFERENCE_HTTP_URL}).",
-                )
-                getDetections(
-                    validImage,
-                    imageBytes,
-                    logger,
-                    { HttpInferenceClient.invokeEndpoint(it) },
-                    "HTTP inference",
-                )
-            }
-            else -> {
-                logger.log(
-                    "Inference skipped: SageMaker disabled and ${HttpInferenceClient.ENV_INFERENCE_HTTP_URL} is unset.",
-                )
-                emptyList()
-            }
+            logger.log(
+                "Inference skipped: no valid image or ${HttpInferenceClient.ENV_INFERENCE_HTTP_URL} unset.",
+            )
+            return InferenceResolution(detections = emptyList(), unavailableReason = null)
         }
+
+        logger.log(
+            "Using HTTP inference at $httpInferenceUrl (${HttpInferenceClient.ENV_INFERENCE_HTTP_URL}).",
+        )
+        return InferenceResolution(
+            detections = getDetections(
+                validImage,
+                imageBytes,
+                logger,
+                { HttpInferenceClient.invokeEndpoint(it) },
+                "HTTP inference",
+            ),
+            unavailableReason = null,
+        )
     }
 
     fun detectObjectsFromImage(
@@ -181,12 +176,12 @@ class ObjectDetectionHandler (
     ): List<DetectedObject> {
         loadClassHeightCache(logger)
         val (validImage, imageBytes) = decodeAndValidateImage(imageBase64, logger)
-        val detections = resolveDetections(validImage, imageBytes, logger)
-        return estimateDistances(detections, focalLength)
+        val resolved = resolveDetections(validImage, imageBytes, logger)
+        return estimateDistances(resolved.detections, focalLength)
     }
 
     /**
-     * Runs inference using the given [invoke] function (SageMaker or HTTP-compatible /invocations).
+     * Runs inference using the given [invoke] function (HTTP POST /invocations).
      */
     fun getDetections(
         validImage: Boolean,
@@ -235,9 +230,7 @@ class ObjectDetectionHandler (
         val routeKey = input.requestContext.routeKey ?: "unknown"
         val rawData = input.body ?: "{}"
         var imageBytes: ByteArray = ByteArray(0)
-        var detections: List<BoundingBox>
 
-        
         val domainName = input.requestContext.domainName
         val stage = input.requestContext.stage
         val endpoint = "https://$domainName/$stage"
@@ -351,8 +344,8 @@ class ObjectDetectionHandler (
             return APIGatewayV2WebSocketResponse().apply { statusCode = 400 }
         }
 
-        detections = resolveDetections(validImage, imageBytes, logger)
-        val estimatedDistances = estimateDistances(detections, focalLength)
+        val inferenceResolution = resolveDetections(validImage, imageBytes, logger)
+        val estimatedDistances = estimateDistances(inferenceResolution.detections, focalLength)
 
         try {
             val distancesList = estimatedDistances.map { detected ->
@@ -363,14 +356,18 @@ class ObjectDetectionHandler (
             }
 
             // Build response payload, always including request_id
-            val responsePayload = mapOf(
+            val responsePayload = mutableMapOf<String, Any>(
                 "frameSize" to imageBytes.size,
                 "valid" to validImage,
                 "estimatedDistances" to distancesList,
-                "request_id" to requestId
+                "request_id" to requestId,
             )
+            inferenceResolution.unavailableReason?.let { reason ->
+                responsePayload["inferenceStatus"] = "unavailable"
+                responsePayload["error"] = reason
+            }
 
-            val responseMessage = mapper.writeValueAsString(responsePayload)
+            val responseMessage = mapper.writeValueAsString(responsePayload.toMap())
             logger.log("Sending response: $responseMessage")
 
             val postRequest = PostToConnectionRequest.builder()

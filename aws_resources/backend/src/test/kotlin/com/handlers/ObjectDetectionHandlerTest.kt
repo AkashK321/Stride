@@ -18,7 +18,6 @@ class ObjectDetectionHandlerTest {
 
     // Mocks for dependencies
     private val mockHeightDdb = mockk<DynamoDbTableClient>()
-    private val mockFeatureDdb = mockk<DynamoDbTableClient>()
     private val mockApiGateway = mockk<ApiGatewayManagementApiClient>(relaxed = true)
     private val mockContext = mockk<Context>()
     private val mockLogger = mockk<LambdaLogger>(relaxed = true)
@@ -36,7 +35,6 @@ class ObjectDetectionHandlerTest {
         // 2. Create the real handler instance with mocked dependencies
         val realHandler = ObjectDetectionHandler(
             heightTableClient = mockHeightDdb,
-            featureFlagsTableClient = mockFeatureDdb,
             apiGatewayFactory = { _ -> mockApiGateway }
         )
 
@@ -51,7 +49,6 @@ class ObjectDetectionHandlerTest {
         )
 
         every { mockHeightDdb.scanAll() } returns ddbHeightItems
-        every { mockFeatureDdb.getStringItem(itemName = "enable_sagemaker_inference") } returns true
 
         // 2. MOCK THE PRIVATE getDetections FUNCTION
         // This bypasses the actual logic (and the TODO/SageMaker call) entirely
