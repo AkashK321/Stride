@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Orchestrate local inference dev: tunnel (ngrok), Lambda env merge, optional DynamoDB flag, uvicorn.
+Orchestrate local inference dev: tunnel (ngrok), Lambda env merge, uvicorn.
 
 Run from inference_server root (or use start_inference_server.sh). Loads .env.inference if present.
 """
@@ -29,8 +29,6 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT = SCRIPT_DIR.parent
 
 NGROK_API = "http://127.0.0.1:4040/api/tunnels"
-FEATURE_FLAG_KEY = "enable_sagemaker_inference"
-FEATURE_FLAG_PK = "feature_name"
 
 
 def _chdir_root() -> None:
@@ -111,17 +109,6 @@ def _teardown_lambda(client, function_name: str, *, yes: bool) -> None:
     print("Removed INFERENCE_HTTP_URL and INFERENCE_HTTP_SECRET from Lambda environment.")
 
 
-def _put_sagemaker_flag_off(ddb, table_name: str) -> None:
-    ddb.put_item(
-        TableName=table_name,
-        Item={
-            FEATURE_FLAG_PK: {"S": FEATURE_FLAG_KEY},
-            "value": {"BOOL": False},
-        },
-    )
-    print(f"DynamoDB {table_name!r}: {FEATURE_FLAG_KEY} = false (HTTP inference path).")
-
-
 def _wait_http_ok(url: str, timeout_s: float = 120.0, interval: float = 0.5) -> None:
     deadline = time.monotonic() + timeout_s
     last_err: str | None = None
@@ -192,11 +179,6 @@ def _parse_args() -> argparse.Namespace:
         help="Public https base URL (skips starting ngrok; use with SKIP_TUNNEL or external tunnel).",
     )
     p.add_argument(
-        "--set-sagemaker-off",
-        action="store_true",
-        help=f"Write {FEATURE_FLAG_KEY}=false to FEATURE_FLAGS_TABLE_NAME (DynamoDB).",
-    )
-    p.add_argument(
         "--teardown",
         action="store_true",
         help="Remove INFERENCE_HTTP_URL and INFERENCE_HTTP_SECRET from the Lambda; exit (no server).",
@@ -217,7 +199,6 @@ def main() -> None:
     region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or "us-east-1"
     lambda_name = os.environ.get("OBJECT_DETECTION_LAMBDA_NAME", "").strip()
     port = int(os.environ.get("INFERENCE_PORT", "8080"))
-    flags_table = os.environ.get("FEATURE_FLAGS_TABLE_NAME", "").strip()
     ngrok_bin = os.environ.get("NGROK_CMD", "ngrok").strip() or "ngrok"
     use_tunnel = not _bool_env("SKIP_TUNNEL") and not args.public_url
     public_url_from_env = os.environ.get("PUBLIC_URL", "").strip()
@@ -326,16 +307,6 @@ def main() -> None:
             clear_secret=not require_session,
         )
         print(f"Lambda {lambda_name!r}: INFERENCE_HTTP_URL={public_url!r}")
-
-        if args.set_sagemaker_off:
-            if not flags_table:
-                print(
-                    "--set-sagemaker-off requires FEATURE_FLAGS_TABLE_NAME in .env.inference.",
-                    file=sys.stderr,
-                )
-                raise SystemExit(1)
-            ddb = boto3.client("dynamodb", region_name=region)
-            _put_sagemaker_flag_off(ddb, flags_table)
 
         print(f"Uvicorn on http://127.0.0.1:{port}/ (Ctrl+C stops server and tunnel).")
         code = uvicorn_proc.wait()

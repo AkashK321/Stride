@@ -68,7 +68,7 @@ Branch name must follow:
 Example:
 
 ```bash
-BRANCH_NAME=feature/119-sagemaker-resource-management
+BRANCH_NAME=feature/119-http-inference-routing
 STACK_NAME=$(BRANCH_NAME="$BRANCH_NAME" python3 -c "import os; from app import sanitize_branch_name; print(sanitize_branch_name(os.environ['BRANCH_NAME']))")
 cdk -a "python3 app.py" deploy StrideSharedStack "$STACK_NAME" --require-approval never
 ```
@@ -99,4 +99,4 @@ BRANCH_NAME=main cdk -a "python3 app.py" synth StrideSharedStack
 
 - Do not destroy `StrideSharedStack` from CI/CD; it holds the **shared** map database used by all environments.
 - Avoid `cdk deploy --all` for automated pipelines unless you explicitly want every stack deployed.
-- The **shared RDS instance** runs continuously and incurs cost while it exists. Inference for object detection may still use SageMaker or HTTP routing as configured on the **branch** stack; that is unchanged by moving RDS into the shared stack.
+- The **shared RDS instance** runs continuously and incurs cost while it exists. Object detection now uses HTTP inference routing via `INFERENCE_HTTP_URL` on the **branch** stack when configured.

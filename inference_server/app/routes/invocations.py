@@ -1,4 +1,4 @@
-"""SageMaker-compatible /ping and /invocations."""
+"""Inference HTTP routes: /ping and /invocations."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from app.inference_core import predict_image_bytes
 from app.session_gate import HEADER_NAME, require_session_enabled
 from app.visualization import render_overlay_rgb
 
-router = APIRouter(tags=["sagemaker"])
+router = APIRouter(tags=["inference"])
 
 
 @router.get("/ping")

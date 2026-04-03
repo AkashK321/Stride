@@ -9,7 +9,6 @@
   - [WebSocket Contracts](#websocket-contracts)
 - [Configuration](#configuration)
   - [Core Env Variables](#core-env-variables)
-  - [Feature Flags](#feature-flags)
   - [Inference Server Settings](#inference-server-settings)
 - [DB Schemas](#db-schemas)
   - [RDS](#rds)
@@ -31,11 +30,11 @@
 | Frontend mobile app | UI, auth input, REST requests, and live navigation client | Expo / React Native | [_layout.tsx](../frontend/app/_layout.tsx), [api.ts](../frontend/services/api.ts), [navigationWebSocket.ts](../frontend/services/navigationWebSocket.ts) | API Gateway REST + WebSocket endpoints |
 | REST API | Public HTTPS entrypoint for login, registration, search, and navigation start | AWS API Gateway (REST) | [openapi.yaml](./openapi.yaml), [cdk_stack.py](../aws_resources/cdk/cdk_stack.py) | Lambda handlers, Cognito, RDS |
 | WebSocket API | Bidirectional live navigation/object-detection message transport | AWS API Gateway (WebSocket) | [openapi.yaml](./openapi.yaml), [cdk_stack.py](../aws_resources/cdk/cdk_stack.py) | WebSocket Lambda handlers, DynamoDB session state |
-| Backend Lambda handlers | Request handling for auth, navigation, and object detection | AWS Lambda  | [AuthHandler.kt](../aws_resources/backend/src/main/kotlin/com/handlers/AuthHandler.kt), [StaticNavigationHandler.kt](../aws_resources/backend/src/main/kotlin/com/handlers/StaticNavigationHandler.kt), [LiveNavigationHandler.kt](../aws_resources/backend/src/main/kotlin/com/handlers/LiveNavigationHandler.kt), [ObjectDetectionHandler.kt](../aws_resources/backend/src/main/kotlin/com/handlers/ObjectDetectionHandler.kt) | API Gateway, Cognito, RDS, DynamoDB, SageMaker inference endpoint |
+| Backend Lambda handlers | Request handling for auth, navigation, and object detection | AWS Lambda  | [AuthHandler.kt](../aws_resources/backend/src/main/kotlin/com/handlers/AuthHandler.kt), [StaticNavigationHandler.kt](../aws_resources/backend/src/main/kotlin/com/handlers/StaticNavigationHandler.kt), [LiveNavigationHandler.kt](../aws_resources/backend/src/main/kotlin/com/handlers/LiveNavigationHandler.kt), [ObjectDetectionHandler.kt](../aws_resources/backend/src/main/kotlin/com/handlers/ObjectDetectionHandler.kt) | API Gateway, Cognito, RDS, DynamoDB, HTTP inference endpoint |
 | Identity service | User registration/authentication and token issuance | AWS Cognito User Pool | [cdk_stack.py](../aws_resources/cdk/cdk_stack.py), [openapi.yaml](./openapi.yaml) | Auth Lambda handler |
 | Relational map datastore | Persistent indoor map graph and landmark metadata (one shared Postgres instance, `StrideSharedStack`) | Amazon RDS (PostgreSQL) | [shared_stack.py](../aws_resources/cdk/shared_stack.py), [cdk_stack.py](../aws_resources/cdk/cdk_stack.py), [populate_rds.py](../aws_resources/schema_initializer/populate_rds.py) | Backend map/navigation services |
-| Runtime state/config store | Session state, feature flags, and object-class height config | Amazon DynamoDB | [cdk_stack.py](../aws_resources/cdk/cdk_stack.py), [populate_obj_ddb.py](../aws_resources/schema_initializer/populate_obj_ddb.py) | Live/object-detection handlers |
-| Inference service | Computer vision inference used by object detection handlers | Amazon SageMaker | [inference.py](../aws_resources/sagemaker/inference.py), [serve](../aws_resources/sagemaker/serve), [nginx.conf](../aws_resources/sagemaker/nginx.conf) | Object detection and live navigation handlers |
+| Runtime state/config store | Session state and object-class height config | Amazon DynamoDB | [cdk_stack.py](../aws_resources/cdk/cdk_stack.py), [populate_obj_ddb.py](../aws_resources/schema_initializer/populate_obj_ddb.py) | Live/object-detection handlers |
+| Inference service | Computer vision inference used by object detection handlers | HTTP service (`/invocations`) | [HttpInferenceClient.kt](../aws_resources/backend/src/main/kotlin/com/services/HttpInferenceClient.kt), [ObjectDetectionHandler.kt](../aws_resources/backend/src/main/kotlin/com/handlers/ObjectDetectionHandler.kt), [inference_server](../inference_server/README.md) | Object detection and live navigation handlers |
 
 
 ## Key APIs
@@ -76,19 +75,12 @@ API Gateway selects the Lambda integration using **`$request.body.action`** (see
 | `EXPO_PUBLIC_WS_API_URL` | Frontend WebSocket URL for live navigation stream | Yes (for live navigation) | [.env.example](../frontend/.env.example), [navigationWebSocket.ts](../frontend/services/navigationWebSocket.ts) |
 | `EXPO_PUBLIC_DEV_LOGGER_URL` | Optional dev-only WS response logger endpoint | No | [.env.example](../frontend/.env.example), [navigationWebSocket.ts](../frontend/services/navigationWebSocket.ts) |
 
-### Feature Flags
-
-| Setting | Purpose | Source |
-| --- | --- | --- |
-| `FEATURE_FLAGS_TABLE_NAME` | DynamoDB table that controls manual runtime feature toggles (e.g., inference routing behavior) | [cdk_stack.py](../aws_resources/cdk/cdk_stack.py), [.env.inference](../inference_server/.env.inference) |
-| `feature_name` (partition key) | Identifier for a toggle in the feature flags table | [cdk_stack.py](../aws_resources/cdk/cdk_stack.py) |
-
 ### Inference Server Settings
 
 | Key | Purpose | Required | Source |
 | --- | --- | --- | --- |
 | `OBJECT_DETECTION_LAMBDA_NAME` | Target Lambda function for dev inference integration | Yes | [.env.inference](../inference_server/.env.inference) |
-| `AWS_REGION` | AWS region for Lambda/feature-flag operations | Yes | [.env.inference](../inference_server/.env.inference) |
+| `AWS_REGION` | AWS region for Lambda operations | Yes | [.env.inference](../inference_server/.env.inference) |
 | `INFERENCE_PORT` | Local inference HTTP port | Yes | [.env.inference](../inference_server/.env.inference) |
 | `INFERENCE_REQUIRE_SESSION` | Enables dashboard-session/secret enforcement when set to `1` | No | [.env.inference](../inference_server/.env.inference) |
 | `SKIP_TUNNEL` | Skip ngrok tunnel startup when set to `1` | No | [.env.inference](../inference_server/.env.inference) |
@@ -110,7 +102,6 @@ API Gateway selects the Lambda integration using **`$request.body.action`** (see
 | Table (CDK Logical Name) | Partition Key  | Purpose | Source |
 | --- | --- | --- | --- |
 | `CocoConfigTable` | `class_id` (number) | Object class configuration (e.g., height map for distance estimation) | [cdk_stack.py](../aws_resources/cdk/cdk_stack.py) |
-| `FeatureFlagsTable` | `feature_name` (string) | Runtime feature toggles (manual flags) | [cdk_stack.py](../aws_resources/cdk/cdk_stack.py) |
 | `NavigationSessionTable` | `session_id` (string) | Live navigation session state and expiration cleanup | [cdk_stack.py](../aws_resources/cdk/cdk_stack.py) |
 
 
@@ -120,15 +111,14 @@ API Gateway selects the Lambda integration using **`$request.body.action`** (see
 
 | Endpoint / Interface | Input | Output | Failure Modes | Source |
 | --- | --- | --- | --- | --- |
-| `GET /ping` | none | `200` with `{status: healthy}` when model loaded | `503` when model is not loaded | [inference.py](../aws_resources/sagemaker/inference.py) |
-| `POST /invocations` | Raw image bytes (`image/jpeg`, `image/png`, or `application/octet-stream`) | `200` JSON with `success`, `predictions[]`, `image{width,height}` | `400` unsupported/empty/invalid image, `500` model/inference errors | [inference.py](../aws_resources/sagemaker/inference.py) |
+| `GET /ping` | none | `200` with `{status: healthy}` when model loaded | `503` when model is not loaded | [routes/invocations.py](../inference_server/app/routes/invocations.py) |
+| `POST /invocations` | Raw image bytes (`image/jpeg`, `image/png`, or `application/octet-stream`) | `200` JSON with `success`, `predictions[]`, `image{width,height}` | `400` unsupported/empty/invalid image, `500` model/inference errors | [inference_core.py](../inference_server/app/inference_core.py) |
 
 ### Inference Settings
 
 | Key | Purpose | Required | Source |
 | --- | --- | --- | --- |
 | `OBJECT_DETECTION_LAMBDA_NAME` | Physical Lambda target used by local inference tooling | Yes | [.env.inference](../inference_server/.env.inference) |
-| `FEATURE_FLAGS_TABLE_NAME` | Feature-flag table used to toggle inference routing behavior | Optional (required for `--set-sagemaker-off` flow) | [.env.inference](../inference_server/.env.inference), [ObjectDetectionHandler.kt](../aws_resources/backend/src/main/kotlin/com/handlers/ObjectDetectionHandler.kt) |
 | `INFERENCE_PORT` | Local inference server port | Yes | [.env.inference](../inference_server/.env.inference) |
 | `INFERENCE_REQUIRE_SESSION` | Enables session/secret enforcement in inference flow when `1` | No | [.env.inference](../inference_server/.env.inference) |
 | `SKIP_TUNNEL` | Disables tunnel startup for local/public URL workflows when `1` | No | [.env.inference](../inference_server/.env.inference) |

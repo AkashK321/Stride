@@ -1,4 +1,4 @@
-"""Contract tests: JSON shape matches SageMaker / Kotlin SageMakerClient expectations."""
+"""Contract tests: JSON shape matches Stride HTTP inference expectations."""
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ def test_ping_via_client():
 
 
 def test_invocations_bad_content_type_via_client():
-    """With model loaded: 400. Without model (matches SageMaker): 500 Model not loaded first."""
+    """With model loaded: 400. Without model: 500 Model not loaded first."""
     with TestClient(app) as client:
         r = client.post(
             "/invocations",

@@ -1,4 +1,4 @@
-"""FastAPI application: SageMaker-compatible API + dev dashboard."""
+"""FastAPI application: HTTP /invocations API + dev dashboard."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Stride local inference",
-    description="SageMaker-compatible /ping and /invocations for local YOLO development.",
+    description="Ultralytics-compatible /ping and /invocations for local YOLO development.",
     lifespan=lifespan,
 )
 

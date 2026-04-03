@@ -10,7 +10,7 @@ The following diagram illustrates the high-level workflow of the Stride.
 ## Key Components
 * Mobile Client: Built using React Native and Expo; the frontend handles the camera input, data collection from the device sensors (gyroscope/accelerometer/gps), and UI rendering of results from the backend.
 * API Layer: This is a Kotlin-based backend that is deployed as AWS Lambda Functions integrated with Amazon API Gateway. This includes the AuthHandler for identity, ObjectDetectionHandler for frame processing and collision detection, and the [Static/Live]NavigationHandler for path calculations.
-* Inference Layer: This is a dedicated SageMaker endpoint running a YOLOv11 nano model inside a CUDA-enabled Docker container for fast object detection.
+* Inference Layer: Object detection uses an HTTP `/invocations` inference endpoint (Ultralytics JSON contract). In production this can point to any reachable service; for development, the repository includes a local `inference_server`.
 
 ## Design Decisions
 * Kotlin for Lambda Functions: Kotlin was chosen for its strong typing, null safety, and faster runtime than Python. We are utilizing SnapStart feature of AWS Lambda to mitigate the tradeoffs that come with using Lambda and the associated "cold start" latencies.

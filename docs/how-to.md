@@ -157,7 +157,7 @@
 
 ### How to Deploy the Backend to AWS
 
-**Purpose:** Deploy the serverless backend including the WebSocket API Gateway, Lambda handlers, and SageMaker YOLO inference endpoint.
+**Purpose:** Deploy the serverless backend including the WebSocket API Gateway, Lambda handlers, and HTTP inference wiring (`INFERENCE_HTTP_URL` when configured).
 
 **Preconditions:**
 - AWS CLI is installed and configured with appropriate credentials
@@ -181,7 +181,7 @@
 4. Note the outputs: copy the **WebSocket API URL** (format: `wss://{wsApiId}.execute-api.{region}.amazonaws.com/prod`) and the **REST API base URL**
 5. Update the frontend environment config with these URLs (see *How to Configure Environment Variables*)
 
-**Expected Result:** The WebSocket endpoint accepts connections on the `navigation` route, the `/navigation/start` REST endpoint returns a valid `session_id` and `instructions` array, and the YOLO model processes inference requests successfully.
+**Expected Result:** The WebSocket endpoint accepts connections on the `navigation` route, the `/navigation/start` REST endpoint returns a valid `session_id` and `instructions` array, and object detection returns inference results when `INFERENCE_HTTP_URL` is configured (or an explicit unavailable response when it is not).
 
 ---
 
