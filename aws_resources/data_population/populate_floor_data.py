@@ -26,6 +26,9 @@ ORIGIN_Y = 0
 # BEARING_HORIZONTAL_MODE:
 #   - "bands": horizontal if 45° <= bearing < 135° or 225° <= bearing < 315° (default)
 #   - "cones": horizontal if within 45° of exactly 90° or 270°
+# COORDINATE_MIRROR_X:
+#   - if true, persist map X coordinates mirrored (x := -x) before feet->pixels conversion
+#   - default true to match current deployment orientation expectation
 def _get_true_north_offset():
     val = os.environ.get("TRUE_NORTH_OFFSET_DEGREES", "51")
     try:
@@ -44,6 +47,11 @@ def _get_bearing_horizontal_mode():
     if mode in ("bands", "cones"):
         return mode
     return "bands"
+
+
+def _get_coordinate_mirror_x():
+    v = os.environ.get("COORDINATE_MIRROR_X", "true").strip().lower()
+    return v in ("1", "true", "yes")
 
 
 def _is_horizontal_bearing(normalized_bearing_deg, flip_mode):
@@ -115,6 +123,11 @@ def feet_to_pixels(feet):
     return int(feet * FEET_TO_PIXELS)
 
 
+def map_x_feet_for_storage(x_feet):
+    """Apply deploy-time X mirroring policy before converting to pixels."""
+    return -x_feet if _get_coordinate_mirror_x() else x_feet
+
+
 def populate_database(conn, building_data):
     """Main function to populate all tables with building data."""
     cursor = conn.cursor()
@@ -169,7 +182,7 @@ def populate_database(conn, building_data):
             node_coords = {}  # Map from custom node IDs to their pixel coordinates
             
             for node in floor_data.get('nodes', []):
-                x_pixels = feet_to_pixels(node['x_feet'])
+                x_pixels = feet_to_pixels(map_x_feet_for_storage(node['x_feet']))
                 y_pixels = feet_to_pixels(node['y_feet'])
                 
                 cursor.execute(
@@ -226,7 +239,7 @@ def populate_database(conn, building_data):
             landmarks_list = floor_data.get('landmarks', [])
             for idx, landmark in enumerate(landmarks_list):
                 landmark_id = floor_id * 10000 + (idx + 1)
-                x_pixels = feet_to_pixels(landmark['x_feet'])
+                x_pixels = feet_to_pixels(map_x_feet_for_storage(landmark['x_feet']))
                 y_pixels = feet_to_pixels(landmark['y_feet'])
                 
                 nearest_node_key = landmark.get('nearest_node')

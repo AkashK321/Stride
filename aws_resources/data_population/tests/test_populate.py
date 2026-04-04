@@ -8,6 +8,7 @@ from populate_floor_data import (
     calculate_distance,
     feet_to_pixels,
     align_bearing_to_true_north,
+    map_x_feet_for_storage,
 )
 
 def test_feet_to_pixels():
@@ -134,3 +135,17 @@ def test_align_bearing_to_true_north_wraparound_negative_and_large_values():
     """Raw and offset values are normalized into [0, 360)."""
     assert align_bearing_to_true_north(-10, offset_deg=0, apply_horizontal_flip=False) == pytest.approx(350, abs=0.1)
     assert align_bearing_to_true_north(720, offset_deg=15, apply_horizontal_flip=False) == pytest.approx(15, abs=0.1)
+
+
+def test_coordinate_mirror_x_default_true(monkeypatch):
+    """By default, deployed coordinate storage mirrors X."""
+    monkeypatch.delenv("COORDINATE_MIRROR_X", raising=False)
+    assert map_x_feet_for_storage(10) == -10
+    assert map_x_feet_for_storage(-8) == 8
+
+
+def test_coordinate_mirror_x_env_override(monkeypatch):
+    """COORDINATE_MIRROR_X can disable mirroring when needed."""
+    monkeypatch.setenv("COORDINATE_MIRROR_X", "false")
+    assert map_x_feet_for_storage(10) == 10
+    assert map_x_feet_for_storage(-8) == -8

@@ -1,98 +1,161 @@
 """
-Draw floor map nodes/edges with labels and true-compass edge headings.
+Draw floor map nodes/edges from deployed DB state (MapNodes/MapEdges).
 
-The plot is transformed so that the top of the image is true north.
+This visualizes what is actively deployed, not local floor_data/*.py.
+Coordinates are transformed so plot-up is true north.
 
 Examples:
   python plot_map_graph.py
-  python plot_map_graph.py --floor-number 2 --output floor2_true_north.png
-  python plot_map_graph.py --offset 51 --flip true --flip-mode bands
+  python plot_map_graph.py --floor-number 2 --building-id B01 --output floor_map_deployed.png
+  python plot_map_graph.py --show-edge-bearings
 """
 
 import argparse
 import math
-from typing import Dict, Tuple
+import ssl
+from typing import Dict, List, Tuple
 
-from floor_data.floor2 import FLOOR2_DATA
-from populate_floor_data import align_bearing_to_true_north, calculate_bearing
+import pg8000
+from dotenv import load_dotenv
+
+from populate_floor_data import get_db_secret
+
+load_dotenv()
 
 
-def _parse_bool(val: str) -> bool:
-    return val.strip().lower() in ("1", "true", "yes", "on")
+def _connect():
+    creds = get_db_secret()
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    return pg8000.connect(
+        user=creds["username"],
+        password=creds["password"],
+        host=creds["host"],
+        port=int(creds["port"]),
+        database=creds["dbname"],
+        ssl_context=ssl_context,
+    )
 
 
-def _transform_for_true_north(
-    x_feet: float,
-    y_feet: float,
+def _resolve_floor_id(cursor, building_id: str, floor_number: int) -> int:
+    cursor.execute(
+        """
+        SELECT FloorID
+        FROM Floors
+        WHERE BuildingID = %s AND FloorNumber = %s
+        LIMIT 1
+        """,
+        (building_id, floor_number),
+    )
+    row = cursor.fetchone()
+    if not row:
+        raise ValueError(f"No floor found for BuildingID={building_id}, FloorNumber={floor_number}")
+    return int(row[0])
+
+
+def _fetch_nodes(cursor, floor_id: int) -> Dict[str, dict]:
+    cursor.execute(
+        """
+        SELECT NodeIDString, CoordinateX, CoordinateY, NodeType
+        FROM MapNodes
+        WHERE FloorID = %s
+        ORDER BY NodeIDString
+        """,
+        (floor_id,),
+    )
+    rows = cursor.fetchall()
+    return {
+        str(node_id): {
+            "x": float(x),
+            "y": float(y),
+            "type": str(node_type or ""),
+        }
+        for node_id, x, y, node_type in rows
+    }
+
+
+def _fetch_edges(cursor, floor_id: int) -> List[dict]:
+    cursor.execute(
+        """
+        SELECT StartNodeID, EndNodeID, Bearing, IsBidirectional
+        FROM MapEdges
+        WHERE FloorID = %s
+        ORDER BY EdgeID
+        """,
+        (floor_id,),
+    )
+    rows = cursor.fetchall()
+    edges: List[dict] = []
+    for start_id, end_id, bearing, bidir in rows:
+        edges.append(
+            {
+                "start": str(start_id),
+                "end": str(end_id),
+                "bearing": None if bearing is None else float(bearing),
+                "bidirectional": bool(bidir),
+            }
+        )
+    return edges
+
+
+def _to_plot_coords_true_north(
+    x_px: float,
+    y_px: float,
     true_north_offset_deg: float,
-    mirror_x: bool,
 ) -> Tuple[float, float]:
     """
-    Convert floor-data coordinates to plotting coordinates.
-
-    - Floor data uses screen-style Y (increasing downward).
-    - Matplotlib uses math-style Y (increasing upward).
-    - Then rotate clockwise by the true-north offset so the plot's +Y is true north.
+    DB coordinates are screen-style (y increases downward).
+    Convert to true-north plotting coordinates:
+    - invert Y to math-style coordinates
+    - rotate clockwise by true north offset (CCW by -offset)
     """
-    x = -x_feet if mirror_x else x_feet
-    y = -y_feet
-
-    # Clockwise rotation by offset == CCW rotation by -offset.
+    x = x_px
+    y = -y_px
     angle = math.radians(-true_north_offset_deg)
     x_rot = (x * math.cos(angle)) - (y * math.sin(angle))
     y_rot = (x * math.sin(angle)) + (y * math.cos(angle))
     return x_rot, y_rot
 
 
-def _get_floor_record(floor_number: int):
-    for floor in FLOOR2_DATA.get("floors", []):
-        if floor.get("floor_number") == floor_number:
-            return floor
-    raise ValueError(f"Floor {floor_number} not found in FLOOR2_DATA")
-
-
-def _build_nodes(floor) -> Dict[str, dict]:
-    return {node["id"]: node for node in floor.get("nodes", [])}
-
-
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--building-id", default="B01")
     parser.add_argument("--floor-number", type=int, default=2)
     parser.add_argument("--output", default="floor_map_true_north.png")
-    parser.add_argument("--offset", type=float, default=51.0)
-    parser.add_argument("--flip", default="true", help="true/false for horizontal bearing flip")
-    parser.add_argument("--flip-mode", choices=["bands", "cones"], default="bands")
     parser.add_argument(
-        "--mirror-x",
-        default="false",
-        help="Mirror X coordinates before rotation (true/false). "
-        "Use true if map east/west is visually reversed.",
+        "--offset",
+        type=float,
+        default=51.0,
+        help="True-north offset degrees used to rotate deployed coordinates (default: 51).",
     )
+    parser.add_argument("--show-edge-bearings", action="store_true")
     parser.add_argument("--show", action="store_true", help="Show interactive plot window")
     args = parser.parse_args()
-
-    apply_flip = _parse_bool(args.flip)
-    mirror_x = _parse_bool(args.mirror_x)
 
     try:
         import matplotlib.pyplot as plt
     except ImportError as exc:
-        raise SystemExit(
-            "matplotlib is required. Install with: pip install matplotlib"
-        ) from exc
+        raise SystemExit("matplotlib is required. Install with: pip install matplotlib") from exc
 
-    floor = _get_floor_record(args.floor_number)
-    nodes = _build_nodes(floor)
-    edges = floor.get("edges", [])
+    conn = None
+    try:
+        conn = _connect()
+        cursor = conn.cursor()
+        floor_id = _resolve_floor_id(cursor, args.building_id, args.floor_number)
+        nodes = _fetch_nodes(cursor, floor_id)
+        edges = _fetch_edges(cursor, floor_id)
+    finally:
+        if conn:
+            conn.close()
 
-    transformed = {}
-    for node_id, node in nodes.items():
-        transformed[node_id] = _transform_for_true_north(
-            x_feet=node["x_feet"],
-            y_feet=node["y_feet"],
-            true_north_offset_deg=args.offset,
-            mirror_x=mirror_x,
-        )
+    if not nodes:
+        raise SystemExit("No nodes found for requested floor.")
+
+    transformed = {
+        node_id: _to_plot_coords_true_north(v["x"], v["y"], args.offset)
+        for node_id, v in nodes.items()
+    }
 
     fig, ax = plt.subplots(figsize=(15, 11))
 
@@ -100,39 +163,33 @@ def main():
     for edge in edges:
         start_id = edge["start"]
         end_id = edge["end"]
+        if start_id not in transformed or end_id not in transformed:
+            continue
         x1, y1 = transformed[start_id]
         x2, y2 = transformed[end_id]
 
         ax.plot([x1, x2], [y1, y2], color="#2563eb", linewidth=1.8, alpha=0.8)
 
-        # Heading label in true-compass convention.
-        raw = calculate_bearing(
-            nodes[start_id]["x_feet"],
-            nodes[start_id]["y_feet"],
-            nodes[end_id]["x_feet"],
-            nodes[end_id]["y_feet"],
-        )
-        heading = align_bearing_to_true_north(
-            raw_bearing_deg=raw,
-            offset_deg=args.offset,
-            apply_horizontal_flip=apply_flip,
-            horizontal_mode=args.flip_mode,
-        )
-        is_bidirectional = edge.get("bidirectional", True)
-        label = f"{heading:.1f}°" if not is_bidirectional else f"{heading:.1f}°/{(heading + 180) % 360:.1f}°"
-
-        xm = (x1 + x2) / 2.0
-        ym = (y1 + y2) / 2.0
-        ax.text(
-            xm,
-            ym,
-            label,
-            fontsize=7,
-            color="#1d4ed8",
-            bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.6, "pad": 0.5},
-            ha="center",
-            va="center",
-        )
+        if args.show_edge_bearings and edge["bearing"] is not None:
+            heading = edge["bearing"]
+            is_bidirectional = edge["bidirectional"]
+            label = (
+                f"{heading:.1f}°"
+                if not is_bidirectional
+                else f"{heading:.1f}°/{(heading + 180) % 360:.1f}°"
+            )
+            xm = (x1 + x2) / 2.0
+            ym = (y1 + y2) / 2.0
+            ax.text(
+                xm,
+                ym,
+                label,
+                fontsize=7,
+                color="#1d4ed8",
+                bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.6, "pad": 0.5},
+                ha="center",
+                va="center",
+            )
 
     # Draw nodes and labels.
     x_vals = [pt[0] for pt in transformed.values()]
@@ -142,14 +199,14 @@ def main():
     for node_id, (x, y) in transformed.items():
         node_type = nodes[node_id].get("type", "")
         ax.text(
-            x + 0.6,
-            y + 0.6,
+            x + 6,
+            y + 6,
             f"{node_id}\n({node_type})",
             fontsize=6,
             color="#111827",
         )
 
-    # True north indicator: up in plot.
+    # North indicator (up in plot).
     x_min, x_max = min(x_vals), max(x_vals)
     y_min, y_max = min(y_vals), max(y_vals)
     span_x = max(1.0, x_max - x_min)
@@ -162,14 +219,14 @@ def main():
         xytext=(nx, ny),
         arrowprops={"arrowstyle": "->", "lw": 2, "color": "#dc2626"},
     )
-    ax.text(nx, ny + 0.13 * span_y, "N (True North)", color="#dc2626", fontsize=10, ha="center")
+    ax.text(nx, ny + 0.13 * span_y, "N (Up)", color="#dc2626", fontsize=10, ha="center")
 
     ax.set_title(
-        f"Floor {args.floor_number} Map Graph (True-North Aligned)\n"
-        f"offset={args.offset}°, flip={apply_flip}, flip_mode={args.flip_mode}, mirror_x={mirror_x}"
+        f"Deployed Map Graph: Building {args.building_id}, Floor {args.floor_number} (FloorID={floor_id})\n"
+        f"Source: MapNodes/MapEdges, true-north offset={args.offset}°"
     )
-    ax.set_xlabel("X (feet, rotated/aligned)")
-    ax.set_ylabel("Y (feet, up = true north)")
+    ax.set_xlabel("X (deployed pixels, true-north frame)")
+    ax.set_ylabel("Y (deployed pixels, up = true north)")
     ax.grid(True, alpha=0.2)
     ax.set_aspect("equal", adjustable="box")
     ax.margins(0.05)
