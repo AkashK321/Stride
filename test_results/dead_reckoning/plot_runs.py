@@ -13,6 +13,7 @@ import argparse
 import csv
 import importlib.util
 import json
+import math
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -28,6 +29,30 @@ def to_float(value: str, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def parse_bool(val: str) -> bool:
+    return str(val).strip().lower() in ("1", "true", "yes", "on")
+
+
+def transform_for_true_north(
+    x_feet: float,
+    y_feet: float,
+    true_north_offset_deg: float,
+    mirror_x: bool,
+) -> tuple[float, float]:
+    """
+    Match data_population/plot_map_graph.py transform:
+    - optional mirror X
+    - invert Y from screen-style to math-style
+    - rotate clockwise by true north offset
+    """
+    x = -x_feet if mirror_x else x_feet
+    y = -y_feet
+    angle = math.radians(-true_north_offset_deg)
+    x_rot = (x * math.cos(angle)) - (y * math.sin(angle))
+    y_rot = (x * math.sin(angle)) + (y * math.cos(angle))
+    return x_rot, y_rot
 
 
 def heading_path_points(rows: List[dict]) -> tuple[list[float], list[float]]:
@@ -88,6 +113,8 @@ def plot_file(
     *,
     repo_root: Path,
     nodes_json: Path,
+    map_offset_deg: float,
+    mirror_x: bool,
 ) -> List[Path]:
     rows = load_rows(csv_file)
     if not rows:
@@ -142,6 +169,15 @@ def plot_file(
     feet_to_m = 0.3048
     nodes_by_id = load_nodes_by_id(nodes_json)
     floor_edges = load_floor2_edges(repo_root, floor_number=2)
+    nodes_true_m: Dict[str, tuple[float, float]] = {}
+    for node_id, node in nodes_by_id.items():
+        tx, ty = transform_for_true_north(
+            x_feet=float(node["xFeet"]),
+            y_feet=float(node["yFeet"]),
+            true_north_offset_deg=map_offset_deg,
+            mirror_x=mirror_x,
+        )
+        nodes_true_m[node_id] = (tx * feet_to_m, ty * feet_to_m)
     xs_dr, ys_dr = heading_path_points(rows)
     row0 = rows[0]
     start_id = (row0.get("start_node_id") or "").strip()
@@ -149,13 +185,12 @@ def plot_file(
     start_node = nodes_by_id.get(start_id) if start_id else None
 
     if start_node:
-        sx = float(start_node["xFeet"]) * feet_to_m
-        sy = float(start_node["yFeet"]) * feet_to_m
+        sx, sy = nodes_true_m[start_id]
         xs = [sx + x for x in xs_dr]
         ys = [sy + y for y in ys_dr]
-        title_note = " (floor-2 graph, start node)"
-        xlabel = "X (m, building)"
-        ylabel = "Y (m, building)"
+        title_note = " (true-north graph, start-node anchored)"
+        xlabel = "X (m, true-north frame)"
+        ylabel = "Y (m, true north up)"
     else:
         xs, ys = xs_dr, ys_dr
         title_note = ""
@@ -168,31 +203,27 @@ def plot_file(
         for edge in floor_edges:
             sid = edge.get("start")
             eid = edge.get("end")
-            sn = nodes_by_id.get(str(sid))
-            en = nodes_by_id.get(str(eid))
-            if not sn or not en:
+            p1 = nodes_true_m.get(str(sid))
+            p2 = nodes_true_m.get(str(eid))
+            if not p1 or not p2:
                 continue
-            x1 = float(sn["xFeet"]) * feet_to_m
-            y1 = float(sn["yFeet"]) * feet_to_m
-            x2 = float(en["xFeet"]) * feet_to_m
-            y2 = float(en["yFeet"]) * feet_to_m
+            x1, y1 = p1
+            x2, y2 = p2
             ax3.plot([x1, x2], [y1, y2], color="#94A3B8", linewidth=1.6, alpha=0.9, zorder=1)
 
-        if nodes_by_id:
-            nx = [float(n["xFeet"]) * feet_to_m for n in nodes_by_id.values()]
-            ny = [float(n["yFeet"]) * feet_to_m for n in nodes_by_id.values()]
+        if nodes_true_m:
+            nx = [pt[0] for pt in nodes_true_m.values()]
+            ny = [pt[1] for pt in nodes_true_m.values()]
             ax3.scatter(nx, ny, s=8, c="#64748B", alpha=0.7, zorder=1.2, label="Floor graph nodes")
 
-        all_x = [float(n["xFeet"]) * feet_to_m for n in nodes_by_id.values()]
-        all_y = [float(n["yFeet"]) * feet_to_m for n in nodes_by_id.values()]
+        all_x = [pt[0] for pt in nodes_true_m.values()]
+        all_y = [pt[1] for pt in nodes_true_m.values()]
         xmin = min(min(all_x), min(xs))
         xmax = max(max(all_x), max(xs))
         ymin = min(min(all_y), min(ys))
         ymax = max(max(all_y), max(ys))
-        if end_id and end_id in nodes_by_id:
-            en = nodes_by_id[end_id]
-            ex = float(en["xFeet"]) * feet_to_m
-            ey = float(en["yFeet"]) * feet_to_m
+        if end_id and end_id in nodes_true_m:
+            ex, ey = nodes_true_m[end_id]
             xmin = min(xmin, ex)
             xmax = max(xmax, ex)
             ymin = min(ymin, ey)
@@ -228,10 +259,8 @@ def plot_file(
     else:
         ax3.scatter([xs[0]], [ys[0]], marker="s", zorder=3, label="Start")
     ax3.scatter([xs[-1]], [ys[-1]], marker="x", zorder=3, label="DR end")
-    if end_id and end_id in nodes_by_id:
-        en = nodes_by_id[end_id]
-        ex = float(en["xFeet"]) * feet_to_m
-        ey = float(en["yFeet"]) * feet_to_m
+    if end_id and end_id in nodes_true_m:
+        ex, ey = nodes_true_m[end_id]
         ax3.scatter(
             [ex],
             [ey],
@@ -278,6 +307,17 @@ def main() -> None:
         default=str(default_nodes),
         help="Floor graph nodes (from frontend/data/floor2Nodes.json)",
     )
+    parser.add_argument(
+        "--offset",
+        type=float,
+        default=51.0,
+        help="True-north offset degrees used for map transform (matches data_population).",
+    )
+    parser.add_argument(
+        "--mirror-x",
+        default="false",
+        help="Mirror map X before true-north rotation (true/false).",
+    )
     args = parser.parse_args()
 
     input_dir = Path(args.input_dir).resolve()
@@ -302,6 +342,8 @@ def main() -> None:
             output_dir,
             repo_root=repo_root,
             nodes_json=nodes_json,
+            map_offset_deg=args.offset,
+            mirror_x=parse_bool(args.mirror_x),
         )
 
     print("Generated plots:")
