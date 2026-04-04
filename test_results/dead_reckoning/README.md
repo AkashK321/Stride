@@ -7,6 +7,10 @@ This folder stores CSV runs emitted by the local dev logger (`frontend/dev-logge
 - `<test_id>-<YYYYMMDD-HHmmss-mmm>.csv` (e.g. `001-20260403-204134-015.csv`)
 - `test_id` comes from Sensor Dev metadata; the timestamp makes each file unique.
 
+Columns **`start_node_id`** and **`end_node_id`** (optional) record BHEE floor-2 graph nodes from Sensor Dev. When `start_node_id` matches `frontend/data/floor2Nodes.json`, `plot_runs.py` aligns the reconstructed path to building coordinates and draws the **End (graph)** marker when `end_node_id` is set.
+
+Optional floor plan: put `assets/floor2_map.png` in this folder (see `assets/README.md`) or pass `--map-image` to the plot script.
+
 ## Generate plots
 
 ```bash

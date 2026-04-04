@@ -86,6 +86,8 @@ function getRunFile(runId, metadata) {
     'device_model',
     'start_label',
     'end_label',
+    'start_node_id',
+    'end_node_id',
     'ground_truth_distance_m',
     'heading_raw_deg',
     'heading_avg_deg',
@@ -114,6 +116,8 @@ function writeRunSample(runId, sample) {
     m.device_model,
     m.start_label,
     m.end_label,
+    m.start_node_id,
+    m.end_node_id,
     m.ground_truth_distance_m,
     sample.heading_raw_deg,
     sample.heading_avg_deg,
@@ -210,6 +214,8 @@ const server = http.createServer((req, res) => {
           device_model: data.device_model || '',
           start_label: data.start_label || '',
           end_label: data.end_label || '',
+          start_node_id: data.start_node_id || '',
+          end_node_id: data.end_node_id || '',
           ground_truth_distance_m: data.ground_truth_distance_m ?? '',
         });
         res.writeHead(200, { 'Content-Type': 'application/json' });

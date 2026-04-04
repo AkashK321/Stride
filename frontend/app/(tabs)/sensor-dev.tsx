@@ -16,7 +16,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Pedometer } from "expo-sensors";
 import * as Device from "expo-device";
 import Button from "../../components/Button";
+import NodePickerModal from "../../components/dev/NodePickerModal";
 import SensorService from "../../services/SensorService";
+import { FLOOR2_NODES } from "../../data/floor2Nodes";
 import type { SensorReading, LocalizationData } from "../../services/SensorService";
 import { spacing } from "../../theme/spacing";
 import { typography } from "../../theme/typography";
@@ -84,6 +86,10 @@ export default function SensorDevScreen() {
   const [runPedometerSteps, setRunPedometerSteps] = React.useState(0);
   const [runEstimatedDistanceM, setRunEstimatedDistanceM] = React.useState(0);
   const [activeTestRunId, setActiveTestRunId] = React.useState<string | null>(null);
+  const [overlayStartNodeId, setOverlayStartNodeId] = React.useState("");
+  const [overlayEndNodeId, setOverlayEndNodeId] = React.useState("");
+  const [nodePickerVisible, setNodePickerVisible] = React.useState(false);
+  const [nodePickerRole, setNodePickerRole] = React.useState<"start" | "end" | null>(null);
 
   const currentReadingRef = React.useRef<SensorReading | null>(null);
   const localizationRef = React.useRef<LocalizationData | null>(null);
@@ -289,6 +295,8 @@ export default function SensorDevScreen() {
       test_id: testRunNumber,
       start_label: testStartLabel,
       end_label: testEndLabel,
+      start_node_id: overlayStartNodeId.trim(),
+      end_node_id: overlayEndNodeId.trim(),
       ground_truth_distance_m: Number(testGroundTruthDistanceM),
       tester: testerName,
       device_model: testerDeviceModel,
@@ -672,6 +680,51 @@ export default function SensorDevScreen() {
                 backgroundColor: "white",
               },
             }
+          ),
+          React.createElement(
+            Text,
+            { style: { ...typography.body, fontWeight: "600", marginTop: spacing.xs } },
+            "Floor 2 map overlay (optional)"
+          ),
+          React.createElement(
+            Text,
+            {
+              style: {
+                ...typography.caption,
+                color: "#555",
+              },
+            },
+            "Used by plot_runs.py to align the dead-reckoning path on the BHEE floor-2 graph. Pick start/end graph nodes."
+          ),
+          React.createElement(
+            View,
+            { style: { flexDirection: "row", gap: spacing.sm } },
+            React.createElement(
+              View,
+              { style: { flex: 1 } },
+              React.createElement(Button, {
+                onPress: () => {
+                  setNodePickerRole("start");
+                  setNodePickerVisible(true);
+                },
+                title: overlayStartNodeId ? `Start: ${overlayStartNodeId}` : "Select start node",
+                variant: "secondary",
+                disabled: isTestModeRecording,
+              })
+            ),
+            React.createElement(
+              View,
+              { style: { flex: 1 } },
+              React.createElement(Button, {
+                onPress: () => {
+                  setNodePickerRole("end");
+                  setNodePickerVisible(true);
+                },
+                title: overlayEndNodeId ? `End: ${overlayEndNodeId}` : "Select end node",
+                variant: "secondary",
+                disabled: isTestModeRecording,
+              })
+            )
           ),
           React.createElement(
             View,
@@ -1110,6 +1163,33 @@ export default function SensorDevScreen() {
           })
         )
       )
-    )
+    ),
+    React.createElement(NodePickerModal, {
+      visible: nodePickerVisible,
+      title:
+        nodePickerRole === "start"
+          ? "Start node (floor 2)"
+          : nodePickerRole === "end"
+            ? "End node (floor 2)"
+            : "Select node",
+      nodes: FLOOR2_NODES,
+      selectedId:
+        nodePickerRole === "start"
+          ? overlayStartNodeId
+          : nodePickerRole === "end"
+            ? overlayEndNodeId
+            : "",
+      onSelect: (id: string) => {
+        if (nodePickerRole === "start") {
+          setOverlayStartNodeId(id);
+        } else if (nodePickerRole === "end") {
+          setOverlayEndNodeId(id);
+        }
+      },
+      onClose: () => {
+        setNodePickerVisible(false);
+        setNodePickerRole(null);
+      },
+    })
   );
 }
