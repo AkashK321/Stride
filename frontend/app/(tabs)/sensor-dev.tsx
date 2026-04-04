@@ -6,7 +6,7 @@
  * This screen provides tools for:
  * - Recording IMU sensor data (accelerometer, gyroscope, magnetometer) to CSV files
  * - Monitoring real-time sensor readings
- * - Testing localization algorithms before production deployment
+ * - Previewing localization-style heading (expo-location, same as navigation payloads)
  *
  * Uses React.createElement (non-JSX) to match the project's TypeScript configuration.
  */
@@ -58,27 +58,12 @@ function circularMean(values: number[]): number {
   return normalizeHeading(mean);
 }
 
-function computeRawHeadingFromReading(reading: SensorReading): number {
-  const { x: ax, y: ay, z: az } = reading.accelerometer;
-  const { x: mx, y: my, z: mz } = reading.magnetometer;
-
-  const roll = Math.atan2(ay, az);
-  const pitch = Math.atan2(-ax, Math.sqrt(ay * ay + az * az));
-  const magX = mx * Math.cos(pitch) + mz * Math.sin(pitch);
-  const magY = mx * Math.sin(roll) * Math.sin(pitch) + my * Math.cos(roll) - mz * Math.sin(roll) * Math.cos(pitch);
-
-  const heading = (Math.atan2(-magY, magX) * 180) / Math.PI;
-  return normalizeHeading(heading);
-}
-
 export default function SensorDevScreen() {
   const [isLogging, setIsLogging] = React.useState(false);
   const [sessionId, setSessionId] = React.useState<string | null>(null);
   const [sampleCount, setSampleCount] = React.useState(0);
   const [currentReading, setCurrentReading] = React.useState<SensorReading | null>(null);
   const [localization, setLocalization] = React.useState<LocalizationData | null>(null);
-  const [isCalibrated, setIsCalibrated] = React.useState(false);
-  const [isCalibrating, setIsCalibrating] = React.useState(false);
   const [sessions, setSessions] = React.useState<string[]>([]);
   const [showSessions, setShowSessions] = React.useState(false);
   const [isMonitoring, setIsMonitoring] = React.useState(false);
@@ -101,6 +86,7 @@ export default function SensorDevScreen() {
   const [activeTestRunId, setActiveTestRunId] = React.useState<string | null>(null);
 
   const currentReadingRef = React.useRef<SensorReading | null>(null);
+  const localizationRef = React.useRef<LocalizationData | null>(null);
   const pedometerStepsRawRef = React.useRef(0);
   const testTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const testSamplesRef = React.useRef<DeadReckoningSample[]>([]);
@@ -122,11 +108,6 @@ export default function SensorDevScreen() {
 
   React.useEffect(() => {
     // Don't auto-start monitoring - let user control it
-    
-    // Load existing calibration
-    SensorService.loadCalibration().then((loaded) => {
-      setIsCalibrated(loaded);
-    });
 
     const unsubscribeUpdates = SensorService.subscribeToUpdates((reading) => {
       setCurrentReading(reading);
@@ -138,6 +119,7 @@ export default function SensorDevScreen() {
 
     const unsubscribeLocalization = SensorService.subscribeToLocalization((data) => {
       setLocalization(data);
+      localizationRef.current = data;
     });
 
     return () => {
@@ -234,56 +216,7 @@ export default function SensorDevScreen() {
     SensorService.resetLocalization();
     Alert.alert("Reset", "Localization data has been reset");
   };
-  
-  const handleCalibrate = async () => {
-    Alert.alert(
-      "Calibrate Sensors",
-      "Place your device on a flat, stable surface in the desired reference orientation. The sensors will be calibrated in 3 seconds.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Start",
-          onPress: async () => {
-            setIsCalibrating(true);
-            
-            // Wait 3 seconds for user to position device
-            await new Promise(resolve => setTimeout(resolve, 3000));
-            
-            try {
-              await SensorService.calibrate();
-              setIsCalibrated(true);
-              Alert.alert("Success", "Sensors calibrated successfully!");
-            } catch (error) {
-              console.error("Calibration error:", error);
-              Alert.alert("Error", "Failed to calibrate sensors");
-            } finally {
-              setIsCalibrating(false);
-            }
-          },
-        },
-      ]
-    );
-  };
-  
-  const handleClearCalibration = async () => {
-    Alert.alert(
-      "Clear Calibration",
-      "Are you sure you want to clear the calibration data?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Clear",
-          style: "destructive",
-          onPress: async () => {
-            await SensorService.clearCalibration();
-            setIsCalibrated(false);
-            Alert.alert("Cleared", "Calibration data has been cleared");
-          },
-        },
-      ]
-    );
-  };
-  
+
   const loadSessions = async () => {
     const sessionList = await SensorService.listSessions();
     setSessions(sessionList);
@@ -363,10 +296,11 @@ export default function SensorDevScreen() {
     });
 
     testTimerRef.current = setInterval(() => {
-      const reading = currentReadingRef.current;
-      if (!reading) return;
       const now = Date.now();
-      const rawHeading = computeRawHeadingFromReading(reading);
+      const loc = localizationRef.current;
+      const rawHeading = normalizeHeading(
+        loc?.headingRawDeg ?? loc?.heading ?? 0
+      );
       headingHistoryRef.current.push(rawHeading);
       if (headingHistoryRef.current.length > HEADING_WINDOW_SIZE) {
         headingHistoryRef.current.shift();
@@ -468,85 +402,6 @@ export default function SensorDevScreen() {
               },
             },
             "Dev Tab for Sensors"
-          )
-        ),
-
-        // Calibration Section 
-        React.createElement(
-          View,
-          { 
-            style: { 
-              gap: spacing.md,
-              padding: spacing.md,
-              backgroundColor: "#F8F9FA",
-              borderRadius: 8,
-            } 
-          },
-          React.createElement(
-            Text,
-            { style: typography.h3 },
-            "Sensor Calibration"
-          ),
-          React.createElement(
-            View,
-            {
-              style: {
-                flexDirection: "row",
-                alignItems: "center",
-                gap: spacing.sm,
-              },
-            },
-            React.createElement(View, {
-              style: {
-                width: 12,
-                height: 12,
-                borderRadius: 6,
-                backgroundColor: isCalibrated ? "#4CAF50" : "#FFC107",
-              },
-            }),
-            React.createElement(
-              Text,
-              { style: typography.body },
-              isCalibrated ? "Calibrated ✓" : "Not Calibrated"
-            )
-          ),
-          React.createElement(
-            Text,
-            { style: typography.caption },
-            isCalibrated
-              ? "Sensors are calibrated. All readings are relative to your baseline."
-              : "Calibrate to set a reference point for accurate measurements."
-          ),
-          React.createElement(
-            View,
-            {
-              style: {
-                flexDirection: "row",
-                gap: spacing.sm,
-                marginTop: spacing.sm,
-              },
-            },
-            React.createElement(
-              View,
-              { style: { flex: 1 } },
-              React.createElement(Button, {
-                onPress: handleCalibrate,
-                title: isCalibrating ? "Calibrating..." : "Calibrate Now",
-                variant: "primary",
-                loading: isCalibrating,
-                disabled: isCalibrating || isLogging,
-              })
-            ),
-            isCalibrated && React.createElement(
-              View,
-              { style: { flex: 1 } },
-              React.createElement(Button, {
-                onPress: handleClearCalibration,
-                title: "Clear",
-                variant: "secondary",
-                disabled: isCalibrating || isLogging,
-              })
-            )
           )
         ),
 
@@ -1060,7 +915,7 @@ export default function SensorDevScreen() {
               React.createElement(
                 Text,
                 { style: typography.caption },
-                "Heading"
+                "Heading (expo, smoothed)"
               ),
               React.createElement(
                 Text,

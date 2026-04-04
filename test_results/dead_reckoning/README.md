@@ -4,7 +4,8 @@ This folder stores CSV runs emitted by the local dev logger (`frontend/dev-logge
 
 ## Expected CSV naming
 
-- `dead-reckoning-<run-id>-<timestamp>.csv`
+- `<test_id>-<YYYYMMDD-HHmmss-mmm>.csv` (e.g. `001-20260403-204134-015.csv`)
+- `test_id` comes from Sensor Dev metadata; the timestamp makes each file unique.
 
 ## Generate plots
 

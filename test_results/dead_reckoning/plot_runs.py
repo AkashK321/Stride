@@ -147,7 +147,12 @@ def main() -> None:
     output_dir = Path(args.output_dir).resolve() if args.output_dir else input_dir / "plots"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    csv_files = sorted(input_dir.glob("dead-reckoning-*.csv"))
+    # Run CSVs: <test_id>-<YYYYMMDD-HHmmss-mmm>.csv (excludes responses-*.csv in same folder)
+    csv_files = sorted(
+        p
+        for p in input_dir.glob("*.csv")
+        if p.is_file() and not p.name.startswith("responses-")
+    )
     if not csv_files:
         raise SystemExit(f"No run CSV files found in {input_dir}")
 

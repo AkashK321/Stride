@@ -54,13 +54,29 @@ function escapeCsv(field) {
   return str;
 }
 
+/** YYYYMMDD-HHmmss-mmm — short and unique enough for run filenames */
+function compactTimestamp(d = new Date()) {
+  const p = (n) => String(n).padStart(2, '0');
+  const ms = String(d.getMilliseconds()).padStart(3, '0');
+  return (
+    `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-` +
+    `${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${ms}`
+  );
+}
+
+/** Safe single path segment for test id (folder already scopes runs) */
+function sanitizeRunIdPart(raw) {
+  const s = String(raw ?? '').trim() || 'run';
+  return s.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'run';
+}
+
 function getRunFile(runId, metadata) {
   if (runFiles.has(runId)) {
     return runFiles.get(runId);
   }
 
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const filename = `dead-reckoning-${runId}-${timestamp}.csv`;
+  const idPart = sanitizeRunIdPart(metadata.test_id);
+  const filename = `${idPart}-${compactTimestamp()}.csv`;
   const filepath = path.join(LOGS_DIR, filename);
 
   const header = [
