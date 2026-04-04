@@ -69,10 +69,9 @@ export default function NavigationSession() {
   const focalLengthPixels = React.useMemo(() => getFocalLengthPixels(), []);
   const { getSnapshot, start: startSensors, stop: stopSensors } = useSensorData();
 
-  const { getAlignment } = useHeading();
+  const { smoothedHeading, hasPermission: hasHeadingPermission, getAlignment } = useHeading();
   const activeInstruction = navigationInstructions?.[currentStepIndex] ?? null;
-  // const alignment = getAlignment(activeInstruction?.heading_degrees ?? null);
-  const alignment = getAlignment(270); // mock "face west"
+  const alignment = getAlignment(activeInstruction?.heading_degrees ?? null);
 
   const toggleSpeakerMode = React.useCallback(() => {
     setSpeakerMode((prev) => !prev);
@@ -154,7 +153,7 @@ export default function NavigationSession() {
         session_id: navigationSessionId,
         image_base64: imageBase64,
         focal_length_pixels: focalLengthPixels,
-        heading_degrees: snapshot.heading ?? 0,
+        heading_degrees: smoothedHeading,
         gps: snapshot.gps,
         accelerometer: snapshot.accelerometer ?? { x: 0, y: 0, z: 0 },
         gyroscope: snapshot.gyroscope ?? { x: 0, y: 0, z: 0 },
@@ -173,6 +172,7 @@ export default function NavigationSession() {
     getSnapshot,
     navigationSessionId,
     nextRequestId,
+    smoothedHeading,
   ]);
 
   const sendCollisionFrame = React.useCallback(async () => {
@@ -190,7 +190,7 @@ export default function NavigationSession() {
         session_id: navigationSessionId,
         image_base64: imageBase64,
         focal_length_pixels: focalLengthPixels,
-        heading_degrees: snapshot.heading,
+        heading_degrees: smoothedHeading,
         gps: snapshot.gps,
         accelerometer: snapshot.accelerometer,
         gyroscope: snapshot.gyroscope,
@@ -209,6 +209,7 @@ export default function NavigationSession() {
     getSnapshot,
     navigationSessionId,
     nextRequestId,
+    smoothedHeading,
   ]);
 
   const handleSocketMessage = React.useCallback((response: NavigationResponse) => {
@@ -572,9 +573,18 @@ export default function NavigationSession() {
                 { style: styles.bottomNavDistance },
                 `${totalDistanceFeet} ft`,
               ),
-            // Alignment indicator — shows when heading_degrees is available on the active instruction.
-            // Hidden on the final "arrive" step (heading_degrees is null) and before instructions load.
-            alignment !== "unknown" &&
+            // Orientation feedback: compare smoothed device heading to instruction heading_degrees.
+            // Hidden when no target bearing (e.g. arrive step) or heading unavailable.
+            activeInstruction?.heading_degrees != null &&
+              !hasHeadingPermission &&
+              React.createElement(
+                Text,
+                { style: styles.headingPermissionHint },
+                "Allow location access to see if you're facing the right direction.",
+              ),
+            activeInstruction?.heading_degrees != null &&
+              hasHeadingPermission &&
+              alignment !== "unknown" &&
               React.createElement(
                 View,
                 { style: styles.alignmentRow },
@@ -733,6 +743,12 @@ const styles = StyleSheet.create({
     ...typography.label,
     fontSize: 15,
     color: colors.textSecondary,
+  },
+  headingPermissionHint: {
+    ...typography.label,
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginTop: 6,
   },
   bottomNavEndButton: {
     paddingHorizontal: spacing.md,

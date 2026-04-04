@@ -9,17 +9,17 @@
  * Note: Prefers trueHeading when available; falls back to magHeading indoors
  * where GPS is poor. Both are 0–360° with 0 = North.
  *
- * Tuning constants at the top of the file:
- *   ROLLING_WINDOW        — number of samples in the rolling average (default: 10)
- *   ALIGNED_TOLERANCE_DEG — degrees within which user is considered aligned (default: 20)
+ * Tuning: export `HEADING_ROLLING_WINDOW_SAMPLES` and `HEADING_ALIGNED_TOLERANCE_DEG` below.
  */
 
 import { useEffect, useRef, useState } from "react";
 import * as Location from "expo-location";
 
-// --- Tunable constants ---
-const ROLLING_WINDOW = 10; // number of samples to average over
-const ALIGNED_TOLERANCE_DEG = 20; // degrees within which user is considered "aligned"
+/** Number of recent heading samples in the circular rolling average (noise reduction). */
+export const HEADING_ROLLING_WINDOW_SAMPLES = 10;
+
+/** Degrees within which smoothed heading is considered aligned with the instruction bearing. */
+export const HEADING_ALIGNED_TOLERANCE_DEG = 20;
 
 export type HeadingAlignment = "aligned" | "turn_left" | "turn_right" | "unknown";
 
@@ -73,7 +73,7 @@ export function useHeading(): UseHeadingResult {
           // Push into rolling buffer, evict oldest sample when full
           const samples = samplesRef.current;
           samples.push(raw);
-          if (samples.length > ROLLING_WINDOW) {
+          if (samples.length > HEADING_ROLLING_WINDOW_SAMPLES) {
             samples.shift();
           }
 
@@ -109,7 +109,7 @@ export function useHeading(): UseHeadingResult {
     // Signed shortest angular difference — negative = turn left, positive = turn right
     const diff = angularDiff(smoothedHeading, targetHeading);
 
-    if (Math.abs(diff) <= ALIGNED_TOLERANCE_DEG) return "aligned";
+    if (Math.abs(diff) <= HEADING_ALIGNED_TOLERANCE_DEG) return "aligned";
     return diff < 0 ? "turn_left" : "turn_right";
   };
 

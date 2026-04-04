@@ -1,7 +1,8 @@
 /**
  * Custom hook for collecting sensor data for navigation frames.
  *
- * Subscribes to GPS, heading, accelerometer, and gyroscope sensors.
+ * Subscribes to GPS, accelerometer, and gyroscope sensors.
+ * Compass heading for UI and frames comes from `useHeading` (single expo-location heading subscription).
  * Stores latest readings in refs so they can be sampled when each frame is sent.
  * Cleans up all subscriptions when the component unmounts.
  *
@@ -35,7 +36,6 @@ export interface GyroscopeData {
 }
 
 export interface SensorSnapshot {
-  heading: number | null;
   gps: GpsData | null;
   accelerometer: AccelerometerData | null;
   gyroscope: GyroscopeData | null;
@@ -59,7 +59,6 @@ export function useSensorData(): UseSensorDataReturn {
   const [isActive, setIsActive] = React.useState(false);
 
   // Store latest readings in refs for instant access without re-renders
-  const headingRef = React.useRef<number | null>(null);
   const gpsRef = React.useRef<GpsData | null>(null);
   const accelerometerRef = React.useRef<AccelerometerData | null>(null);
   const gyroscopeRef = React.useRef<GyroscopeData | null>(null);
@@ -67,7 +66,6 @@ export function useSensorData(): UseSensorDataReturn {
   // Store subscription cleanup functions
   const subscriptionsRef = React.useRef<Array<{ remove: () => void }>>([]);
   const locationWatchRef = React.useRef<Location.LocationSubscription | null>(null);
-  const headingWatchRef = React.useRef<Location.LocationSubscription | null>(null);
 
   const start = React.useCallback(async () => {
     if (isActive) return;
@@ -100,16 +98,6 @@ export function useSensorData(): UseSensorDataReturn {
         locationWatchRef.current = locationSub;
       } catch (e) {
         console.warn("Failed to start GPS watch:", e);
-      }
-
-      // Heading subscription
-      try {
-        const headingSub = await Location.watchHeadingAsync((heading) => {
-          headingRef.current = heading.trueHeading ?? heading.magHeading;
-        });
-        headingWatchRef.current = headingSub;
-      } catch (e) {
-        console.warn("Failed to start heading watch:", e);
       }
     }
 
@@ -154,8 +142,6 @@ export function useSensorData(): UseSensorDataReturn {
     // Remove location subscriptions
     locationWatchRef.current?.remove();
     locationWatchRef.current = null;
-    headingWatchRef.current?.remove();
-    headingWatchRef.current = null;
 
     setIsActive(false);
   }, []);
@@ -169,7 +155,6 @@ export function useSensorData(): UseSensorDataReturn {
 
   const getSnapshot = React.useCallback((): SensorSnapshot => {
     return {
-      heading: headingRef.current,
       gps: gpsRef.current,
       accelerometer: accelerometerRef.current,
       gyroscope: gyroscopeRef.current,

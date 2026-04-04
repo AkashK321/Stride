@@ -91,9 +91,11 @@ export interface NavigationInstruction {
   step: number;
   distance_feet: number;
   direction: string | null;
+  /** Target compass bearing for this step (0–360, 0 = North). Null on final "arrive" step. */
+  heading_degrees?: number | null;
   turn_at_end?: "left" | "right" | "around" | "straight" | null;
   node_id: string;
-  coordinates: { x?: number; y?: number; x_feet?: number; y_feet?: number }; 
+  coordinates: { x?: number; y?: number; x_feet?: number; y_feet?: number };
 }
 
 export interface NavigationStartResponse {

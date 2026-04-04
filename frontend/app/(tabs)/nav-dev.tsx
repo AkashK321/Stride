@@ -37,6 +37,7 @@ import {
   getWebSocketUrl,
 } from "../../services/navigationWebSocket";
 import { useSensorData } from "../../hooks/useSensorData";
+import { useHeading } from "../../hooks/useHeading";
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 
 /**
@@ -221,9 +222,10 @@ export default function Navigation() {
   const wsRef = React.useRef<NavigationWebSocket | null>(null);
   const [wsStatus, setWsStatus] = React.useState<ConnectionStatus>("disconnected");
 
-  // Sensors
+  // Sensors + compass heading (same expo-location subscription as live navigation)
   const { getSnapshot, start: startSensors, stop: stopSensors, isActive: sensorsActive } =
     useSensorData();
+  const { smoothedHeading } = useHeading();
 
   // Navigation state
   const [isNavActive, setIsNavActive] = React.useState(false);
@@ -376,7 +378,7 @@ export default function Navigation() {
         session_id: SESSION_ID,
         image_base64: resized.base64,
         focal_length_pixels: focalLengthPixels,
-        heading_degrees: sensors.heading,
+        heading_degrees: smoothedHeading,
         gps: sensors.gps,
         accelerometer: sensors.accelerometer,
         gyroscope: sensors.gyroscope,
@@ -417,7 +419,7 @@ export default function Navigation() {
     } finally {
       setIsSending(false);
     }
-  }, [frameWidth, jpegQuality, focalLengthPixels, getSnapshot]);
+  }, [frameWidth, jpegQuality, focalLengthPixels, getSnapshot, smoothedHeading]);
 
   /**
    * Handle manual "Send Frame" button press.
