@@ -7,12 +7,14 @@
  * - Recording IMU sensor data (accelerometer, gyroscope, magnetometer) to CSV files
  * - Monitoring real-time sensor readings
  * - Previewing localization-style heading (expo-location, same as navigation payloads)
+ * - Dead-reckoning test runs (sub-tab), separate from CSV sensor logging (sub-tab)
  *
  * Uses React.createElement (non-JSX) to match the project's TypeScript configuration.
  */
 import * as React from "react";
-import { View, Text, ScrollView, Alert, TextInput } from "react-native";
+import { View, Text, ScrollView, Alert, TextInput, Pressable, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 import { Pedometer } from "expo-sensors";
 import * as Device from "expo-device";
 import Button from "../../components/Button";
@@ -20,6 +22,7 @@ import NodePickerModal from "../../components/dev/NodePickerModal";
 import SensorService from "../../services/SensorService";
 import { FLOOR2_NODES } from "../../data/floor2Nodes";
 import type { SensorReading, LocalizationData } from "../../services/SensorService";
+import { colors } from "../../theme/colors";
 import { spacing } from "../../theme/spacing";
 import { typography } from "../../theme/typography";
 
@@ -35,6 +38,42 @@ type DeadReckoningSample = {
 const DEFAULT_STEP_LENGTH_M = 0.7;
 const HEADING_WINDOW_SIZE = 10;
 const TEST_SAMPLE_INTERVAL_MS = 200;
+/** Floors supported for dead-reckoning CSV / graph alignment (logger + plot_runs). */
+const DEAD_RECKONING_FLOOR_OPTIONS = [2] as const;
+
+const DEAD_RECKONING_FIELD_MIN_HEIGHT = 48;
+const DEAD_RECKONING_PLACEHOLDER_COLOR = colors.placeholder;
+
+function deadReckoningInputStyle(editable: boolean) {
+  return {
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    borderRadius: 8,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    backgroundColor: editable ? "#FFFFFF" : "#F3F4F6",
+    minHeight: DEAD_RECKONING_FIELD_MIN_HEIGHT,
+    width: "100%" as const,
+    color: colors.text,
+  };
+}
+
+function deadReckoningFloorDropdownStyle(disabled: boolean) {
+  return {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "space-between" as const,
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    borderRadius: 8,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    backgroundColor: disabled ? "#F3F4F6" : "#FFFFFF",
+    minHeight: DEAD_RECKONING_FIELD_MIN_HEIGHT,
+    width: "100%" as const,
+  };
+}
+
 const DEAD_RECKONING_LOGGER_BASE = (
   process.env.EXPO_PUBLIC_DEAD_RECKONING_LOGGER_URL ||
   process.env.EXPO_PUBLIC_DEV_LOGGER_URL ||
@@ -72,8 +111,7 @@ export default function SensorDevScreen() {
   const [isTestModeRecording, setIsTestModeRecording] = React.useState(false);
   const [testStartedAtMs, setTestStartedAtMs] = React.useState<number | null>(null);
   const [testRunNumber, setTestRunNumber] = React.useState("");
-  const [testStartLabel, setTestStartLabel] = React.useState("");
-  const [testEndLabel, setTestEndLabel] = React.useState("");
+  const [deadReckoningFloor, setDeadReckoningFloor] = React.useState<number>(2);
   const [testGroundTruthDistanceM, setTestGroundTruthDistanceM] = React.useState("");
   const [testerName, setTesterName] = React.useState("");
   const [testerDeviceModel, setTesterDeviceModel] = React.useState("");
@@ -90,6 +128,8 @@ export default function SensorDevScreen() {
   const [overlayEndNodeId, setOverlayEndNodeId] = React.useState("");
   const [nodePickerVisible, setNodePickerVisible] = React.useState(false);
   const [nodePickerRole, setNodePickerRole] = React.useState<"start" | "end" | null>(null);
+  const [subTab, setSubTab] = React.useState<"logging" | "deadReckoning">("logging");
+  const [floorDropdownVisible, setFloorDropdownVisible] = React.useState(false);
 
   const currentReadingRef = React.useRef<SensorReading | null>(null);
   const localizationRef = React.useRef<LocalizationData | null>(null);
@@ -258,8 +298,23 @@ export default function SensorDevScreen() {
   };
 
   const startTestModeRun = async () => {
-    if (!testRunNumber || !testStartLabel || !testEndLabel || !testGroundTruthDistanceM || !testerName || !testerDeviceModel) {
-      Alert.alert("Missing metadata", "Please fill in all test-run fields before starting.");
+    if (
+      !testRunNumber.trim() ||
+      !testGroundTruthDistanceM ||
+      !testerName.trim() ||
+      !testerDeviceModel.trim()
+    ) {
+      Alert.alert("Missing metadata", "Please fill in test ID, ground truth distance, tester, and device model.");
+      return;
+    }
+
+    if (!overlayStartNodeId.trim() || !overlayEndNodeId.trim()) {
+      Alert.alert("Missing route", "Select start and end graph nodes for the chosen floor.");
+      return;
+    }
+
+    if (!([...DEAD_RECKONING_FLOOR_OPTIONS] as number[]).includes(deadReckoningFloor)) {
+      Alert.alert("Invalid floor", "Choose a supported floor.");
       return;
     }
 
@@ -293,8 +348,7 @@ export default function SensorDevScreen() {
     void postDeadReckoningLog("/run/start", {
       run_id: runId,
       test_id: testRunNumber,
-      start_label: testStartLabel,
-      end_label: testEndLabel,
+      floor: deadReckoningFloor,
       start_node_id: overlayStartNodeId.trim(),
       end_node_id: overlayEndNodeId.trim(),
       ground_truth_distance_m: Number(testGroundTruthDistanceM),
@@ -374,15 +428,22 @@ export default function SensorDevScreen() {
     {
       style: {
         flex: 1,
-        padding: spacing.lg,
+        // Avoid paddingBottom here: `padding: spacing.lg` reserves space below the ScrollView
+        // (dead band above the root tab bar). nav-dev keeps outer flex:1 unpadded.
+        paddingTop: spacing.lg,
+        paddingHorizontal: spacing.lg,
+        paddingBottom: 0,
       },
-      edges: ["top", "bottom"],
+      // Match nav-dev: only inset top. Bottom inset + tab bar = dead space above tabs.
+      edges: ["top"] as const,
     },
     React.createElement(
       ScrollView,
       {
         style: { flex: 1 },
         showsVerticalScrollIndicator: false,
+        // Breathing room after the last row when scrolled to the end (not a fixed gap above tabs).
+        contentContainerStyle: { paddingBottom: spacing.md },
       },
       React.createElement(
         View,
@@ -400,19 +461,83 @@ export default function SensorDevScreen() {
             { style: typography.h1 },
             "Sensor Dev Tools"
           ),
+        ),
+
+        React.createElement(
+          View,
+          { style: { gap: spacing.xs, marginBottom: spacing.sm } },
           React.createElement(
-            Text,
+            View,
             {
               style: {
-                ...typography.body,
-                color: "#FF6B6B",
-                fontWeight: "600",
+                flexDirection: "row",
+                gap: spacing.xs,
+                backgroundColor: "#E8EBEF",
+                padding: 4,
+                borderRadius: 10,
               },
             },
-            "Dev Tab for Sensors"
+            React.createElement(
+              Pressable,
+              {
+                accessibilityRole: "tab",
+                accessibilityState: { selected: subTab === "logging" },
+                onPress: () => setSubTab("logging"),
+                style: {
+                  flex: 1,
+                  paddingVertical: spacing.sm,
+                  paddingHorizontal: spacing.md,
+                  borderRadius: 8,
+                  backgroundColor: subTab === "logging" ? "#FFFFFF" : "transparent",
+                  alignItems: "center",
+                },
+              },
+              React.createElement(
+                Text,
+                {
+                  style: {
+                    ...typography.body,
+                    fontWeight: subTab === "logging" ? "700" : "500",
+                    color: subTab === "logging" ? "#111" : "#555",
+                  },
+                },
+                "Sensor logging"
+              )
+            ),
+            React.createElement(
+              Pressable,
+              {
+                accessibilityRole: "tab",
+                accessibilityState: { selected: subTab === "deadReckoning" },
+                onPress: () => setSubTab("deadReckoning"),
+                style: {
+                  flex: 1,
+                  paddingVertical: spacing.sm,
+                  paddingHorizontal: spacing.md,
+                  borderRadius: 8,
+                  backgroundColor: subTab === "deadReckoning" ? "#FFFFFF" : "transparent",
+                  alignItems: "center",
+                },
+              },
+              React.createElement(
+                Text,
+                {
+                  style: {
+                    ...typography.body,
+                    fontWeight: subTab === "deadReckoning" ? "700" : "500",
+                    color: subTab === "deadReckoning" ? "#111" : "#555",
+                  },
+                },
+                "Dead reckoning"
+              )
+            )
           )
         ),
 
+        subTab === "logging" &&
+          React.createElement(
+            React.Fragment,
+            null,
         // Status Section
         React.createElement(
           View,
@@ -545,266 +670,15 @@ export default function SensorDevScreen() {
           )
         ),
 
-        // Dead-reckoning Test Mode (MVP) Section
         React.createElement(
           View,
-          {
-            style: {
-              gap: spacing.md,
-              padding: spacing.md,
-              backgroundColor: "#F8F9FA",
-              borderRadius: 8,
-            },
-          },
-          React.createElement(
-            Text,
-            { style: typography.h3 },
-            "Dead-Reckoning Test Mode"
-          ),
-          React.createElement(
-            Text,
-            { style: typography.caption },
-            "Enter run metadata, then start/stop a route collection run."
-          ),
-          React.createElement(
-            TextInput,
-            {
-              value: testRunNumber,
-              onChangeText: setTestRunNumber,
-              placeholder: "Test ID / run number (e.g. 001)",
-              editable: !isTestModeRecording,
-              style: {
-                borderWidth: 1,
-                borderColor: "#D1D5DB",
-                borderRadius: 8,
-                paddingHorizontal: spacing.sm,
-                paddingVertical: spacing.sm,
-                backgroundColor: "white",
-              },
-            }
-          ),
-          React.createElement(
-            View,
-            { style: { flexDirection: "row", gap: spacing.sm } },
-            React.createElement(
-              TextInput,
-              {
-                value: testStartLabel,
-                onChangeText: setTestStartLabel,
-                placeholder: "Start label",
-                editable: !isTestModeRecording,
-                style: {
-                  flex: 1,
-                  borderWidth: 1,
-                  borderColor: "#D1D5DB",
-                  borderRadius: 8,
-                  paddingHorizontal: spacing.sm,
-                  paddingVertical: spacing.sm,
-                  backgroundColor: "white",
-                },
-              }
-            ),
-            React.createElement(
-              TextInput,
-              {
-                value: testEndLabel,
-                onChangeText: setTestEndLabel,
-                placeholder: "End label",
-                editable: !isTestModeRecording,
-                style: {
-                  flex: 1,
-                  borderWidth: 1,
-                  borderColor: "#D1D5DB",
-                  borderRadius: 8,
-                  paddingHorizontal: spacing.sm,
-                  paddingVertical: spacing.sm,
-                  backgroundColor: "white",
-                },
-              }
-            ),
-          ),
-          React.createElement(
-            View,
-            { style: { flexDirection: "row", gap: spacing.sm } },
-            React.createElement(
-              TextInput,
-              {
-                value: testGroundTruthDistanceM,
-                onChangeText: setTestGroundTruthDistanceM,
-                placeholder: "Ground truth distance (m)",
-                keyboardType: "decimal-pad",
-                editable: !isTestModeRecording,
-                style: {
-                  flex: 1,
-                  borderWidth: 1,
-                  borderColor: "#D1D5DB",
-                  borderRadius: 8,
-                  paddingHorizontal: spacing.sm,
-                  paddingVertical: spacing.sm,
-                  backgroundColor: "white",
-                },
-              }
-            ),
-            React.createElement(
-              TextInput,
-              {
-                value: testerName,
-                onChangeText: setTesterName,
-                placeholder: "Tester",
-                editable: !isTestModeRecording,
-                style: {
-                  flex: 1,
-                  borderWidth: 1,
-                  borderColor: "#D1D5DB",
-                  borderRadius: 8,
-                  paddingHorizontal: spacing.sm,
-                  paddingVertical: spacing.sm,
-                  backgroundColor: "white",
-                },
-              }
-            ),
-          ),
-          React.createElement(
-            TextInput,
-            {
-              value: testerDeviceModel,
-              onChangeText: setTesterDeviceModel,
-              placeholder: "Device model",
-              editable: !isTestModeRecording,
-              style: {
-                borderWidth: 1,
-                borderColor: "#D1D5DB",
-                borderRadius: 8,
-                paddingHorizontal: spacing.sm,
-                paddingVertical: spacing.sm,
-                backgroundColor: "white",
-              },
-            }
-          ),
-          React.createElement(
-            Text,
-            { style: { ...typography.body, fontWeight: "600", marginTop: spacing.xs } },
-            "Floor 2 map overlay (optional)"
-          ),
-          React.createElement(
-            Text,
-            {
-              style: {
-                ...typography.caption,
-                color: "#555",
-              },
-            },
-            "Used by plot_runs.py to align the dead-reckoning path on the BHEE floor-2 graph. Pick start/end graph nodes."
-          ),
-          React.createElement(
-            View,
-            { style: { flexDirection: "row", gap: spacing.sm } },
-            React.createElement(
-              View,
-              { style: { flex: 1 } },
-              React.createElement(Button, {
-                onPress: () => {
-                  setNodePickerRole("start");
-                  setNodePickerVisible(true);
-                },
-                title: overlayStartNodeId ? `Start: ${overlayStartNodeId}` : "Select start node",
-                variant: "secondary",
-                disabled: isTestModeRecording,
-              })
-            ),
-            React.createElement(
-              View,
-              { style: { flex: 1 } },
-              React.createElement(Button, {
-                onPress: () => {
-                  setNodePickerRole("end");
-                  setNodePickerVisible(true);
-                },
-                title: overlayEndNodeId ? `End: ${overlayEndNodeId}` : "Select end node",
-                variant: "secondary",
-                disabled: isTestModeRecording,
-              })
-            )
-          ),
-          React.createElement(
-            View,
-            { style: { flexDirection: "row", gap: spacing.sm } },
-            React.createElement(
-              View,
-              { style: { flex: 1 } },
-              React.createElement(Button, {
-                onPress: startTestModeRun,
-                title: "Start Test Run",
-                variant: "primary",
-                disabled: isTestModeRecording,
-              })
-            ),
-            React.createElement(
-              View,
-              { style: { flex: 1 } },
-              React.createElement(Button, {
-                onPress: stopTestModeRun,
-                title: "Stop Test Run",
-                variant: "danger",
-                disabled: !isTestModeRecording,
-              })
-            ),
-          ),
-          React.createElement(
-            Text,
-            { style: typography.caption },
-            isTestModeRecording
-              ? `Recording run #${testRunNumber}...`
-              : "Idle"
-          ),
-          React.createElement(
-            View,
-            {
-              style: {
-                flexDirection: "row",
-                justifyContent: "space-between",
-              },
-            },
-            React.createElement(
-              Text,
-              { style: typography.caption },
-              `Elapsed: ${runElapsedSeconds.toFixed(1)}s`
-            ),
-            React.createElement(
-              Text,
-              { style: typography.caption },
-              `Samples: ${runSampleCount}`
-            ),
-            React.createElement(
-              Text,
-              { style: typography.caption },
-              `Steps: ${runPedometerSteps}`
-            )
-          ),
-          React.createElement(
-            View,
-            {
-              style: {
-                flexDirection: "row",
-                justifyContent: "space-between",
-              },
-            },
-            React.createElement(
-              Text,
-              { style: typography.caption },
-              `Heading raw: ${runHeadingRaw !== null ? runHeadingRaw.toFixed(1) : "--"}°`
-            ),
-            React.createElement(
-              Text,
-              { style: typography.caption },
-              `Heading avg: ${runHeadingAvg !== null ? runHeadingAvg.toFixed(1) : "--"}°`
-            ),
-            React.createElement(
-              Text,
-              { style: typography.caption },
-              `Est. dist: ${runEstimatedDistanceM.toFixed(2)}m`
-            )
-          )
+          { style: { marginTop: spacing.sm } },
+          React.createElement(Button, {
+            onPress: toggleLogging,
+            title: isLogging ? "Stop Logging" : "Start Logging",
+            variant: isLogging ? "danger" : "primary",
+            loading: false,
+          })
         ),
 
         // Live Sensor Data Section
@@ -1150,17 +1024,326 @@ export default function SensorDevScreen() {
           )
         ),
 
-        // Action Button
+          ),
+
+        subTab === "deadReckoning" &&
+          React.createElement(
+            React.Fragment,
+            null,
+            React.createElement(
+              View,
+              {
+                style: {
+                  gap: spacing.md,
+                  padding: spacing.md,
+                  backgroundColor: "#F8F9FA",
+                  borderRadius: 8,
+                },
+              },
+              React.createElement(
+                Text,
+                { style: typography.h3 },
+                "Dead-Reckoning Test Mode"
+              ),
+              React.createElement(
+                Text,
+                { style: typography.caption },
+                "Enter run metadata, pick the floor, select start/end nodes, then start/stop a route run."
+              ),
+              React.createElement(
+                TextInput,
+                {
+                  value: testRunNumber,
+                  onChangeText: setTestRunNumber,
+                  placeholder: "Test ID / run number (e.g. 001)",
+                  placeholderTextColor: DEAD_RECKONING_PLACEHOLDER_COLOR,
+                  editable: !isTestModeRecording,
+                  style: deadReckoningInputStyle(!isTestModeRecording),
+                }
+              ),
+              React.createElement(
+                Pressable,
+                {
+                  accessibilityRole: "button",
+                  accessibilityLabel: "Select floor",
+                  accessibilityHint: "Opens a list of floors for dead reckoning",
+                  disabled: isTestModeRecording,
+                  onPress: () => setFloorDropdownVisible(true),
+                  style: deadReckoningFloorDropdownStyle(isTestModeRecording),
+                },
+                React.createElement(
+                  Text,
+                  {
+                    style: {
+                      ...typography.body,
+                      color: colors.text,
+                    },
+                  },
+                  `Floor ${deadReckoningFloor}`
+                ),
+                React.createElement(Ionicons, {
+                  name: "chevron-down",
+                  size: 22,
+                  color: "#6B7280",
+                })
+              ),
+              React.createElement(
+                TextInput,
+                {
+                  value: testGroundTruthDistanceM,
+                  onChangeText: setTestGroundTruthDistanceM,
+                  placeholder: "Ground truth distance (m)",
+                  placeholderTextColor: DEAD_RECKONING_PLACEHOLDER_COLOR,
+                  keyboardType: "decimal-pad",
+                  editable: !isTestModeRecording,
+                  style: deadReckoningInputStyle(!isTestModeRecording),
+                }
+              ),
+              React.createElement(
+                TextInput,
+                {
+                  value: testerName,
+                  onChangeText: setTesterName,
+                  placeholder: "Tester",
+                  placeholderTextColor: DEAD_RECKONING_PLACEHOLDER_COLOR,
+                  editable: !isTestModeRecording,
+                  style: deadReckoningInputStyle(!isTestModeRecording),
+                }
+              ),
+              React.createElement(
+                TextInput,
+                {
+                  value: testerDeviceModel,
+                  onChangeText: setTesterDeviceModel,
+                  placeholder: "Device model",
+                  placeholderTextColor: DEAD_RECKONING_PLACEHOLDER_COLOR,
+                  editable: !isTestModeRecording,
+                  style: deadReckoningInputStyle(!isTestModeRecording),
+                }
+              ),
+              React.createElement(
+                Text,
+                { style: { ...typography.body, fontWeight: "600", marginTop: spacing.xs } },
+                "Route on floor graph (required)"
+              ),
+              React.createElement(
+                Text,
+                {
+                  style: {
+                    ...typography.caption,
+                    color: "#555",
+                  },
+                },
+                "Used by plot_runs.py to anchor the path on the BHEE floor graph. Pick start and end nodes for the floor above."
+              ),
+              React.createElement(
+                View,
+                { style: { gap: spacing.sm } },
+                React.createElement(Button, {
+                  onPress: () => {
+                    setNodePickerRole("start");
+                    setNodePickerVisible(true);
+                  },
+                  title: overlayStartNodeId ? `Start: ${overlayStartNodeId}` : "Select start node",
+                  variant: "secondary",
+                  disabled: isTestModeRecording,
+                  style: { alignSelf: "stretch" },
+                }),
+                React.createElement(Button, {
+                  onPress: () => {
+                    setNodePickerRole("end");
+                    setNodePickerVisible(true);
+                  },
+                  title: overlayEndNodeId ? `End: ${overlayEndNodeId}` : "Select end node",
+                  variant: "secondary",
+                  disabled: isTestModeRecording,
+                  style: { alignSelf: "stretch" },
+                })
+              ),
+              React.createElement(
+                View,
+                { style: { gap: spacing.sm } },
+                React.createElement(Button, {
+                  onPress: startTestModeRun,
+                  title: "Start Test Run",
+                  variant: "primary",
+                  disabled: isTestModeRecording,
+                  style: { alignSelf: "stretch" },
+                }),
+                React.createElement(Button, {
+                  onPress: stopTestModeRun,
+                  title: "Stop Test Run",
+                  variant: "danger",
+                  disabled: !isTestModeRecording,
+                  style: { alignSelf: "stretch" },
+                })
+              ),
+              React.createElement(
+                Text,
+                { style: typography.caption },
+                isTestModeRecording
+                  ? `Recording run #${testRunNumber}...`
+                  : "Idle"
+              ),
+              React.createElement(
+                View,
+                {
+                  style: {
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                  },
+                },
+                React.createElement(
+                  Text,
+                  { style: typography.caption },
+                  `Elapsed: ${runElapsedSeconds.toFixed(1)}s`
+                ),
+                React.createElement(
+                  Text,
+                  { style: typography.caption },
+                  `Samples: ${runSampleCount}`
+                ),
+                React.createElement(
+                  Text,
+                  { style: typography.caption },
+                  `Steps: ${runPedometerSteps}`
+                )
+              ),
+              React.createElement(
+                View,
+                {
+                  style: {
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                  },
+                },
+                React.createElement(
+                  Text,
+                  { style: typography.caption },
+                  `Heading raw: ${runHeadingRaw !== null ? runHeadingRaw.toFixed(1) : "--"}°`
+                ),
+                React.createElement(
+                  Text,
+                  { style: typography.caption },
+                  `Heading avg: ${runHeadingAvg !== null ? runHeadingAvg.toFixed(1) : "--"}°`
+                ),
+                React.createElement(
+                  Text,
+                  { style: typography.caption },
+                  `Est. dist: ${runEstimatedDistanceM.toFixed(2)}m`
+                )
+              )
+            ),
+            React.createElement(
+              View,
+              {
+                style: {
+                  gap: spacing.xs,
+                  marginTop: spacing.md,
+                  padding: spacing.md,
+                  backgroundColor: "#F0F4F8",
+                  borderRadius: 8,
+                },
+              },
+              React.createElement(
+                Text,
+                { style: { ...typography.body, fontWeight: "600" } },
+                "Dead reckoning notes"
+              ),
+              React.createElement(
+                Text,
+                { style: typography.caption },
+                "• Samples post to EXPO_PUBLIC_DEAD_RECKONING_LOGGER_URL (or EXPO_PUBLIC_DEV_LOGGER_URL)"
+              ),
+              React.createElement(
+                Text,
+                { style: typography.caption },
+                "• CSV includes floor + start_node_id + end_node_id for plot_runs.py graph alignment"
+              ),
+              React.createElement(
+                Text,
+                { style: typography.caption },
+                "• Pedometer must be available on device for step-based distance in test runs"
+              )
+            )
+          )
+      )
+    ),
+    React.createElement(
+      Modal,
+      {
+        visible: floorDropdownVisible,
+        transparent: true,
+        animationType: "fade",
+        onRequestClose: () => setFloorDropdownVisible(false),
+      },
+      React.createElement(
+        View,
+        { style: { flex: 1, justifyContent: "center" } },
+        React.createElement(Pressable, {
+          style: {
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0,0,0,0.45)",
+          },
+          onPress: () => setFloorDropdownVisible(false),
+        }),
         React.createElement(
           View,
-          { style: { marginTop: spacing.lg } },
-          React.createElement(Button, {
-            onPress: toggleLogging,
-            title: isLogging ? "Stop Logging" : "Start Logging",
-            variant: isLogging ? "danger" : "primary",
-            loading: false,
-            style: { marginTop: spacing.md },
-          })
+          {
+            style: {
+              marginHorizontal: spacing.lg,
+              backgroundColor: "#FFFFFF",
+              borderRadius: 10,
+              overflow: "hidden",
+              borderWidth: 1,
+              borderColor: "#E5E7EB",
+            },
+          },
+          ...DEAD_RECKONING_FLOOR_OPTIONS.map((f, index) =>
+            React.createElement(
+              Pressable,
+              {
+                key: f,
+                onPress: () => {
+                  setDeadReckoningFloor(f);
+                  setFloorDropdownVisible(false);
+                },
+                style: {
+                  paddingVertical: spacing.md,
+                  paddingHorizontal: spacing.lg,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  backgroundColor: deadReckoningFloor === f ? "#EFF6FF" : "#FFFFFF",
+                  borderBottomWidth:
+                    index < DEAD_RECKONING_FLOOR_OPTIONS.length - 1 ? 1 : 0,
+                  borderBottomColor: "#E5E7EB",
+                },
+              },
+              React.createElement(
+                Text,
+                {
+                  style: {
+                    ...typography.body,
+                    fontWeight: deadReckoningFloor === f ? "700" : "500",
+                    color: "#111827",
+                  },
+                },
+                `Floor ${f}`
+              ),
+              deadReckoningFloor === f
+                ? React.createElement(Ionicons, {
+                    name: "checkmark",
+                    size: 22,
+                    color: "#2563EB",
+                  })
+                : React.createElement(View, { style: { width: 22 } })
+            )
+          )
         )
       )
     ),

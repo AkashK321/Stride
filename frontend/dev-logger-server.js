@@ -84,8 +84,7 @@ function getRunFile(runId, metadata) {
     'test_id',
     'tester',
     'device_model',
-    'start_label',
-    'end_label',
+    'floor',
     'start_node_id',
     'end_node_id',
     'ground_truth_distance_m',
@@ -114,8 +113,7 @@ function writeRunSample(runId, sample) {
     m.test_id,
     m.tester,
     m.device_model,
-    m.start_label,
-    m.end_label,
+    m.floor,
     m.start_node_id,
     m.end_node_id,
     m.ground_truth_distance_m,
@@ -208,14 +206,24 @@ const server = http.createServer((req, res) => {
         const data = JSON.parse(body);
         const runId = data.run_id;
         if (!runId) throw new Error('run_id is required');
+        const startNode = String(data.start_node_id ?? '').trim();
+        const endNode = String(data.end_node_id ?? '').trim();
+        if (!startNode) throw new Error('start_node_id is required');
+        if (!endNode) throw new Error('end_node_id is required');
+        if (data.floor === undefined || data.floor === null || data.floor === '') {
+          throw new Error('floor is required');
+        }
+        const floorNum = Number(data.floor);
+        if (!Number.isFinite(floorNum) || floorNum !== 2) {
+          throw new Error('only floor 2 is supported');
+        }
         getRunFile(runId, {
           test_id: data.test_id || '',
           tester: data.tester || '',
           device_model: data.device_model || '',
-          start_label: data.start_label || '',
-          end_label: data.end_label || '',
-          start_node_id: data.start_node_id || '',
-          end_node_id: data.end_node_id || '',
+          floor: floorNum,
+          start_node_id: startNode,
+          end_node_id: endNode,
           ground_truth_distance_m: data.ground_truth_distance_m ?? '',
         });
         res.writeHead(200, { 'Content-Type': 'application/json' });

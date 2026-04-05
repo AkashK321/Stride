@@ -4,12 +4,16 @@
 import * as React from "react";
 import {
   FlatList,
+  Keyboard,
   Modal,
+  Platform,
   Pressable,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Floor2Node } from "../../data/floor2Nodes";
 import { spacing } from "../../theme/spacing";
 import { typography } from "../../theme/typography";
@@ -31,10 +35,47 @@ export default function NodePickerModal({
   onSelect,
   onClose,
 }: NodePickerModalProps) {
+  const { height: windowHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [query, setQuery] = React.useState("");
+  const [keyboardBottomInset, setKeyboardBottomInset] = React.useState(0);
+
+  /**
+   * Cap sheet height so it stays in the safe band: below the notch (SafeAreaView + inset)
+   * and above the keyboard. Avoids the sheet spanning into unsafe top or under the keyboard.
+   */
+  const sheetMaxHeight = React.useMemo(() => {
+    const innerViewportH = windowHeight - insets.top;
+    const flexColumnH = innerViewportH - keyboardBottomInset;
+    const spaceForSheet = flexColumnH - spacing.md * 2;
+    const defaultCap = windowHeight * 0.55;
+    return Math.min(defaultCap, Math.max(220, spaceForSheet));
+  }, [windowHeight, keyboardBottomInset, insets.top]);
 
   React.useEffect(() => {
     if (!visible) setQuery("");
+  }, [visible]);
+
+  React.useEffect(() => {
+    if (!visible) {
+      setKeyboardBottomInset(0);
+      return;
+    }
+    const showEvent =
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent =
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const onShow = (e: { endCoordinates: { height: number } }) => {
+      setKeyboardBottomInset(e.endCoordinates.height);
+    };
+    const onHide = () => setKeyboardBottomInset(0);
+    const subShow = Keyboard.addListener(showEvent, onShow);
+    const subHide = Keyboard.addListener(hideEvent, onHide);
+    return () => {
+      subShow.remove();
+      subHide.remove();
+      setKeyboardBottomInset(0);
+    };
   }, [visible]);
 
   const filtered = React.useMemo(() => {
@@ -45,24 +86,29 @@ export default function NodePickerModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
-      <View
-        style={{
-          flex: 1,
-          justifyContent: "flex-end",
-          backgroundColor: "rgba(0,0,0,0.45)",
-        }}
+      <SafeAreaView
+        style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)" }}
+        edges={["top", "left", "right"]}
       >
-        <Pressable style={{ flex: 1 }} onPress={onClose} />
         <View
           style={{
-            maxHeight: "72%",
-            backgroundColor: "#fff",
-            borderTopLeftRadius: 12,
-            borderTopRightRadius: 12,
-            padding: spacing.md,
-            gap: spacing.sm,
+            flex: 1,
+            justifyContent: "flex-end",
+            paddingBottom: keyboardBottomInset,
           }}
         >
+          <Pressable style={{ flex: 1 }} onPress={onClose} />
+          <View
+            style={{
+              maxHeight: sheetMaxHeight,
+              height: sheetMaxHeight,
+              backgroundColor: "#fff",
+              borderTopLeftRadius: 12,
+              borderTopRightRadius: 12,
+              padding: spacing.md,
+              gap: spacing.sm,
+            }}
+          >
           <Text style={typography.h3}>{title}</Text>
           <TextInput
             value={query}
@@ -82,6 +128,8 @@ export default function NodePickerModal({
             data={filtered}
             keyExtractor={(item) => item.id}
             keyboardShouldPersistTaps="handled"
+            style={{ flex: 1, minHeight: 0 }}
+            contentContainerStyle={{ paddingBottom: spacing.sm }}
             renderItem={({ item }) => (
               <Pressable
                 onPress={() => {
@@ -115,8 +163,9 @@ export default function NodePickerModal({
           >
             <Text style={{ color: "#2563EB", fontWeight: "600" }}>Cancel</Text>
           </Pressable>
+          </View>
         </View>
-      </View>
+      </SafeAreaView>
     </Modal>
   );
 }
