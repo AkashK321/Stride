@@ -10,6 +10,7 @@ import java.sql.DriverManager
 import java.util.PriorityQueue
 import com.models.LandmarkDetails
 import com.models.NavigationInstruction
+import com.models.MapNode
 
 class RdsMapClient {
     private val mapper = jacksonObjectMapper()
@@ -107,6 +108,27 @@ class RdsMapClient {
         }
         return null
     }
+
+    fun getNode(nodeId: String, conn: Connection): MapNode? {
+        // Replaced IN ($nodeId) with = ?
+        val nodeQuery = "SELECT NodeIDString, CoordinateX, CoordinateY FROM MapNodes WHERE NodeIDString = ?"
+        
+        conn.prepareStatement(nodeQuery).use { stmt ->
+            // This will now correctly replace the '?' with the nodeId
+            stmt.setString(1, nodeId) 
+            val rs = stmt.executeQuery()
+            
+            if (rs.next()) {    
+                return MapNode(
+                    id = rs.getString("NodeIDString"),
+                    coordX = rs.getInt("CoordinateX"),
+                    coordY = rs.getInt("CoordinateY")
+                )
+            }
+        }
+        return null
+    }
+
 
     fun getLandmarkByName(name: String, conn: Connection): LandmarkDetails? {
         val query = """

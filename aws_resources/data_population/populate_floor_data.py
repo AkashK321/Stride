@@ -21,8 +21,14 @@ ORIGIN_X = 0
 ORIGIN_Y = 0
 
 # True-north alignment (ISSUE-171). Set via env so bearings match real compass.
-# TRUE_NORTH_OFFSET_DEGREES: angle to add to map bearings so 0° = true North (e.g. 55).
-# BEARING_HORIZONTAL_FLIP: if "true"/"1", add 180° to horizontal segments (45-135°, 225-315°) before offset.
+# TRUE_NORTH_OFFSET_DEGREES: angle to add to map bearings so 0° = true North.
+# BEARING_HORIZONTAL_FLIP: if "true"/"1", add 180° to horizontal segments before offset.
+# BEARING_HORIZONTAL_MODE:
+#   - "bands": horizontal if 45° <= bearing < 135° or 225° <= bearing < 315° (default)
+#   - "cones": horizontal if within 45° of exactly 90° or 270°
+# COORDINATE_MIRROR_X:
+#   - if true, persist map X coordinates mirrored (x := -x) before feet->pixels conversion
+#   - default true to match current deployment orientation expectation
 def _get_true_north_offset():
     val = os.environ.get("TRUE_NORTH_OFFSET_DEGREES", "51")
     try:
@@ -32,28 +38,53 @@ def _get_true_north_offset():
 
 
 def _get_bearing_horizontal_flip():
-    v = os.environ.get("BEARING_HORIZONTAL_FLIP", "180").strip().lower()
+    v = os.environ.get("BEARING_HORIZONTAL_FLIP", "true").strip().lower()
     return v in ("1", "true", "yes")
 
 
-def align_bearing_to_true_north(raw_bearing_deg, offset_deg=None, apply_horizontal_flip=None):
+def _get_bearing_horizontal_mode():
+    mode = os.environ.get("BEARING_HORIZONTAL_MODE", "bands").strip().lower()
+    if mode in ("bands", "cones"):
+        return mode
+    return "bands"
+
+
+def _get_coordinate_mirror_x():
+    v = os.environ.get("COORDINATE_MIRROR_X", "true").strip().lower()
+    return v in ("1", "true", "yes")
+
+
+def _is_horizontal_bearing(normalized_bearing_deg, flip_mode):
+    if flip_mode == "cones":
+        return abs(normalized_bearing_deg - 90) < 45 or abs(normalized_bearing_deg - 270) < 45
+    # Default mode: flip broad east/west bands.
+    return (45 <= normalized_bearing_deg < 135) or (225 <= normalized_bearing_deg < 315)
+
+
+def align_bearing_to_true_north(
+    raw_bearing_deg,
+    offset_deg=None,
+    apply_horizontal_flip=None,
+    horizontal_mode=None,
+):
     """
     Align a bearing (from map geometry) to true compass.
     raw_bearing_deg: 0=map North, 90=map East, etc.
     offset_deg: angle from map north to true north (e.g. 55 if map north is 55° W of true north).
-    apply_horizontal_flip: if True, add 180° to horizontal segments (45-135°, 225-315°) first.
+    apply_horizontal_flip: if True, add 180° to horizontal segments first.
+    horizontal_mode: "bands" (45-135,225-315) or "cones" (within 45° of 90/270).
     Returns bearing in 0-360, 0 = true North. Must be validated on-site (see ISSUE-171).
     """
     if offset_deg is None:
         offset_deg = _get_true_north_offset()
     if apply_horizontal_flip is None:
         apply_horizontal_flip = _get_bearing_horizontal_flip()
+    if horizontal_mode is None:
+        horizontal_mode = _get_bearing_horizontal_mode()
 
     normalized = (raw_bearing_deg + 360) % 360
-    if apply_horizontal_flip:
-        # Horizontal: 45-135 (E) or 225-315 (W)
-        if (45 <= normalized < 135) or (225 <= normalized < 315):
-            normalized = (normalized + 180) % 360
+    if apply_horizontal_flip and _is_horizontal_bearing(normalized, horizontal_mode):
+        normalized = (normalized + 180) % 360
     aligned = (normalized + offset_deg + 360) % 360
     return aligned
 
@@ -79,19 +110,6 @@ def calculate_bearing(x1, y1, x2, y2):
     return bearing
 
 
-def correct_horizontal_axis_bearing(raw_bearing_deg, x1, y1, x2, y2):
-    """
-    Fix bearing for horizontal segments: map x-axis may not align with compass east,
-    so reflect horizontal bearings (360 - bearing) so e.g. 51° -> 309°.
-    Horizontal = segment is mostly along map x (|dx| >= |dy|).
-    """
-    dx = abs(x2 - x1)
-    dy = abs(y2 - y1)
-    if dx >= dy:
-        return (360.0 - raw_bearing_deg) % 360.0
-    return raw_bearing_deg
-
-
 def calculate_distance(x1, y1, x2, y2):
     """Calculate Euclidean distance in pixels, then convert to meters."""
     pixel_distance = math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
@@ -103,6 +121,11 @@ def calculate_distance(x1, y1, x2, y2):
 def feet_to_pixels(feet):
     """Convert feet to pixel coordinates."""
     return int(feet * FEET_TO_PIXELS)
+
+
+def map_x_feet_for_storage(x_feet):
+    """Apply deploy-time X mirroring policy before converting to pixels."""
+    return -x_feet if _get_coordinate_mirror_x() else x_feet
 
 
 def populate_database(conn, building_data):
@@ -159,7 +182,7 @@ def populate_database(conn, building_data):
             node_coords = {}  # Map from custom node IDs to their pixel coordinates
             
             for node in floor_data.get('nodes', []):
-                x_pixels = feet_to_pixels(node['x_feet'])
+                x_pixels = feet_to_pixels(map_x_feet_for_storage(node['x_feet']))
                 y_pixels = feet_to_pixels(node['y_feet'])
                 
                 cursor.execute(
@@ -194,7 +217,6 @@ def populate_database(conn, building_data):
                 
                 distance = calculate_distance(x1, y1, x2, y2)
                 raw_bearing = calculate_bearing(x1, y1, x2, y2)
-                raw_bearing = correct_horizontal_axis_bearing(raw_bearing, x1, y1, x2, y2)
                 bearing = align_bearing_to_true_north(raw_bearing)
                 cursor.execute(
                     """
@@ -217,7 +239,7 @@ def populate_database(conn, building_data):
             landmarks_list = floor_data.get('landmarks', [])
             for idx, landmark in enumerate(landmarks_list):
                 landmark_id = floor_id * 10000 + (idx + 1)
-                x_pixels = feet_to_pixels(landmark['x_feet'])
+                x_pixels = feet_to_pixels(map_x_feet_for_storage(landmark['x_feet']))
                 y_pixels = feet_to_pixels(landmark['y_feet'])
                 
                 nearest_node_key = landmark.get('nearest_node')
