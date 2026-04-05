@@ -81,6 +81,29 @@ cdk -a "python3 app.py" deploy StrideSharedStack "$STACK_NAME" --require-approva
 - **Shared Stack Deploy** (manual `workflow_dispatch`): optional path to deploy or repair **only** `StrideSharedStack` and initialize/populate the shared DB—see that workflow for one-off maintenance.
 - **Cleanup** workflow: deletes branch stacks after merge; **does not** delete `StrideSharedStack`.
 
+### Bearing alignment calibration (Issue 171)
+
+`aws_resources/data_population/populate_floor_data.py` writes true-compass `MapEdges.Bearing` values using:
+
+- `TRUE_NORTH_OFFSET_DEGREES` (default `51`)
+- `BEARING_HORIZONTAL_FLIP` (default `true`)
+- `BEARING_HORIZONTAL_MODE` (`bands` or `cones`, default `bands`)
+
+CI workflows set these variables on the floor-data population step so production values are reproducible. For existing deployed data, use:
+
+```bash
+cd aws_resources/data_population
+python recompute_edge_bearings.py --dry-run
+python recompute_edge_bearings.py --apply
+```
+
+For on-site validation checklist generation:
+
+```bash
+cd aws_resources/data_population
+python list_edges_for_bearing_check.py --all
+```
+
 ## Verify deployments
 
 List available stacks:

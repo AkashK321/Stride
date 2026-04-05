@@ -133,6 +133,9 @@ jobs:
         env:
           DB_SECRET_ARN: ${{ steps.shared-outputs.outputs.db_secret_arn }}
           AWS_REGION: us-east-1
+          TRUE_NORTH_OFFSET_DEGREES: "51"
+          BEARING_HORIZONTAL_FLIP: "true"
+          BEARING_HORIZONTAL_MODE: "bands"
         run: |
           python run_population.py
 
