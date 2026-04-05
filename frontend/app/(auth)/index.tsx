@@ -52,6 +52,7 @@ export default function Landing() {
 
     setIsLoading(true);
 
+
     try {
       // Call login API
       const response = await login({
@@ -70,10 +71,10 @@ export default function Landing() {
     } catch (error) {
       // Handle error
       const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred";
-      
+
       // Show error alert
       Alert.alert("Sign In Failed", errorMessage);
-      
+
       // Set field errors if applicable
       if (errorMessage.toLowerCase().includes("user") || errorMessage.toLowerCase().includes("not found")) {
         setUsernameError("Invalid username or password");
@@ -89,10 +90,10 @@ export default function Landing() {
     Alert.alert(
       "Developer Mode Active",
       "You are in developer bypass mode. There is no live backend endpoint configured.\n\n" +
-        "To test with a live backend, you must:\n" +
-        "1. Deploy the backend stack\n" +
-        "2. Log in with valid credentials\n\n" +
-        "Frontend-only features can be tested without a backend.",
+      "To test with a live backend, you must:\n" +
+      "1. Deploy the backend stack\n" +
+      "2. Log in with valid credentials\n\n" +
+      "Frontend-only features can be tested without a backend.",
       [
         {
           text: "OK",
@@ -249,11 +250,10 @@ export default function Landing() {
           accessibilityRole: "button",
           accessibilityHint: "Navigate to the registration screen to create a new account",
         }),
-      
-      // REMOVED DEV BUTTON BEFORE INITIAL DEPLOYMENT 
+
+        // REMOVED DEV BUTTON BEFORE INITIAL DEPLOYMENT 
       )
     ),
   );
 }
 
- 

@@ -7,7 +7,8 @@ import sys
 import aws_cdk as cdk
 
 from cdk.cdk_stack import CdkStack
-from cdk.shared_stack import SharedPersistentStack
+# from cdk.shared_stack import SharedPersistentStack # removed for deployment
+from cdk.deployment_stack import DeploymentStack
 
 
 def get_current_branch():
@@ -149,14 +150,17 @@ def main():
     region = os.getenv("AWS_DEFAULT_REGION") or os.getenv("AWS_REGION") or "us-east-1"
     env = cdk.Environment(account=os.getenv("CDK_DEFAULT_ACCOUNT"), region=region)
 
-    shared_stack = SharedPersistentStack(app, "StrideSharedStack", env=env)
+    # shared_stack = SharedPersistentStack(app, "StrideSharedStack", env=env) # removed for deployment
+    deployment_stack = DeploymentStack(app, "StrideDeploymentStack", env=env)
     branch_stack = CdkStack(
         app,
         stack_name,
         env=env,
-        shared_persistent_stack=shared_stack,
+        # shared_persistent_stack=shared_stack, # removed for deployment
+        shared_persistent_stack=deployment_stack, 
     )
-    branch_stack.add_dependency(shared_stack)
+    # branch_stack.add_dependency(shared_stack) # removed for deployment
+    branch_stack.add_dependency(deployment_stack)
 
     app.synth()
 
