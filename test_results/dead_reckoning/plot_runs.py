@@ -315,7 +315,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--mirror-x",
-        default="false",
+        default="true",
         help="Mirror map X before true-north rotation (true/false).",
     )
     args = parser.parse_args()
