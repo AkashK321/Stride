@@ -40,10 +40,8 @@ export default function TabsLayout() {
     React.createElement(Tabs.Screen, { name: "home" }),
     // App settings and preferences tab - app configuration and preferences
     React.createElement(Tabs.Screen, { name: "settings" }),
-    // Navigation tab - camera frame capture and transmission
-    React.createElement(Tabs.Screen, { name: "nav-dev" }),
-    // Sensor dev tab - hidden from tab bar (dev only, accessible via direct navigation)
-    React.createElement(Tabs.Screen, { name: "sensor-dev" }),
+
+    // Dev Screens removed for deployment
     ),
   );
 }

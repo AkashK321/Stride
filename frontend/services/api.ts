@@ -3,6 +3,7 @@
  */
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
+console.log("API URL:", process.env.EXPO_PUBLIC_API_BASE_URL);
 
 if (!API_BASE_URL) {
   console.warn(

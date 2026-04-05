@@ -3,7 +3,8 @@
     "@expo-google-fonts/roboto": "^0.4.2",
     "expo-av": "~16.0.8",
     "expo-file-system": "~18.1.11",
-    "expo-sensors": "~14.1.4"
+    "expo-sensors": "~14.1.4",
+    "react-native-web": "^0.21.0"
   },
   "devDependencies": {
     "typescript": "~5.9.2"
