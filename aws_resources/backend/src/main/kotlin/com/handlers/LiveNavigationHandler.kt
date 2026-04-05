@@ -29,6 +29,7 @@ import java.sql.DriverManager
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.max
+import kotlin.math.log
 
 private val METERS_TO_FEET = 3.28084
 private val FEET_TO_PIXELS = 10.0
@@ -86,6 +87,7 @@ class LiveNavigationHandler(
 
         // Movement Heuristic (Gravity is ~1.0g. Bounces > 1.2g indicate walking)
         val isMoving = magnitude > 1.2 
+        logger.log("PDR Estimation | Accel Mag: %.2f g | Moving: %b | DeltaTime: %.2f sec".format(magnitude, isMoving, deltaTimeSec))
 
         if (isMoving && deltaTimeSec > 0) {
             // Average human walking speed is ~3.5 feet per second
