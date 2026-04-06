@@ -8,4 +8,4 @@ The following is required from the reviewer:
 
 3. Create an account and fill in the blanks
 
-4. Go to BHEE third floor to test the app. The app right now is HARDCODED to start from Room 208. You can test if the directions work to any room on the third floor by entering a room number. 
+4. Go to BHEE second floor to test the app. The app right now is HARDCODED to start from Room 208. You can test if the directions work to any room on the third floor by entering a room number. 
