@@ -119,7 +119,7 @@ def test_live_navigation_stationary(ws_api_url, rest_api_url, ws_endpoint_health
     try:
         start_resp = requests.post(f"{rest_api_url}/navigation/start", json={
             "start_location": {"node_id": "staircase_main_2S01"},
-            "destination": {"landmark_id": "1"}
+            "destination": {"landmark_id": "10001"}
         }, timeout=10)
         start_resp.raise_for_status()
     except Exception as e:
@@ -150,7 +150,7 @@ def test_live_navigation_moving_and_state_persistence(ws_api_url, rest_api_url, 
     """Test that pedometer distance updates coordinates along the snapped map axes."""
     start_payload = {
         "start_location": {"node_id": "staircase_main_2S01"},
-        "destination": {"landmark_id": "1"}
+        "destination": {"landmark_id": "10001"}
     }
     
     try:
@@ -214,7 +214,7 @@ def test_live_navigation_path_recalculation(ws_api_url, rest_api_url, ws_endpoin
         # Start at node staircase_main_2S01, dest landmark 1.
         start_resp = requests.post(f"{rest_api_url}/navigation/start", json={
             "start_location": {"node_id": "staircase_main_2S01"},
-            "destination": {"landmark_id": "1"} 
+            "destination": {"landmark_id": "10001"} 
         }, timeout=10)
         start_resp.raise_for_status()
     except Exception as e:
@@ -232,7 +232,7 @@ def test_live_navigation_path_recalculation(ws_api_url, rest_api_url, ws_endpoin
         payload = create_valid_payload(
             session_id, 
             request_id=1, 
-            distance_traveled=1.5, 
+            distance_traveled=20, 
             heading=120.0, 
             img_b64=dummy_base64_image, 
             timestamp_ms=client_time_ms
