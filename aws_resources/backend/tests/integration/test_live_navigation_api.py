@@ -207,11 +207,11 @@ def test_live_navigation_moving_and_state_persistence(ws_api_url, rest_api_url, 
         ws.close()
 
 def test_live_navigation_path_recalculation(ws_api_url, rest_api_url, ws_endpoint_healthy, dummy_base64_image):
-    """Test that moving off the known path triggers a recalculation yielding new instructions."""
+    """Test that moving off the known path triggers a recalculation yielding the correct new instructions."""
     
     # Start the Session using the Static Navigation Handler (REST API)
     try:
-        # Start at node staircase_main_2S01, dest landmark 1.
+        # Start at node staircase_main_2S01, dest landmark 10001 (Room 226)
         start_resp = requests.post(f"{rest_api_url}/navigation/start", json={
             "start_location": {"node_id": "staircase_main_2S01"},
             "destination": {"landmark_id": "10001"} 
@@ -225,15 +225,17 @@ def test_live_navigation_path_recalculation(ws_api_url, rest_api_url, ws_endpoin
     
     ws = create_connection(ws_api_url)
     try:
-        time.sleep(5.0)
         client_time_ms = int(time.time() * 1000)
         
-        # Send a frame moving the user heavily South (heading 180) to force them off the path
+        # Send a frame moving the user heavily East.
+        # Heading 219 snaps to map axis 231. This yields negative X/Y deltas 
+        # which correctly maps to the East side in the integration test database.
+        # Distance 40ft will place them deep in the East hallway.
         payload = create_valid_payload(
             session_id, 
             request_id=1, 
-            distance_traveled=20, 
-            heading=120.0, 
+            distance_traveled=60.0, 
+            heading=151.0, 
             img_b64=dummy_base64_image, 
             timestamp_ms=client_time_ms
         )
@@ -250,13 +252,31 @@ def test_live_navigation_path_recalculation(ws_api_url, rest_api_url, ws_endpoin
         if node_id == "unknown":
              pytest.skip("Test database not seeded. Nearest node returned 'unknown'.")
 
-        # Verify the user actually moved to a different node
+        # Verify the user actually moved to a different node on the East side
         assert node_id != "staircase_main_2S01", f"Failed to move off initial node. Closest node is still {node_id}"
         
         # Verify that new instructions are returned after recalculation
         instructions = response.get("remaining_instructions", [])
         assert len(instructions) > 0, "Expected path recalculation to return new instruction steps"
-        print(f"✅ Path recalculation correctly triggered off-path. Node: {node_id}, New Instructions Count: {len(instructions)}")
+        
+        # Extract the actual path nodes from the instructions to verify correct routing
+        returned_nodes = [inst.get("node_id") for inst in instructions if inst.get("node_id")]
+        
+        # If they are East of the start, they must be routed back through the East corner, 
+        # through the Main Staircase, through the West corner, and finally to Room 226 door.
+        assert "stair_west_corner" in returned_nodes, f"Path should route back through West corner. Got: {returned_nodes}"
+        assert "r226_door" in returned_nodes, f"Path must end at Room 226 door. Got: {returned_nodes}"
+        
+        # Verify the destination node is specifically the last or second to last instruction
+        # (The final 'arrive' step might reference 'Room 226' instead of the door node)
+        target_door_found = False
+        for step in instructions[-2:]:
+            if step.get("node_id") in ["r226_door", "Room 226"]:
+                target_door_found = True
+        assert target_door_found, "The final destination steps should target Room 226."
+        
+        print(f"✅ Path recalculation correctly triggered off-path. Node: {node_id}")
+        print(f"✅ Correct routing sequence verified. Returned nodes: {returned_nodes}")
         
     finally:
         ws.close()
