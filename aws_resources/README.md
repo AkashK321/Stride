@@ -91,7 +91,7 @@ Use this sequence across CI and operational workflows:
 1. Map validation: `python cli.py validate`
 2. Backend unit tests (`./gradlew test` in `aws_resources/backend`)
 3. Map population tests (`pytest tests/test_populate.py tests/test_data_validation.py`)
-4. Shared DB schema init (`python populate_rds.py` in `aws_resources/schema_initializer`)
+4. Shared DB schema init (`python populate_rds.py` in `aws_resources/map_population`)
 5. Shared map seed (`python cli.py populate` in `aws_resources/map_population`)
 
 ## Schema vs map tooling boundary
@@ -103,7 +103,7 @@ Use this sequence across CI and operational workflows:
 The current schema path is still drop/recreate. To prevent accidental destructive runs, schema init requires explicit opt-in:
 
 ```bash
-cd aws_resources/schema_initializer
+cd aws_resources/map_population
 SCHEMA_INIT_ALLOW_DESTRUCTIVE_RESET=true python populate_rds.py
 ```
 

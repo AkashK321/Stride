@@ -13,6 +13,7 @@ import collections
 import importlib
 import json
 import math
+from pathlib import Path
 
 def _distance_point_to_segment(px, py, ax, ay, bx, by):
     abx = bx - ax
@@ -53,7 +54,23 @@ def _spread_overlapping_points(x_vals, y_vals, radius=1.1):
     return spread_x, spread_y, overlap_groups
 
 
-def plot_floor(data_obj, floor_number, compare_data_obj=None):
+def _default_output_path(floor_number: int) -> Path:
+    plots_dir = Path(__file__).resolve().parent / "plots"
+    return plots_dir / f"plot-local-floor-{floor_number}.png"
+
+
+def _resolve_output_path(output_arg: str | None, floor_number: int) -> Path:
+    if output_arg:
+        output_path = Path(output_arg)
+        if output_path.parent == Path("."):
+            output_path = (Path(__file__).resolve().parent / "plots") / output_path.name
+    else:
+        output_path = _default_output_path(floor_number)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    return output_path
+
+
+def plot_floor(data_obj, floor_number, compare_data_obj=None, output_path: Path | None = None):
     import matplotlib.pyplot as plt
 
     floor = next((f for f in data_obj["floors"] if f["floor_number"] == floor_number), None)
@@ -179,6 +196,9 @@ def plot_floor(data_obj, floor_number, compare_data_obj=None):
     fig.canvas.mpl_connect("motion_notify_event", on_move)
     ax.legend(loc="best")
     plt.tight_layout()
+    if output_path is not None:
+        plt.savefig(output_path, dpi=220)
+        print(f"Saved plot: {output_path}")
     plt.show()
 
 
@@ -188,6 +208,11 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--compare-module", default=None)
     parser.add_argument("--compare-var", default="FLOOR2_DATA")
     parser.add_argument("--floor-number", type=int, default=2)
+    parser.add_argument(
+        "--output",
+        default=None,
+        help="Output file path. If a filename is provided, it is saved under ./plots/.",
+    )
 
 
 def run_from_args(args: argparse.Namespace) -> int:
@@ -202,7 +227,8 @@ def run_from_args(args: argparse.Namespace) -> int:
     if args.compare_module:
         compare_module = importlib.import_module(args.compare_module)
         compare_obj = getattr(compare_module, args.compare_var)
-    plot_floor(data_obj, args.floor_number, compare_obj)
+    output_path = _resolve_output_path(args.output, args.floor_number)
+    plot_floor(data_obj, args.floor_number, compare_obj, output_path=output_path)
     return 0
 
 

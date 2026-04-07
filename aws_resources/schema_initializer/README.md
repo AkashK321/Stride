@@ -1,6 +1,7 @@
-## Schema Initializer
+## Schema Initializer (Legacy Wrapper)
 
-This package owns **relational schema initialization only** for shared Postgres.
+Canonical schema initialization now lives in `aws_resources/map_population/populate_rds.py`.
+This folder remains as a compatibility wrapper so older invocations still work.
 
 ### Responsibilities
 
@@ -18,5 +19,6 @@ This package owns **relational schema initialization only** for shared Postgres.
 `populate_rds.py` is destructive in the current phase. It requires explicit opt-in:
 
 ```bash
+cd aws_resources/map_population
 SCHEMA_INIT_ALLOW_DESTRUCTIVE_RESET=true python populate_rds.py
 ```

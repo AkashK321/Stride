@@ -141,7 +141,6 @@ jobs:
           cache: 'pip'
           cache-dependency-path: |
             aws_resources/requirements.txt
-            aws_resources/schema_initializer/requirements.txt
             aws_resources/map_population/requirements.txt
       
       # Step 5: Install Python dependencies
@@ -150,8 +149,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          # Keep schema initializer deps in its own folder for runtime imports.
-          pip install --upgrade --target schema_initializer -r schema_initializer/requirements.txt
           pip install -r map_population/requirements.txt
 
       # Step 6: Install jq (required for parsing stack outputs)
@@ -381,7 +378,7 @@ jobs:
 
       # Step 14: Initialize shared RDS schema (idempotent)
       - name: Initialize RDS Database Schema
-        working-directory: aws_resources/schema_initializer
+        working-directory: aws_resources/map_population
         env:
           DB_SECRET_ARN: ${{ steps.stack-outputs.outputs.stride_db_secret_arn }}
           AWS_REGION: us-east-1

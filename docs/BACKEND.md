@@ -15,7 +15,7 @@ To install python dependencies, run:
 ```bash
 pip install -r requirements.txt
 ```
-Note: Make sure to install the `schema_initializer` requirements into that directory if you are trying to run a manual AWS deployment.
+Note: Schema init now lives in `map_population`; installing `aws_resources/map_population/requirements.txt` covers both schema and map seed tooling.
 
 Note: gradle -version should show something like this:  
 Launcher JVM:  21.0.9 (Microsoft 21.0.9+10-LTS)  
@@ -29,15 +29,17 @@ cdk deploy
 
 # Database Specific Setup
 Be careful when making changes to the database schema: the current initializer still uses a drop/recreate flow.
-`schema_initializer` is responsible for DDL only, while `map_population` is responsible for map data validation and seeding.
+Schema DDL init and map data tooling now live under `map_population`:
+- `populate_rds.py` handles DDL reset/init
+- `cli.py` handles map validation and map data seeding
 
-Run schema initialization manually from `aws_resources/schema_initializer` with explicit destructive opt-in:
+Run schema initialization manually from `aws_resources/map_population` with explicit destructive opt-in:
 
 ```bash
 SCHEMA_INIT_ALLOW_DESTRUCTIVE_RESET=true python populate_rds.py
 ```
 
-Then run map seeding from `aws_resources/map_population`:
+Then run map seeding from the same directory:
 
 ```bash
 python cli.py populate
