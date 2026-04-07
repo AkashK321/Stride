@@ -1,5 +1,8 @@
 """
 Nodes for floor2_v2.
+
+Authoring note: map node coordinates from the floor plan first, then apply any
+global coordinate offset/rotation during upload.
 """
 
 from __future__ import annotations

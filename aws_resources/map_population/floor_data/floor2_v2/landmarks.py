@@ -1,5 +1,8 @@
 """
 Landmarks for floor2_v2.
+
+Authoring note: map landmark positions from the floor plan first, then apply
+any global coordinate offset/rotation during upload.
 """
 
 from __future__ import annotations
