@@ -1,13 +1,8 @@
 """
 Draw floor map nodes/edges from deployed DB state (MapNodes/MapEdges).
 
-This visualizes what is actively deployed, not local floor_data/*.py.
+Invoked by `python cli.py plot-db`.
 Coordinates are transformed so plot-up is true north.
-
-Examples:
-  python plot_map_graph.py
-  python plot_map_graph.py --floor-number 2 --building-id B01 --output floor_map_deployed.png
-  python plot_map_graph.py --show-edge-bearings
 """
 
 import argparse
@@ -120,7 +115,7 @@ def _to_plot_coords_true_north(
 
 
 def _resolve_output_path(output_arg: str | None, building_id: str, floor_number: int) -> Path:
-    plots_dir = Path(__file__).resolve().parent / "plots"
+    plots_dir = Path(__file__).resolve().parents[1] / "plots"
     if output_arg:
         output_path = Path(output_arg)
         if output_path.parent == Path("."):
@@ -150,7 +145,6 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def run_from_args(args: argparse.Namespace) -> int:
-
     try:
         import matplotlib.pyplot as plt
     except ImportError as exc:
@@ -177,7 +171,6 @@ def run_from_args(args: argparse.Namespace) -> int:
 
     fig, ax = plt.subplots(figsize=(15, 11))
 
-    # Draw edges first.
     for edge in edges:
         start_id = edge["start"]
         end_id = edge["end"]
@@ -185,17 +178,12 @@ def run_from_args(args: argparse.Namespace) -> int:
             continue
         x1, y1 = transformed[start_id]
         x2, y2 = transformed[end_id]
-
         ax.plot([x1, x2], [y1, y2], color="#2563eb", linewidth=1.8, alpha=0.8)
 
         if args.show_edge_bearings and edge["bearing"] is not None:
             heading = edge["bearing"]
             is_bidirectional = edge["bidirectional"]
-            label = (
-                f"{heading:.1f}°"
-                if not is_bidirectional
-                else f"{heading:.1f}°/{(heading + 180) % 360:.1f}°"
-            )
+            label = f"{heading:.1f}°" if not is_bidirectional else f"{heading:.1f}°/{(heading + 180) % 360:.1f}°"
             xm = (x1 + x2) / 2.0
             ym = (y1 + y2) / 2.0
             ax.text(
@@ -209,22 +197,14 @@ def run_from_args(args: argparse.Namespace) -> int:
                 va="center",
             )
 
-    # Draw nodes and labels.
     x_vals = [pt[0] for pt in transformed.values()]
     y_vals = [pt[1] for pt in transformed.values()]
     ax.scatter(x_vals, y_vals, color="#111827", s=18, zorder=3)
 
     for node_id, (x, y) in transformed.items():
         node_type = nodes[node_id].get("type", "")
-        ax.text(
-            x + 6,
-            y + 6,
-            f"{node_id}\n({node_type})",
-            fontsize=6,
-            color="#111827",
-        )
+        ax.text(x + 6, y + 6, f"{node_id}\n({node_type})", fontsize=6, color="#111827")
 
-    # North indicator (up in plot).
     x_min, x_max = min(x_vals), max(x_vals)
     y_min, y_max = min(y_vals), max(y_vals)
     span_x = max(1.0, x_max - x_min)
@@ -268,3 +248,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

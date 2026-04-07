@@ -1,11 +1,6 @@
 """
-Interactive matplotlib plot for floor data objects.
-
-Hover over nodes/edges/landmarks to inspect full record details.
-
-Examples:
-  python plot_floor_data_v2.py
-  python plot_floor_data_v2.py --module floor_data.floor2_v2 --var FLOOR2_DATA_V2 --floor-number 2
+Interactive matplotlib plot for local floor data objects.
+Invoked by `python cli.py plot-local`.
 """
 
 import argparse
@@ -14,6 +9,7 @@ import importlib
 import json
 import math
 from pathlib import Path
+
 
 def _distance_point_to_segment(px, py, ax, ay, bx, by):
     abx = bx - ax
@@ -55,7 +51,7 @@ def _spread_overlapping_points(x_vals, y_vals, radius=1.1):
 
 
 def _default_output_path(floor_number: int) -> Path:
-    plots_dir = Path(__file__).resolve().parent / "plots"
+    plots_dir = Path(__file__).resolve().parents[1] / "plots"
     return plots_dir / f"plot-local-floor-{floor_number}.png"
 
 
@@ -63,7 +59,7 @@ def _resolve_output_path(output_arg: str | None, floor_number: int) -> Path:
     if output_arg:
         output_path = Path(output_arg)
         if output_path.parent == Path("."):
-            output_path = (Path(__file__).resolve().parent / "plots") / output_path.name
+            output_path = (Path(__file__).resolve().parents[1] / "plots") / output_path.name
     else:
         output_path = _default_output_path(floor_number)
     output_path.parent.mkdir(parents=True, exist_ok=True)

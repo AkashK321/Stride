@@ -6,16 +6,16 @@ from __future__ import annotations
 
 import argparse
 
+from cli_commands.list_edges_for_bearing_check import add_arguments as add_audit_args
+from cli_commands.list_edges_for_bearing_check import run_from_args as run_audit
+from cli_commands.plot_floor_data_v2 import add_arguments as add_plot_local_args
+from cli_commands.plot_floor_data_v2 import run_from_args as run_plot_local
+from cli_commands.plot_map_graph import add_arguments as add_plot_db_args
+from cli_commands.plot_map_graph import run_from_args as run_plot_db
+from cli_commands.recompute_edge_bearings import add_arguments as add_recompute_args
+from cli_commands.recompute_edge_bearings import run_from_args as run_recompute
+from cli_commands.run_population import main as run_population_main
 from floor_data.registry import validate_registered_floors
-from list_edges_for_bearing_check import add_arguments as add_audit_args
-from list_edges_for_bearing_check import run_from_args as run_audit
-from plot_floor_data_v2 import add_arguments as add_plot_local_args
-from plot_floor_data_v2 import run_from_args as run_plot_local
-from plot_map_graph import add_arguments as add_plot_db_args
-from plot_map_graph import run_from_args as run_plot_db
-from recompute_edge_bearings import add_arguments as add_recompute_args
-from recompute_edge_bearings import run_from_args as run_recompute
-from run_population import main as run_population_main
 
 
 def _run_validate_command(_: argparse.Namespace) -> int:

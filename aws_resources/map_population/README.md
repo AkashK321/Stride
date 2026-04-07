@@ -2,6 +2,17 @@
 
 This folder is the canonical place for RDS map schema setup, map validation, map population, and plotting.
 
+## Script interface (what to run directly)
+
+Direct-entry scripts in this folder:
+
+- `cli.py` (primary interface for map tooling)
+- `populate_rds.py` (destructive schema reset/init)
+
+Other top-level `.py` modules are support libraries and are usually imported, not run directly.
+
+Internal command modules used by `cli.py` live in `cli_commands/` and are not intended as direct entry points.
+
 ## Quick start
 
 From `aws_resources/map_population`:
