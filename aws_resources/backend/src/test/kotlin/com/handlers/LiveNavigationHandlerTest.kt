@@ -6,6 +6,7 @@ import com.amazonaws.services.lambda.runtime.events.APIGatewayV2WebSocketEvent
 import com.amazonaws.services.lambda.runtime.events.APIGatewayV2WebSocketEvent.RequestContext
 import com.models.LandmarkDetails
 import com.models.BoundingBox
+import com.models.MapNode
 import com.services.DynamoDbTableClient
 import com.services.RdsMapClient
 import io.mockk.*
@@ -256,8 +257,7 @@ class LiveNavigationHandlerTest {
                 "focal_length_pixels": 800.0,
                 "heading_degrees": 90.0,
                 "request_id": 1,
-                "accelerometer": {"x": 0.0, "y": 1.0, "z": 0.0},
-                "gyroscope": {"x": 0.0, "y": 0.0, "z": 0.0}
+                "distance_traveled": 2.5
             }"""
         }
 
@@ -282,8 +282,7 @@ class LiveNavigationHandlerTest {
                 "focal_length_pixels": 800.0,
                 "heading_degrees": 90.0,
                 "request_id": 1.5,
-                "accelerometer": {"x": 0.0, "y": 1.0, "z": 0.0},
-                "gyroscope": {"x": 0.0, "y": 0.0, "z": 0.0}
+                "distance_traveled": 2.5
             }"""
         }
 
@@ -307,9 +306,8 @@ class LiveNavigationHandlerTest {
                 "image_base64": "$validBase64",
                 "focal_length_pixels": 800.0,
                 "heading_degrees": 90.0,
+                "distance_traveled": 2.5,
                 "request_id": 1,
-                "accelerometer": {"x": 0.0, "y": 1.5, "z": 0.0},
-                "gyroscope": {"x": 0.0, "y": 0.0, "z": 0.0},
                 "gps": {"latitude": 40.0, "longitude": -86.0},
                 "timestamp_ms": 1670000000000
             }"""
@@ -362,8 +360,7 @@ class LiveNavigationHandlerTest {
                 "focal_length_pixels": 800.0,
                 "heading_degrees": 90.0,
                 "request_id": 1,
-                "accelerometer": {"x": 0.0, "y": 1.5, "z": 0.0},
-                "gyroscope": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "distance_traveled": 1.5,
                 "gps": {"latitude": 40.0, "longitude": -86.0},
                 "timestamp_ms": 1670000000000
             }"""
@@ -429,8 +426,7 @@ class LiveNavigationHandlerTest {
                 "focal_length_pixels": 800.0,
                 "heading_degrees": 90.0,
                 "request_id": 1,
-                "accelerometer": {"x": 0.0, "y": 1.5, "z": 0.0},
-                "gyroscope": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "distance_traveled": 1.5,
                 "gps": {"latitude": 40.0, "longitude": -86.0},
                 "timestamp_ms": 1670000000000
             }"""
@@ -448,5 +444,56 @@ class LiveNavigationHandlerTest {
         
         // Ensure the new path was actually saved, confirming recalculation occurred
         assertEquals("node99,destNode", savedState["path"])
+    }
+
+    @Test
+    fun `handleRequest should use logical current node for session tracking when on path`() {
+        // 1. Setup mock session data indicating user is on Step 1 (which corresponds to 'node2')
+        val mockSessionData = mapOf(
+            "current_x" to "0.0",
+            "current_y" to "0.0",
+            "currentStep" to "1", 
+            "last_updated_ms" to "1670000000000",
+            "destLandmarkId" to "1",
+            "path" to "node1,node2,node3,node4"
+        )
+        every { anyConstructed<DynamoDbTableClient>().getItemDetails(any()) } returns mockSessionData
+
+        // 2. Mock a scenario where the sensor drifts and detects "node99" as the closest physical node,
+        // but not far enough to trigger an off-path recalculation in this specific mock execution.
+        every { anyConstructed<RdsMapClient>().getClosestMapNode(any(), any(), any()) } returns mapOf("NodeID" to "node2")
+        every { anyConstructed<RdsMapClient>().getNode("node3", any()) } returns MapNode("node3", 500, 500) // Next node is far away (> 2ft)
+
+        val putItemSlot = slot<Map<String, Any>>()
+        every { anyConstructed<DynamoDbTableClient>().putItem(capture(putItemSlot)) } just Runs
+
+        // 3. Construct a valid payload with distance_traveled
+        val validBase64 = Base64.getEncoder().encodeToString("dummy_image".toByteArray())
+        val event = APIGatewayV2WebSocketEvent().apply {
+            requestContext = RequestContext().apply {
+                connectionId = "test-conn-id"
+                domainName = "test.api"
+                stage = "prod"
+                routeKey = "navigation"
+            }
+            body = """{
+                "session_id": "session123",
+                "image_base64": "$validBase64",
+                "focal_length_pixels": 800.0,
+                "heading_degrees": 90.0,
+                "distance_traveled": 5.0,
+                "request_id": 1,
+                "timestamp_ms": 1670000000000
+            }"""
+        }
+
+        // 4. Execute the handler
+        val response = handler.handleRequest(event, mockContext)
+
+        assertEquals(200, response.statusCode)
+
+        // 5. Verify the state saved to the DB used the logical path index (node2), NOT a physical drift node
+        val savedState = putItemSlot.captured
+        assertEquals("node2", savedState["currentNodeId"], "Session should lock to logical node of current step (index 1 = node2)")
     }
 }

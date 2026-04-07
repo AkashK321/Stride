@@ -34,7 +34,6 @@ import kotlin.math.sin
 import kotlin.math.max
 import kotlin.math.log
 import kotlin.math.sqrt
-import org.junit.jupiter.api.fail
 
 private val METERS_TO_FEET = 3.28084
 private val FEET_TO_PIXELS = 10.0
@@ -183,7 +182,7 @@ class LiveNavigationHandler(
     }
 
     private fun getSessionData(tableClient: DynamoDbTableClient, sessionId: String, logger: LambdaLogger): SessionData {
-        val item = tableClient.getItemDetails(sessionId) ?: return SessionData(0.0, 0.0, 0L, "unknown", 0, emptyList())
+        val item = tableClient.getItemDetails(sessionId) ?: return SessionData(Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, 0L, "unknown", 0, emptyList())
         try {
             val sessionData = SessionData(
                 previousX = item.get("current_x")!!.toDouble(),
@@ -228,12 +227,9 @@ class LiveNavigationHandler(
             return "Invalid field: request_id must be an integer"
         }
 
-        if (!validateVector3(payload["accelerometer"])) {
-            return "Missing or invalid field: accelerometer (x, y, z required)"
-        }
-
-        if (!validateVector3(payload["gyroscope"])) {
-            return "Missing or invalid field: gyroscope (x, y, z required)"
+        val distanceTraveled = payload["distance_traveled"]
+        if (distanceTraveled != null && distanceTraveled !is Number) {
+            return "Invalid field: distance_traveled must be a number"
         }
 
         val gps = payload["gps"]
@@ -252,14 +248,6 @@ class LiveNavigationHandler(
         }
 
         return null
-    }
-
-    private fun validateVector3(value: Any?): Boolean {
-        if (value !is Map<*, *>) return false
-        value.forEach { (_, v) ->
-            if (v !is Number) return false
-        }
-        return true
     }
 
     private fun isWholeNumber(number: Number): Boolean {
@@ -387,7 +375,7 @@ class LiveNavigationHandler(
 
         val sessionData = getSessionData(sessionTableClient, navRequest.session_id, logger)
 
-        if (sessionData.previousX != 0.0 || sessionData.previousY != 0.0) {
+        if (sessionData.previousX != Double.POSITIVE_INFINITY || sessionData.previousY != Double.POSITIVE_INFINITY) {
             logger.log("Restored session state for ${navRequest.session_id}: prevX=${sessionData.previousX}, prevY=${sessionData.previousY}")
         } else {
             val sessionId = (payload["session_id"] as? String) ?: "unknown"
@@ -558,6 +546,9 @@ class LiveNavigationHandler(
         )
 
         postJsonToConnection(apiClient, connectionId, responsePayload, logger)
-        return APIGatewayV2WebSocketResponse().apply { statusCode = 200 }
+        return APIGatewayV2WebSocketResponse().apply { 
+            statusCode = 200
+            body = "OK" 
+        }
     }
 }
