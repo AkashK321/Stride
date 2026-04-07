@@ -27,7 +27,6 @@ Set required env before DB operations:
 - `DB_SECRET_ARN` (Secrets Manager ARN for shared RDS credentials)
 - `AWS_REGION` (usually `us-east-1`)
 - AWS credentials in your shell/profile (`~/.aws/credentials` or role)
-- `COORDINATE_ANGLE_OFFSET_DEG` (optional; defaults to `51`, applied during upload)
 
 ## Iteration loop (authoring map data)
 
@@ -53,7 +52,7 @@ Set required env before DB operations:
 5. Seed map data into RDS:
 
    ```bash
-   python cli.py populate
+   python cli.py populate --coordinate-angle-offset 51
    ```
 
 6. Plot deployed DB map to verify what is actually stored:
@@ -67,6 +66,12 @@ Set required env before DB operations:
    ```bash
    python cli.py audit-bearings --all
    python cli.py recompute-bearings
+   ```
+
+8. Optional destructive data clear (keeps schema, removes map data rows):
+
+   ```bash
+   python cli.py clear-db --yes
    ```
 
 ## Plot outputs
@@ -92,5 +97,7 @@ Default plot files are saved under `aws_resources/map_population/plots/`:
 
 - `populate_rds.py` is intentionally destructive in the current phase; never run it against an environment you do not intend to reset.
 - Upload now applies only the angle-offset coordinate transform (no mirroring, no feet-to-pixels transform).
+- Edge bearings persisted to DB are always recomputed from stored node coordinates.
+- `python cli.py clear-db --yes` clears map data tables only (schema remains).
 - COCO object config seeding is separate (`aws_resources/object_config_seed`) and not part of map population.
 

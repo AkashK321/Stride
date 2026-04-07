@@ -5,8 +5,8 @@ Converts physical measurements (feet) to map coordinates and creates nodes, edge
 FIXED: All table/column names are CamelCase to match teammate's schema.
 """
 
-import os
 import json
+import os
 import pg8000
 import boto3
 import logging
@@ -18,14 +18,6 @@ logger.setLevel(logging.INFO)
 # Configuration
 FEET_TO_METERS = 0.3048
 DEFAULT_COORDINATE_ANGLE_OFFSET_DEG = 51.0
-
-
-def get_coordinate_angle_offset_deg() -> float:
-    """Return clockwise angle offset (degrees) used during DB storage transform."""
-    raw = os.environ.get("COORDINATE_ANGLE_OFFSET_DEG")
-    if raw is None or raw.strip() == "":
-        return DEFAULT_COORDINATE_ANGLE_OFFSET_DEG
-    return float(raw)
 
 
 def get_db_secret():
@@ -85,7 +77,7 @@ def build_node_meta_for_storage(node):
     return semantic_meta or None
 
 
-def populate_database(conn, building_data):
+def populate_database(conn, building_data, coordinate_angle_offset_deg=DEFAULT_COORDINATE_ANGLE_OFFSET_DEG):
     """Main function to populate all tables with building data."""
     cursor = conn.cursor()
     
@@ -110,7 +102,7 @@ def populate_database(conn, building_data):
         logger.info(f"Inserted building: {building_data['building_name']}")
         
         # 2. Process each floor
-        angle_offset_deg = get_coordinate_angle_offset_deg()
+        angle_offset_deg = float(coordinate_angle_offset_deg)
         logger.info("Applying coordinate angle offset: %.2f deg", angle_offset_deg)
         for floor_data in building_data['floors']:
             # Insert Floor (CamelCase)
@@ -181,10 +173,9 @@ def populate_database(conn, building_data):
                 x2, y2 = node_coords[end_node_key]
                 
                 distance = calculate_distance(x1, y1, x2, y2)
-                # Use authored edge bearings when provided; otherwise compute from geometry.
-                bearing = edge.get("bearing_deg")
-                if bearing is None:
-                    bearing = calculate_bearing(x1, y1, x2, y2)
+                # Always derive DB bearing from stored (already-rotated) coordinates
+                # so geometry and persisted heading remain in the same frame.
+                bearing = calculate_bearing(x1, y1, x2, y2)
                 cursor.execute(
                     """
                     INSERT INTO MapEdges (FloorID, StartNodeID, EndNodeID, DistanceMeters, Bearing, IsBidirectional)

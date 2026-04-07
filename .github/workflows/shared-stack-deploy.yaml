@@ -140,7 +140,7 @@ jobs:
           DB_SECRET_ARN: ${{ steps.shared-outputs.outputs.db_secret_arn }}
           AWS_REGION: us-east-1
         run: |
-          python cli.py populate
+          python cli.py populate --coordinate-angle-offset 51
 
       - name: Deployment summary
         if: always()
