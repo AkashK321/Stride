@@ -20,73 +20,13 @@ FEET_TO_PIXELS = 10  # 1 foot = 10 pixels
 ORIGIN_X = 0
 ORIGIN_Y = 0
 
-# True-north alignment (ISSUE-171). Set via env so bearings match real compass.
-# TRUE_NORTH_OFFSET_DEGREES: angle to add to map bearings so 0° = true North.
-# BEARING_HORIZONTAL_FLIP: if "true"/"1", add 180° to horizontal segments before offset.
-# BEARING_HORIZONTAL_MODE:
-#   - "bands": horizontal if 45° <= bearing < 135° or 225° <= bearing < 315° (default)
-#   - "cones": horizontal if within 45° of exactly 90° or 270°
+# Coordinate storage policy.
 # COORDINATE_MIRROR_X:
 #   - if true, persist map X coordinates mirrored (x := -x) before feet->pixels conversion
 #   - default true to match current deployment orientation expectation
-def _get_true_north_offset():
-    val = os.environ.get("TRUE_NORTH_OFFSET_DEGREES", "51")
-    try:
-        return float(val)
-    except ValueError:
-        return 0.0
-
-
-def _get_bearing_horizontal_flip():
-    v = os.environ.get("BEARING_HORIZONTAL_FLIP", "true").strip().lower()
-    return v in ("1", "true", "yes")
-
-
-def _get_bearing_horizontal_mode():
-    mode = os.environ.get("BEARING_HORIZONTAL_MODE", "bands").strip().lower()
-    if mode in ("bands", "cones"):
-        return mode
-    return "bands"
-
-
 def _get_coordinate_mirror_x():
     v = os.environ.get("COORDINATE_MIRROR_X", "true").strip().lower()
     return v in ("1", "true", "yes")
-
-
-def _is_horizontal_bearing(normalized_bearing_deg, flip_mode):
-    if flip_mode == "cones":
-        return abs(normalized_bearing_deg - 90) < 45 or abs(normalized_bearing_deg - 270) < 45
-    # Default mode: flip broad east/west bands.
-    return (45 <= normalized_bearing_deg < 135) or (225 <= normalized_bearing_deg < 315)
-
-
-def align_bearing_to_true_north(
-    raw_bearing_deg,
-    offset_deg=None,
-    apply_horizontal_flip=None,
-    horizontal_mode=None,
-):
-    """
-    Align a bearing (from map geometry) to true compass.
-    raw_bearing_deg: 0=map North, 90=map East, etc.
-    offset_deg: angle from map north to true north (e.g. 55 if map north is 55° W of true north).
-    apply_horizontal_flip: if True, add 180° to horizontal segments first.
-    horizontal_mode: "bands" (45-135,225-315) or "cones" (within 45° of 90/270).
-    Returns bearing in 0-360, 0 = true North. Must be validated on-site (see ISSUE-171).
-    """
-    if offset_deg is None:
-        offset_deg = _get_true_north_offset()
-    if apply_horizontal_flip is None:
-        apply_horizontal_flip = _get_bearing_horizontal_flip()
-    if horizontal_mode is None:
-        horizontal_mode = _get_bearing_horizontal_mode()
-
-    normalized = (raw_bearing_deg + 360) % 360
-    if apply_horizontal_flip and _is_horizontal_bearing(normalized, horizontal_mode):
-        normalized = (normalized + 180) % 360
-    aligned = (normalized + offset_deg + 360) % 360
-    return aligned
 
 
 def get_db_secret():
@@ -187,14 +127,15 @@ def populate_database(conn, building_data):
                 
                 cursor.execute(
                     """
-                    INSERT INTO MapNodes (NodeIDString, FloorID, BuildingID, CoordinateX, CoordinateY, NodeType)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO MapNodes (NodeIDString, FloorID, BuildingID, CoordinateX, CoordinateY, NodeType, NodeMeta)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
                     ON CONFLICT (NodeIDString) DO UPDATE SET
                         FloorID = EXCLUDED.FloorID,
                         BuildingID = EXCLUDED.BuildingID,
                         CoordinateX = EXCLUDED.CoordinateX,
                         CoordinateY = EXCLUDED.CoordinateY,
-                        NodeType = EXCLUDED.NodeType
+                        NodeType = EXCLUDED.NodeType,
+                        NodeMeta = EXCLUDED.NodeMeta
                     """,
                     (
                         node['id'],
@@ -203,6 +144,7 @@ def populate_database(conn, building_data):
                         x_pixels,
                         y_pixels,
                         node['type'],
+                        json.dumps(node.get('node_meta')) if node.get('node_meta') is not None else None,
                     )
                 )
                 node_coords[node['id']] = (x_pixels, y_pixels)
@@ -216,8 +158,9 @@ def populate_database(conn, building_data):
                 x2, y2 = node_coords[end_node_key]
                 
                 distance = calculate_distance(x1, y1, x2, y2)
-                raw_bearing = calculate_bearing(x1, y1, x2, y2)
-                bearing = align_bearing_to_true_north(raw_bearing)
+                # Coordinates are now authored in true-north orientation.
+                # No runtime mirror/offset/flip transformations are applied.
+                bearing = calculate_bearing(x1, y1, x2, y2)
                 cursor.execute(
                     """
                     INSERT INTO MapEdges (FloorID, StartNodeID, EndNodeID, DistanceMeters, Bearing, IsBidirectional)
