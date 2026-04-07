@@ -13,6 +13,7 @@ Examples:
 import argparse
 import math
 import ssl
+from pathlib import Path
 from typing import Dict, List, Tuple
 
 import pg8000
@@ -118,10 +119,26 @@ def _to_plot_coords_true_north(
     return x_rot, y_rot
 
 
+def _resolve_output_path(output_arg: str | None, building_id: str, floor_number: int) -> Path:
+    plots_dir = Path(__file__).resolve().parent / "plots"
+    if output_arg:
+        output_path = Path(output_arg)
+        if output_path.parent == Path("."):
+            output_path = plots_dir / output_path.name
+    else:
+        output_path = plots_dir / f"plot-db-{building_id}-floor-{floor_number}.png"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    return output_path
+
+
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--building-id", default="B01")
     parser.add_argument("--floor-number", type=int, default=2)
-    parser.add_argument("--output", default="floor_map_true_north.png")
+    parser.add_argument(
+        "--output",
+        default=None,
+        help="Output file path. If a filename is provided, it is saved under ./plots/.",
+    )
     parser.add_argument(
         "--offset",
         type=float,
@@ -232,9 +249,10 @@ def run_from_args(args: argparse.Namespace) -> int:
     ax.set_aspect("equal", adjustable="box")
     ax.margins(0.05)
 
+    output_path = _resolve_output_path(args.output, args.building_id, args.floor_number)
     plt.tight_layout()
-    plt.savefig(args.output, dpi=220)
-    print(f"Saved plot: {args.output}")
+    plt.savefig(output_path, dpi=220)
+    print(f"Saved plot: {output_path}")
 
     if args.show:
         plt.show()
