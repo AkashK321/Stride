@@ -2,7 +2,7 @@
 Recompute and optionally apply true-compass bearings for existing MapEdges rows.
 
 Usage:
-  python recompute_edge_bearings.py --dry-run
+  python recompute_edge_bearings.py
   python recompute_edge_bearings.py --apply
   python recompute_edge_bearings.py --apply --floor-id 2
 """
@@ -70,8 +70,7 @@ def _recompute_bearing(row):
     return calculate_bearing(start_x, start_y, end_x, end_y)
 
 
-def main():
-    parser = argparse.ArgumentParser()
+def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--floor-id", type=int, default=None, help="Only recompute one floor")
     parser.add_argument("--apply", action="store_true", help="Write recomputed bearings to DB")
     parser.add_argument(
@@ -80,7 +79,9 @@ def main():
         default=0.05,
         help="Only count as changed if abs(delta) exceeds tolerance",
     )
-    args = parser.parse_args()
+    
+
+def run_from_args(args: argparse.Namespace) -> int:
 
     conn = None
     try:
@@ -125,7 +126,15 @@ def main():
     finally:
         if conn:
             conn.close()
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    add_arguments(parser)
+    args = parser.parse_args(argv)
+    return run_from_args(args)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

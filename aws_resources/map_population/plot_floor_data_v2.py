@@ -14,9 +14,6 @@ import importlib
 import json
 import math
 
-import matplotlib.pyplot as plt
-
-
 def _distance_point_to_segment(px, py, ax, ay, bx, by):
     abx = bx - ax
     aby = by - ay
@@ -57,6 +54,8 @@ def _spread_overlapping_points(x_vals, y_vals, radius=1.1):
 
 
 def plot_floor(data_obj, floor_number, compare_data_obj=None):
+    import matplotlib.pyplot as plt
+
     floor = next((f for f in data_obj["floors"] if f["floor_number"] == floor_number), None)
     if floor is None:
         raise ValueError(f"Floor {floor_number} not found")
@@ -183,14 +182,19 @@ def plot_floor(data_obj, floor_number, compare_data_obj=None):
     plt.show()
 
 
-def main():
-    parser = argparse.ArgumentParser()
+def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--module", default="floor_data.floor2_v2")
     parser.add_argument("--var", default="FLOOR2_DATA_V2")
     parser.add_argument("--compare-module", default=None)
     parser.add_argument("--compare-var", default="FLOOR2_DATA")
     parser.add_argument("--floor-number", type=int, default=2)
-    args = parser.parse_args()
+
+
+def run_from_args(args: argparse.Namespace) -> int:
+    try:
+        import matplotlib.pyplot as _  # noqa: F401
+    except ImportError as exc:
+        raise SystemExit("matplotlib is required. Install with: pip install matplotlib") from exc
 
     module = importlib.import_module(args.module)
     data_obj = getattr(module, args.var)
@@ -199,8 +203,16 @@ def main():
         compare_module = importlib.import_module(args.compare_module)
         compare_obj = getattr(compare_module, args.compare_var)
     plot_floor(data_obj, args.floor_number, compare_obj)
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    add_arguments(parser)
+    args = parser.parse_args(argv)
+    return run_from_args(args)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
 

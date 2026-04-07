@@ -63,12 +63,13 @@ def _print_markdown_table(rows):
         print(f"| {idx} | {floor_id} | {start_node} | {end_node} | {bearing_cell} | |")
 
 
-def main():
-    parser = argparse.ArgumentParser()
+def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--floor-id", type=int, default=None, help="Filter by floor ID")
     parser.add_argument("--all", action="store_true", help="List all edges (no row limit)")
     parser.add_argument("--limit", type=int, default=10, help="Maximum rows if --all not set")
-    args = parser.parse_args()
+
+
+def run_from_args(args: argparse.Namespace) -> int:
 
     row_limit = None if args.all else args.limit
 
@@ -79,7 +80,15 @@ def main():
         _print_markdown_table(rows)
     finally:
         conn.close()
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    add_arguments(parser)
+    args = parser.parse_args(argv)
+    return run_from_args(args)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

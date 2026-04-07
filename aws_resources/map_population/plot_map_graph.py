@@ -118,8 +118,7 @@ def _to_plot_coords_true_north(
     return x_rot, y_rot
 
 
-def main():
-    parser = argparse.ArgumentParser()
+def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--building-id", default="B01")
     parser.add_argument("--floor-number", type=int, default=2)
     parser.add_argument("--output", default="floor_map_true_north.png")
@@ -131,7 +130,9 @@ def main():
     )
     parser.add_argument("--show-edge-bearings", action="store_true")
     parser.add_argument("--show", action="store_true", help="Show interactive plot window")
-    args = parser.parse_args()
+
+
+def run_from_args(args: argparse.Namespace) -> int:
 
     try:
         import matplotlib.pyplot as plt
@@ -237,7 +238,15 @@ def main():
 
     if args.show:
         plt.show()
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    add_arguments(parser)
+    args = parser.parse_args(argv)
+    return run_from_args(args)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
