@@ -17,18 +17,18 @@ FLOOR2_DATA_V2 = {
                     "y_feet": 5.0,
                     "type": "Stairwell"
                 },
-                {
-                    "id": "stair_west_corner",
-                    "x_feet": -13,
-                    "y_feet": 0,
-                    "type": "Intersection"
-                },
-                {
-                    "id": "stair_east_corner",
-                    "x_feet": 13,
-                    "y_feet": 0,
-                    "type": "Intersection"
-                },
+                # {
+                #     "id": "stair_west_corner",
+                #     "x_feet": -13,
+                #     "y_feet": 0,
+                #     "type": "Intersection"
+                # },
+                # {
+                #     "id": "stair_east_corner",
+                #     "x_feet": 13,
+                #     "y_feet": 0,
+                #     "type": "Intersection"
+                # },
                 {
                     "id": "r226_door",
                     "x_feet": -28.0,
@@ -277,13 +277,13 @@ FLOOR2_DATA_V2 = {
                 {
                     "id": "r237_door",
                     "x_feet": 68.8,
-                    "y_feet": 9.0,
+                    "y_feet": 5.0,
                     "type": "Door",
                     "node_meta": {
                         "door_id": "Room 237",
                         "side_canonical": "right",
                         "canonical_edge_start": "r237_door",
-                        "canonical_edge_end": "east_inner_south",
+                        "canonical_edge_end": "southeast_corner",
                         "door_normal_cardinal": "East"
                     }
                 },
@@ -517,12 +517,12 @@ FLOOR2_DATA_V2 = {
                     "y_feet": 9,
                     "type": "Intersection"
                 },
-                {
-                    "id": "west_cross_south",
-                    "x_feet": -92.5,
-                    "y_feet": 9,
-                    "type": "Intersection"
-                },
+                # {
+                #     "id": "west_cross_south",
+                #     "x_feet": -92.5,
+                #     "y_feet": 9,
+                #     "type": "Intersection"
+                # },
                 {
                     "id": "east_office_hall_mid",
                     "x_feet": 82.8,
@@ -573,7 +573,7 @@ FLOOR2_DATA_V2 = {
                 },
                 {
                     "start": "r236_door",
-                    "end": "southeast_corner",
+                    "end": "r237_door",
                     "bidirectional": True
                 },
                 {
@@ -741,14 +741,14 @@ FLOOR2_DATA_V2 = {
                     "end": "east_office_hall_mid",
                     "bidirectional": True
                 },
+                # {
+                #     "start": "r237_door",
+                #     "end": "r237_door",
+                #     "bidirectional": True
+                # },
                 {
                     "start": "r237_door",
-                    "end": "r237_door",
-                    "bidirectional": True
-                },
-                {
-                    "start": "r237_door",
-                    "end": "east_inner_south",
+                    "end": "southeast_corner",
                     "bidirectional": True
                 },
                 {
@@ -771,26 +771,26 @@ FLOOR2_DATA_V2 = {
                     "end": "r241a_door",
                     "bidirectional": True
                 },
-                {
-                    "start": "staircase_main_2S01",
-                    "end": "stair_west_corner",
-                    "bidirectional": True
-                },
-                {
-                    "start": "staircase_main_2S01",
-                    "end": "stair_east_corner",
-                    "bidirectional": True
-                },
+                # {
+                #     "start": "staircase_main_2S01",
+                #     "end": "stair_west_corner",
+                #     "bidirectional": True
+                # },
+                # {
+                #     "start": "staircase_main_2S01",
+                #     "end": "stair_east_corner",
+                #     "bidirectional": True
+                # },
                 {
                     "start": "west_cross_south",
                     "end": "southwest_corner",
                     "bidirectional": True
                 },
-                {
-                    "start": "r225_door",
-                    "end": "r237_door",
-                    "bidirectional": True
-                }
+                # {
+                #     "start": "r225_door",
+                #     "end": "r237_door",
+                #     "bidirectional": True
+                # }
             ],
             "landmarks": [
                 {
@@ -999,7 +999,7 @@ FLOOR2_DATA_V2 = {
                 {
                     "name": "Room 237",
                     "x_feet": 68.6,
-                    "y_feet": 9,
+                    "y_feet": 14,
                     "nearest_node": "r237_door",
                     "bearing": "East"
                 },
