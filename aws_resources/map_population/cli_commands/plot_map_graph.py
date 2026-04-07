@@ -6,6 +6,8 @@ Coordinates are transformed so plot-up is true north.
 """
 
 import argparse
+import json
+import math
 import ssl
 from pathlib import Path
 from typing import Dict, List
@@ -16,6 +18,23 @@ from dotenv import load_dotenv
 from populate_floor_data import get_db_secret
 
 load_dotenv()
+
+
+def _distance_point_to_segment(px, py, ax, ay, bx, by):
+    abx = bx - ax
+    aby = by - ay
+    ab2 = abx * abx + aby * aby
+    if ab2 == 0:
+        return math.hypot(px - ax, py - ay), 0.0, ax, ay
+    t = ((px - ax) * abx + (py - ay) * aby) / ab2
+    t = max(0.0, min(1.0, t))
+    cx = ax + t * abx
+    cy = ay + t * aby
+    return math.hypot(px - cx, py - cy), t, cx, cy
+
+
+def _format_record(title, record):
+    return f"{title}\n" + json.dumps(record, indent=2, sort_keys=True, default=str)
 
 
 def _connect():
@@ -52,7 +71,7 @@ def _resolve_floor_id(cursor, building_id: str, floor_number: int) -> int:
 def _fetch_nodes(cursor, floor_id: int) -> Dict[str, dict]:
     cursor.execute(
         """
-        SELECT NodeIDString, CoordinateX, CoordinateY, NodeType
+        SELECT NodeIDString, CoordinateX, CoordinateY, NodeType, NodeMeta
         FROM MapNodes
         WHERE FloorID = %s
         ORDER BY NodeIDString
@@ -62,18 +81,20 @@ def _fetch_nodes(cursor, floor_id: int) -> Dict[str, dict]:
     rows = cursor.fetchall()
     return {
         str(node_id): {
+            "node_id": str(node_id),
             "x": float(x),
             "y": float(y),
             "type": str(node_type or ""),
+            "node_meta": node_meta,
         }
-        for node_id, x, y, node_type in rows
+        for node_id, x, y, node_type, node_meta in rows
     }
 
 
 def _fetch_edges(cursor, floor_id: int) -> List[dict]:
     cursor.execute(
         """
-        SELECT StartNodeID, EndNodeID, Bearing, IsBidirectional
+        SELECT EdgeID, StartNodeID, EndNodeID, DistanceMeters, Bearing, IsBidirectional
         FROM MapEdges
         WHERE FloorID = %s
         ORDER BY EdgeID
@@ -82,11 +103,13 @@ def _fetch_edges(cursor, floor_id: int) -> List[dict]:
     )
     rows = cursor.fetchall()
     edges: List[dict] = []
-    for start_id, end_id, bearing, bidir in rows:
+    for edge_id, start_id, end_id, distance_m, bearing, bidir in rows:
         edges.append(
             {
+                "edge_id": int(edge_id),
                 "start": str(start_id),
                 "end": str(end_id),
+                "distance_meters": None if distance_m is None else float(distance_m),
                 "bearing": None if bearing is None else float(bearing),
                 "bidirectional": bool(bidir),
             }
@@ -97,7 +120,7 @@ def _fetch_edges(cursor, floor_id: int) -> List[dict]:
 def _fetch_landmarks(cursor, floor_id: int) -> List[dict]:
     cursor.execute(
         """
-        SELECT Name, MapCoordinateX, MapCoordinateY
+        SELECT LandmarkID, Name, NearestNodeID, DistanceToNode, BearingFromNode, MapCoordinateX, MapCoordinateY
         FROM Landmarks
         WHERE FloorID = %s
         ORDER BY LandmarkID
@@ -106,12 +129,16 @@ def _fetch_landmarks(cursor, floor_id: int) -> List[dict]:
     )
     rows = cursor.fetchall()
     landmarks: List[dict] = []
-    for name, x, y in rows:
+    for landmark_id, name, nearest_node_id, distance_to_node, bearing_from_node, x, y in rows:
         if x is None or y is None:
             continue
         landmarks.append(
             {
+                "landmark_id": int(landmark_id),
                 "name": str(name),
+                "nearest_node_id": None if nearest_node_id is None else str(nearest_node_id),
+                "distance_to_node": None if distance_to_node is None else float(distance_to_node),
+                "bearing_from_node": bearing_from_node,
                 "x": float(x),
                 "y": float(y),
             }
@@ -167,6 +194,7 @@ def run_from_args(args: argparse.Namespace) -> int:
         raise SystemExit("No nodes found for requested floor.")
 
     fig, ax = plt.subplots(figsize=(15, 10))
+    edge_segments: List[dict] = []
 
     for edge in edges:
         start_id = edge["start"]
@@ -176,6 +204,7 @@ def run_from_args(args: argparse.Namespace) -> int:
         x1, y1 = nodes[start_id]["x"], nodes[start_id]["y"]
         x2, y2 = nodes[end_id]["x"], nodes[end_id]["y"]
         ax.plot([x1, x2], [y1, y2], color="#2563eb", linewidth=1.8, alpha=0.8)
+        edge_segments.append({"x1": x1, "y1": y1, "x2": x2, "y2": y2, "edge": edge})
 
         if args.show_edge_bearings and edge["bearing"] is not None:
             heading = edge["bearing"]
@@ -196,12 +225,14 @@ def run_from_args(args: argparse.Namespace) -> int:
 
     x_vals = [v["x"] for v in nodes.values()]
     y_vals = [v["y"] for v in nodes.values()]
-    ax.scatter(x_vals, y_vals, color="#111827", s=24, zorder=3, label="nodes")
+    node_scatter = ax.scatter(x_vals, y_vals, color="#111827", s=24, zorder=3, label="nodes")
+    node_ids = list(nodes.keys())
 
     landmark_x = [lm["x"] for lm in landmarks]
     landmark_y = [lm["y"] for lm in landmarks]
+    landmark_scatter = None
     if landmarks:
-        ax.scatter(landmark_x, landmark_y, s=30, c="#dc2626", marker="x", zorder=4, label="landmarks")
+        landmark_scatter = ax.scatter(landmark_x, landmark_y, s=30, c="#dc2626", marker="x", zorder=4, label="landmarks")
 
     if args.show_node_labels:
         for node_id, node in nodes.items():
@@ -226,6 +257,75 @@ def run_from_args(args: argparse.Namespace) -> int:
                 fontsize=7,
                 color="#dc2626",
             )
+
+    annot = ax.annotate(
+        "",
+        xy=(0, 0),
+        xytext=(15, 15),
+        textcoords="offset points",
+        bbox={"boxstyle": "round", "fc": "w", "alpha": 0.95},
+        arrowprops={"arrowstyle": "->"},
+    )
+    annot.set_visible(False)
+
+    edge_hit_radius = 5.0
+
+    def _show_annotation(event):
+        if event.inaxes != ax or event.xdata is None or event.ydata is None:
+            return False
+
+        contains_node, node_info = node_scatter.contains(event)
+        node_inds = node_info.get("ind", [])
+        if contains_node and len(node_inds) > 0:
+            idx = int(node_inds[0])
+            node_id = node_ids[idx]
+            rec = nodes[node_id]
+            annot.xy = (rec["x"], rec["y"])
+            annot.set_text(_format_record("Node", rec))
+            annot.set_visible(True)
+            return True
+
+        if landmark_scatter is not None:
+            contains_landmark, landmark_info = landmark_scatter.contains(event)
+            landmark_inds = landmark_info.get("ind", [])
+            if contains_landmark and len(landmark_inds) > 0:
+                idx = int(landmark_inds[0])
+                rec = landmarks[idx]
+                annot.xy = (rec["x"], rec["y"])
+                annot.set_text(_format_record("Landmark", rec))
+                annot.set_visible(True)
+                return True
+
+        best = None
+        for seg in edge_segments:
+            d, t, cx, cy = _distance_point_to_segment(
+                event.xdata,
+                event.ydata,
+                seg["x1"],
+                seg["y1"],
+                seg["x2"],
+                seg["y2"],
+            )
+            if d <= edge_hit_radius and (best is None or d < best[0]):
+                best = (d, t, cx, cy, seg["edge"])
+        if best:
+            _, t, cx, cy, edge = best
+            edge_view = dict(edge)
+            edge_view["hover_projection_t"] = round(t, 4)
+            annot.xy = (cx, cy)
+            annot.set_text(_format_record("Edge", edge_view))
+            annot.set_visible(True)
+            return True
+
+        return False
+
+    def on_move(event):
+        shown = _show_annotation(event)
+        if not shown and annot.get_visible():
+            annot.set_visible(False)
+        fig.canvas.draw_idle()
+
+    fig.canvas.mpl_connect("motion_notify_event", on_move)
 
     ax.set_title(
         f"Deployed Map Graph: Building {args.building_id}, Floor {args.floor_number} (FloorID={floor_id})\n"
