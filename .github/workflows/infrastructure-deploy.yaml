@@ -420,7 +420,7 @@ jobs:
           AWS_REGION: us-east-1
         run: |
           echo "Running floor / map population..."
-          python cli.py populate
+          python cli.py populate --coordinate-angle-offset 51
 
   integration-tests:
     name: Run Integration Tests

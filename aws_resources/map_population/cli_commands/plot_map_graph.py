@@ -94,6 +94,31 @@ def _fetch_edges(cursor, floor_id: int) -> List[dict]:
     return edges
 
 
+def _fetch_landmarks(cursor, floor_id: int) -> List[dict]:
+    cursor.execute(
+        """
+        SELECT Name, MapCoordinateX, MapCoordinateY
+        FROM Landmarks
+        WHERE FloorID = %s
+        ORDER BY LandmarkID
+        """,
+        (floor_id,),
+    )
+    rows = cursor.fetchall()
+    landmarks: List[dict] = []
+    for name, x, y in rows:
+        if x is None or y is None:
+            continue
+        landmarks.append(
+            {
+                "name": str(name),
+                "x": float(x),
+                "y": float(y),
+            }
+        )
+    return landmarks
+
+
 def _resolve_output_path(output_arg: str | None, building_id: str, floor_number: int) -> Path:
     plots_dir = Path(__file__).resolve().parents[1] / "plots"
     if output_arg:
@@ -115,7 +140,9 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         help="Output file path. If a filename is provided, it is saved under ./plots/.",
     )
     parser.add_argument("--show-edge-bearings", action="store_true")
-    parser.add_argument("--show", action="store_true", help="Show interactive plot window")
+    parser.add_argument("--show-node-labels", action="store_true", help="Render node ID/type labels")
+    parser.add_argument("--show-landmark-labels", action="store_true", help="Render landmark name labels")
+    parser.add_argument("--no-show", action="store_true", help="Skip opening interactive plot window")
 
 
 def run_from_args(args: argparse.Namespace) -> int:
@@ -131,6 +158,7 @@ def run_from_args(args: argparse.Namespace) -> int:
         floor_id = _resolve_floor_id(cursor, args.building_id, args.floor_number)
         nodes = _fetch_nodes(cursor, floor_id)
         edges = _fetch_edges(cursor, floor_id)
+        landmarks = _fetch_landmarks(cursor, floor_id)
     finally:
         if conn:
             conn.close()
@@ -138,7 +166,7 @@ def run_from_args(args: argparse.Namespace) -> int:
     if not nodes:
         raise SystemExit("No nodes found for requested floor.")
 
-    fig, ax = plt.subplots(figsize=(15, 11))
+    fig, ax = plt.subplots(figsize=(15, 10))
 
     for edge in edges:
         start_id = edge["start"]
@@ -168,12 +196,36 @@ def run_from_args(args: argparse.Namespace) -> int:
 
     x_vals = [v["x"] for v in nodes.values()]
     y_vals = [v["y"] for v in nodes.values()]
-    ax.scatter(x_vals, y_vals, color="#111827", s=18, zorder=3)
+    ax.scatter(x_vals, y_vals, color="#111827", s=24, zorder=3, label="nodes")
 
-    for node_id, node in nodes.items():
-        x, y = node["x"], node["y"]
-        node_type = node.get("type", "")
-        ax.text(x + 6, y + 6, f"{node_id}\n({node_type})", fontsize=6, color="#111827")
+    landmark_x = [lm["x"] for lm in landmarks]
+    landmark_y = [lm["y"] for lm in landmarks]
+    if landmarks:
+        ax.scatter(landmark_x, landmark_y, s=30, c="#dc2626", marker="x", zorder=4, label="landmarks")
+
+    if args.show_node_labels:
+        for node_id, node in nodes.items():
+            x, y = node["x"], node["y"]
+            node_type = node.get("type", "")
+            ax.annotate(
+                f"{node_id}\n({node_type})",
+                xy=(x, y),
+                xytext=(5, 5),
+                textcoords="offset points",
+                fontsize=6,
+                color="#111827",
+            )
+
+    if args.show_landmark_labels:
+        for landmark in landmarks:
+            ax.annotate(
+                landmark["name"],
+                xy=(landmark["x"], landmark["y"]),
+                xytext=(5, 5),
+                textcoords="offset points",
+                fontsize=7,
+                color="#dc2626",
+            )
 
     ax.set_title(
         f"Deployed Map Graph: Building {args.building_id}, Floor {args.floor_number} (FloorID={floor_id})\n"
@@ -184,13 +236,14 @@ def run_from_args(args: argparse.Namespace) -> int:
     ax.grid(True, alpha=0.2)
     ax.set_aspect("equal", adjustable="box")
     ax.margins(0.05)
+    ax.legend(loc="best")
 
     output_path = _resolve_output_path(args.output, args.building_id, args.floor_number)
     plt.tight_layout()
     plt.savefig(output_path, dpi=220)
     print(f"Saved plot: {output_path}")
 
-    if args.show:
+    if not args.no_show:
         plt.show()
     return 0
 
