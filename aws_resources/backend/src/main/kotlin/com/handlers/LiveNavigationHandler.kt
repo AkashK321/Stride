@@ -18,6 +18,7 @@ import com.services.RdsMapClient
 import com.models.NavigationInstruction
 import com.models.LiveNavigationRequest
 import com.models.SessionData
+import com.models.MapNode
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest
@@ -32,6 +33,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.max
 import kotlin.math.log
+import kotlin.math.sqrt
 import org.junit.jupiter.api.fail
 
 private val METERS_TO_FEET = 3.28084
@@ -63,31 +65,36 @@ class LiveNavigationHandler(
     private val rdsMapClient = RdsMapClient()
 
     private fun estimateUserLocation(heading: Double, distanceTraveled: Double, prevX: Double, prevY: Double, logger: LambdaLogger): Pair<Double, Double> {
-        
         var currentX = prevX 
         var currentY = prevY
 
         if (distanceTraveled > 0) {
+            // Snap to nearest 90-degree increment + offset to handle sensor drift
             val estimatedHeading = rdsMapClient.snapBearingToMap(heading, 51.0)
             val headingRad = Math.toRadians(estimatedHeading)
-            val deltaX = distanceTraveled * sin(headingRad)
-            val deltaY = distanceTraveled * cos(headingRad)
+            
+            // Convert distance traveled from feet back to map pixels
+            val distancePixels = distanceTraveled * FEET_TO_PIXELS
+            val deltaX = distancePixels * sin(headingRad)
+            val deltaY = distancePixels * cos(headingRad)
 
             currentX += deltaX
             currentY += deltaY
 
-            logger.log(String.format("PDR Update | Heading: %.1f°, Distance: %.2f ft | ΔX: %.2f, ΔY: %.2f | New PDR Location: (%.2f, %.2f)", 
-                heading, distanceTraveled, deltaX, deltaY, currentX, currentY))
+            logger.log(String.format("PDR Update | Heading: %.1f°, Snapped: %.1f°, Distance: %.2f ft | ΔX: %.2f, ΔY: %.2f | New PDR Location: (%.2f, %.2f)", 
+                heading, estimatedHeading, distanceTraveled, deltaX, deltaY, currentX, currentY))
         } else {
-            logger.log("No movement detected from PDR data. Retaining previous location.")
+            logger.log("No movement detected from PDR data. Retaining previous location ($currentX, $currentY).")
         }
         
         return Pair(currentX, currentY)
     }
 
-    private fun getNavigationProgress(nextInstruction: NavigationInstruction, currX: Double, currY: Double, logger: LambdaLogger): Double {
-        //TODO: Get distance to next node in instruction list
-        return 0.0
+    private fun getNavigationProgress(nextNode: MapNode?, currX: Double, currY: Double): Double {
+        if (nextNode == null) return 0.0
+        val dx = currX - nextNode.coordX
+        val dy = currY - nextNode.coordY
+        return sqrt(dx * dx + dy * dy) * pixel_to_feet_ratio
     }
 
     private fun fuseLocationWithLandmarks(
@@ -431,51 +438,69 @@ class LiveNavigationHandler(
             logger.log("Database error resolving closest map node: ${e.message}")
         }
 
-        val instructions: List<NavigationInstruction>
-        var pathNodesNew: List<String> = emptyList()
+        var instructions: List<NavigationInstruction>
+        var pathNodesNew = sessionData.pathNodes
         var pathRecalculated = false
+        var progress = 0.0
         try {
-            // Recalculate path if the closes node is not on the origina path
-            if (closestNodeId == "unknown" || !(sessionData.pathNodes.contains(closestNodeId) == false)) {
-                logger.log("Estimated closest node $closestNodeId is not on the original path. Recalculating path")
-                pathRecalculated = true
-                sessionData.currentStep = 0 // Reset step to 0 since we are generating a new path from the current location
-                rdsMapClient.getDbConnection().use { conn ->
-                    // 1. Resolve Landmark to Nearest Node
+            rdsMapClient.getDbConnection().use { conn ->
+                val isOffPath = closestNodeId != "unknown" && !sessionData.pathNodes.contains(closestNodeId)
+                
+                val nextNodeIndex = sessionData.currentStep + 1
+                val nextNodeId = if (nextNodeIndex < sessionData.pathNodes.size) sessionData.pathNodes[nextNodeIndex] else null
+                
+                var distToNextNode = Double.MAX_VALUE
+                if (nextNodeId != null) {
+                    val nextNode = rdsMapClient.getNode(nextNodeId, conn)
+                    distToNextNode = getNavigationProgress(nextNode, estimatedX, estimatedY)
+                }
+
+                // Threshold of 2.0 feet to advance to the next step
+                val reachedNextNode = distToNextNode <= 2.0
+
+                if (isOffPath) {
+                    logger.log("Node $closestNodeId is off path. Recalculating.")
+                    pathRecalculated = true
+                    sessionData.currentStep = 0
+                    
                     val landmark = rdsMapClient.getLandmark(sessionData.destLandmarkId.toInt(), conn)
-                        ?: throw IllegalArgumentException("Landmark not found or has no associated node.")
-
-                    val destNodeId = landmark.nearestNodeId
-
-                    // 2. Identify Building Context (to limit the graph size)
+                        ?: throw IllegalArgumentException("Landmark not found.")
                     if (buildingId == "unknown") {
-                        buildingId = rdsMapClient.getBuildingIdForNode(closestNodeId, conn)
-                            ?: throw IllegalArgumentException("Closest node does not belong to a recognized building.")
+                        buildingId = rdsMapClient.getBuildingIdForNode(closestNodeId, conn) ?: throw IllegalArgumentException("Building unknown.")
                     }
-                    // 3. Find Shortest Path
-                    pathNodesNew = rdsMapClient.calculateShortestPath(buildingId, closestNodeId, destNodeId, conn).first
-                    if (pathNodesNew.isEmpty()) {
-                        throw RuntimeException("No continuous path exists between these locations.")
-                    }
-                    logger.log("Calculated path: ${pathNodesNew.joinToString(" -> ")}")
-
-                    // 4. Transform Path into Instructions
+                    
+                    pathNodesNew = rdsMapClient.calculateShortestPath(buildingId, closestNodeId, landmark.nearestNodeId, conn).first
                     instructions = rdsMapClient.buildInstructions(conn, pathNodesNew, landmark)
-                    logger.log("Translated instructions")
-                    instructions.forEach({inst -> 
-                        logger.log("Instruction: $inst")
-                    })
-                }
-            } else {
-                logger.log("Closest node $closestNodeId is on the original path. No need to recalculate.")
-                pathNodesNew = sessionData.pathNodes.dropWhile({ it != closestNodeId }) // Get remaining path starting from closest node
-                if (pathNodesNew.size < sessionData.pathNodes.size) {
-                    sessionData.currentStep += 1 // Increment step to reflect progress along the path
-                }
-                instructions = rdsMapClient.getDbConnection().use { conn ->
+                    
+                    if (pathNodesNew.size > 1) {
+                        val newNextNode = rdsMapClient.getNode(pathNodesNew[1], conn)
+                        progress = getNavigationProgress(newNextNode, estimatedX, estimatedY)
+                    }
+
+                } else if (reachedNextNode) {
+                    logger.log("Reached next node $nextNodeId. Advancing step.")
+                    sessionData.currentStep += 1
                     val landmark = rdsMapClient.getLandmark(sessionData.destLandmarkId.toInt(), conn)
-                        ?: throw IllegalArgumentException("Landmark not found or has no associated node.")
-                    rdsMapClient.buildInstructions(conn, pathNodesNew, landmark)
+                        ?: throw IllegalArgumentException("Landmark not found.")
+                    
+                    val remainingPath = sessionData.pathNodes.drop(sessionData.currentStep)
+                    instructions = rdsMapClient.buildInstructions(conn, remainingPath, landmark)
+
+                    val newNextNodeIndex = sessionData.currentStep + 1
+                    if (newNextNodeIndex < sessionData.pathNodes.size) {
+                        val newNextNode = rdsMapClient.getNode(sessionData.pathNodes[newNextNodeIndex], conn)
+                        progress = getNavigationProgress(newNextNode, estimatedX, estimatedY)
+                    } else {
+                        progress = 0.0 // Reached final destination node
+                    }
+                } else {
+                    logger.log("Staying on path. Progress to $nextNodeId: $distToNextNode ft")
+                    progress = distToNextNode
+                    val landmark = rdsMapClient.getLandmark(sessionData.destLandmarkId.toInt(), conn)
+                        ?: throw IllegalArgumentException("Landmark not found.")
+                    
+                    val remainingPath = sessionData.pathNodes.drop(sessionData.currentStep)
+                    instructions = rdsMapClient.buildInstructions(conn, remainingPath, landmark)
                 }
             }
         } catch (e: Exception) {
@@ -493,49 +518,46 @@ class LiveNavigationHandler(
             return APIGatewayV2WebSocketResponse().apply { statusCode = 500 }
         }
 
-        // Update state in DynamoDB with new estimated location and timestamp. Set TTL for 2 hours to allow stale session cleanup.
-        val ttlSeconds = (System.currentTimeMillis() / 1000) + 7200 // 2 hour expiration
+        val logicalCurrentNodeId = if (pathNodesNew.isNotEmpty() && sessionData.currentStep < pathNodesNew.size) {
+            pathNodesNew[sessionData.currentStep]
+        } else {
+            closestNodeId // Fallback if out of bounds
+        }
+
+        // Record tracking data dynamically with a standard TTL cleanup strategy
+        val ttlSeconds = (System.currentTimeMillis() / 1000) + 7200
         sessionTableClient.putItem(mapOf(
             "session_id" to navRequest.session_id,
             "current_x" to estimatedX,
             "current_y" to estimatedY,
             "currentStep" to sessionData.currentStep,
-            "currentNodeId" to closestNodeId,
+            "currentNodeId" to logicalCurrentNodeId,
             "destLandmarkId" to sessionData.destLandmarkId,
-            "path" to (pathNodesNew.takeIf { 
-                            it.isNotEmpty() 
-                        }?.joinToString(",") ?: sessionData.pathNodes.joinToString(",")),
+            "path" to pathNodesNew.joinToString(","),
             "pathRecalculated" to pathRecalculated,
             "last_updated_ms" to navRequest.timestamp_ms,
             "ttl" to ttlSeconds
         ))
 
+        // Return actual location based on user movement, not closest map node
         val responsePayload = mapOf(
             "type" to "navigation_update",
             "session_id" to navRequest.session_id,
             "current_step" to sessionData.currentStep,
             "remaining_instructions" to instructions,
+            "progress" to progress, // NEW PROGRESS FIELD ADDED HERE
             "request_id" to navRequest.request_id,
-            "message" to "Localization: PDR + landmark fusion; closest map node returned in estimated_position.",
+            "message" to "Localization: PDR + landmark fusion executed.",
             "estimated_position" to mapOf(
                 "node_id" to closestNodeId,
                 "coordinates" to mapOf(
-                    "x_feet" to estimatedX*pixel_to_feet_ratio,
-                    "y_feet" to estimatedY*pixel_to_feet_ratio
+                    "x_feet" to estimatedX * pixel_to_feet_ratio,
+                    "y_feet" to estimatedY * pixel_to_feet_ratio
                 )
             )
         )
 
-        postJsonToConnection(
-            apiClient = apiClient,
-            connectionId = connectionId,
-            payload = responsePayload,
-            logger = logger
-        )
-
-        return APIGatewayV2WebSocketResponse().apply {
-            statusCode = 200
-            body = "OK"
-        }
+        postJsonToConnection(apiClient, connectionId, responsePayload, logger)
+        return APIGatewayV2WebSocketResponse().apply { statusCode = 200 }
     }
 }
