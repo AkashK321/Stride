@@ -20,10 +20,14 @@ logger = logging.getLogger(__name__)
 
 # Import your floor data
 try:
-    from floor_data.floor2 import FLOOR2_DATA
+    from floor_data.floor2_v2 import FLOOR2_DATA_V2 as FLOOR_DATA
 except ImportError:
-    logger.error("❌ Could not import floor data. Make sure floor_data/floor2.py exists!")
-    sys.exit(1)
+    try:
+        from floor_data.floor2 import FLOOR2_DATA as FLOOR_DATA
+        logger.warning("⚠️ floor2_v2.py not found. Falling back to legacy floor2.py data.")
+    except ImportError:
+        logger.error("❌ Could not import floor data. Make sure floor_data/floor2_v2.py or floor_data/floor2.py exists!")
+        sys.exit(1)
 
 # Import populate function
 from populate_floor_data import populate_database, get_db_secret
@@ -56,7 +60,7 @@ def main():
         
         # Populate with Floor 2 data
         logger.info("📊 Populating Floor 2 data...")
-        populate_database(conn, FLOOR2_DATA)
+        populate_database(conn, FLOOR_DATA)
         logger.info("✓ Successfully populated Floor 2 data!")
         
         # Print summary

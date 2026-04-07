@@ -1,5 +1,9 @@
 import pytest
-from floor_data.floor2 import FLOOR2_DATA
+
+try:
+    from floor_data.floor2_v2 import FLOOR2_DATA_V2 as FLOOR2_DATA
+except ImportError:
+    from floor_data.floor2 import FLOOR2_DATA
 
 
 def test_building_has_required_fields():
@@ -119,3 +123,22 @@ def test_coordinates_are_numeric():
                 f"Node '{node['id']}' x_feet is not numeric"
             assert isinstance(node['y_feet'], (int, float)), \
                 f"Node '{node['id']}' y_feet is not numeric"
+
+
+def test_door_nodes_have_expected_node_meta_shape_when_present():
+    """Door nodes in v2 should include canonical side metadata."""
+    for floor in FLOOR2_DATA['floors']:
+        for node in floor['nodes']:
+            if node.get('type') != 'Door':
+                continue
+            node_meta = node.get('node_meta')
+            if node_meta is None:
+                continue
+            assert 'door_id' in node_meta, f"Door node '{node['id']}' missing node_meta.door_id"
+            assert 'side_canonical' in node_meta, f"Door node '{node['id']}' missing node_meta.side_canonical"
+            assert node_meta['side_canonical'] in {'left', 'right'}, \
+                f"Door node '{node['id']}' has invalid side_canonical '{node_meta['side_canonical']}'"
+            assert 'canonical_edge_start' in node_meta, \
+                f"Door node '{node['id']}' missing node_meta.canonical_edge_start"
+            assert 'canonical_edge_end' in node_meta, \
+                f"Door node '{node['id']}' missing node_meta.canonical_edge_end"
