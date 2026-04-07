@@ -78,7 +78,7 @@ cdk -a "python3 app.py" deploy StrideSharedStack "$STACK_NAME" --require-approva
 - **Infrastructure Deploy** (`.github/workflows/infrastructure-deploy.yaml`), when run after a successful backend build:
   - Deploys **`StrideSharedStack` and the branch stack** in one `cdk deploy` (shared RDS secret and branch API outputs are both written to `cdk-outputs.json`).
   - Runs shared **RDS schema** and **floor/map population** using `RdsSecretArn` from the shared stack (idempotent).
-- **Object Config Seed** (`.github/workflows/object-config-seed.yaml`): manual workflow that seeds COCO class metadata into the branch DynamoDB config table.
+- **Object Config Seed** (`.github/workflows/object-config-seed.yaml`): dedicated workflow for COCO class metadata seeding into DynamoDB; provide a table directly or resolve it from stack outputs.
 - **Shared Stack Deploy** (manual `workflow_dispatch`): optional path to deploy or repair **only** `StrideSharedStack` and initialize/populate the shared DB—see that workflow for one-off maintenance.
 - **Cleanup** workflow: deletes branch stacks after merge; **does not** delete `StrideSharedStack`.
 
@@ -100,6 +100,13 @@ Then run map seeding separately through the unified CLI:
 ```bash
 cd aws_resources/map_population
 python cli.py populate
+```
+
+Run COCO config seeding through the dedicated tool/workflow, separately from map seeding:
+
+```bash
+cd aws_resources/object_config_seed
+TABLE_NAME=<coco-config-table-name> python populate_obj_ddb.py
 ```
 
 ### Map tooling commands
