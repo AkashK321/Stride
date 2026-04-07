@@ -9,6 +9,7 @@ Examples:
 """
 
 import argparse
+import collections
 import importlib
 import json
 import math
@@ -33,6 +34,28 @@ def _format_record(title, record):
     return f"{title}\n" + json.dumps(record, indent=2, sort_keys=True)
 
 
+def _spread_overlapping_points(x_vals, y_vals, radius=1.1):
+    """Return display coordinates that fan out exact overlaps."""
+    groups = collections.defaultdict(list)
+    for idx, (x_val, y_val) in enumerate(zip(x_vals, y_vals)):
+        groups[(x_val, y_val)].append(idx)
+
+    spread_x = list(x_vals)
+    spread_y = list(y_vals)
+    overlap_groups = {}
+
+    for (base_x, base_y), idxs in groups.items():
+        if len(idxs) <= 1:
+            continue
+        overlap_groups[(base_x, base_y)] = len(idxs)
+        for order, idx in enumerate(idxs):
+            theta = (2 * math.pi * order) / len(idxs)
+            spread_x[idx] = base_x + radius * math.cos(theta)
+            spread_y[idx] = base_y + radius * math.sin(theta)
+
+    return spread_x, spread_y, overlap_groups
+
+
 def plot_floor(data_obj, floor_number, compare_data_obj=None):
     floor = next((f for f in data_obj["floors"] if f["floor_number"] == floor_number), None)
     if floor is None:
@@ -52,7 +75,8 @@ def plot_floor(data_obj, floor_number, compare_data_obj=None):
 
     node_x = [n["x_feet"] for n in nodes]
     node_y = [n["y_feet"] for n in nodes]
-    node_scatter = ax.scatter(node_x, node_y, s=24, c="#111827", label="nodes", zorder=3)
+    plot_x, plot_y, _ = _spread_overlapping_points(node_x, node_y)
+    node_scatter = ax.scatter(plot_x, plot_y, s=24, c="#111827", label="nodes", zorder=3)
 
     landmark_x = [l["x_feet"] for l in landmarks]
     landmark_y = [l["y_feet"] for l in landmarks]
@@ -105,7 +129,7 @@ def plot_floor(data_obj, floor_number, compare_data_obj=None):
         if contains_node and len(node_inds) > 0:
             idx = int(node_inds[0])
             rec = nodes[idx]
-            annot.xy = (rec["x_feet"], rec["y_feet"])
+            annot.xy = (plot_x[idx], plot_y[idx])
             annot.set_text(_format_record("Node", rec))
             annot.set_visible(True)
             return True
