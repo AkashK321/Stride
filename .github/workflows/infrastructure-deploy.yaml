@@ -6,7 +6,8 @@
 #   Deploys AWS infrastructure: StrideSharedStack (shared RDS) plus the branch
 #   CloudFormation stack (Lambdas from backend-build JAR, API Gateway, DynamoDB, etc.).
 #   After deploy, reads shared RdsSecretArn, initializes the shared DB schema, and
-#   runs floor/map population. COCO object-config seeding is handled separately.
+#   runs canonical map validation + population. COCO object-config seeding is
+#   handled separately.
 #
 # TRIGGERS:
 #   1. Called by backend-build (workflow_call):
@@ -407,7 +408,14 @@ jobs:
           echo "Running RDS schema initialization script..."
           python populate_rds.py
 
-      # Step 15: Populate shared RDS floor / map data (idempotent)
+      # Step 15: Validate map definitions before population
+      - name: Validate map definitions
+        working-directory: aws_resources/map_population
+        run: |
+          echo "Running map validation..."
+          python cli.py validate
+
+      # Step 16: Populate shared RDS floor / map data (idempotent)
       - name: Populate shared RDS floor data
         working-directory: aws_resources/map_population
         env:

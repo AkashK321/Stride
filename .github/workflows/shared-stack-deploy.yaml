@@ -1,5 +1,6 @@
-# Manual repair: deploy StrideSharedStack only and run the same RDS init + floor
-# population as Infrastructure Deploy (populate_rds.py, cli.py populate).
+# Manual repair: deploy StrideSharedStack only and run the same RDS init +
+# canonical map validation/population as Infrastructure Deploy
+# (populate_rds.py, cli.py validate, cli.py populate).
 # COCO object-config seeding is intentionally handled in a separate workflow.
 # Routine branch deploys already run shared + branch + population via
 # .github/workflows/infrastructure-deploy.yaml.
@@ -130,6 +131,11 @@ jobs:
         run: |
           python populate_rds.py
 
+      - name: Validate map definitions
+        working-directory: aws_resources/map_population
+        run: |
+          python cli.py validate
+
       - name: Populate shared RDS floor data
         working-directory: aws_resources/map_population
         env:
@@ -149,6 +155,7 @@ jobs:
             echo "- **Stack**: \`StrideSharedStack\`"
             echo "- **Region**: \`us-east-1\`"
             echo "- **Schema init**: \`populate_rds.py\`"
+            echo "- **Map validation**: \`cli.py validate\`"
             echo "- **Floor data population**: \`cli.py populate\`"
             echo "- **Time**: \`${DEPLOY_TIME}\`"
           } >> $GITHUB_STEP_SUMMARY
