@@ -93,7 +93,7 @@ def main():
                 BuildingID VARCHAR(50) REFERENCES Buildings(BuildingID),
                 CoordinateX INT NOT NULL,
                 CoordinateY INT NOT NULL,
-                NodeType VARCHAR(20) CHECK (NodeType IN ('Intersection', 'Corner', 'Elevator', 'Stairwell', 'Door')),
+                NodeType VARCHAR(32) CHECK (NodeType IN ('Intersection', 'Corner', 'Elevator', 'Stairwell', 'Door', 'HallwayPoint')),
                 NodeMeta JSONB
             );
             """,
@@ -119,7 +119,8 @@ def main():
                 Name VARCHAR(50) NOT NULL, -- e.g. "Room 205" or "Men's Restroom"
                 NearestNodeID VARCHAR(255) REFERENCES MapNodes(NodeIDString),
                 DistanceToNode DOUBLE PRECISION,
-                BearingFromNode VARCHAR(10) CHECK (BearingFromNode IN ('North', 'South', 'East', 'West')),
+                -- Legacy/optional free-form field; no cardinal CHECK constraint.
+                BearingFromNode VARCHAR(32),
                 MapCoordinateX INT,
                 MapCoordinateY INT
             );

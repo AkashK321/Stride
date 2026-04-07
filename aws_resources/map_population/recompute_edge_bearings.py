@@ -15,7 +15,6 @@ import pg8000
 from dotenv import load_dotenv
 
 from populate_floor_data import (
-    align_bearing_to_true_north,
     calculate_bearing,
     get_db_secret,
 )
@@ -68,8 +67,7 @@ def _fetch_edges(cursor, floor_id=None):
 
 def _recompute_bearing(row):
     _, _, _, _, _, start_x, start_y, end_x, end_y = row
-    raw = calculate_bearing(start_x, start_y, end_x, end_y)
-    return align_bearing_to_true_north(raw)
+    return calculate_bearing(start_x, start_y, end_x, end_y)
 
 
 def main():
