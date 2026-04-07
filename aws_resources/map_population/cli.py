@@ -14,6 +14,8 @@ from cli_commands.plot_floor_data_v2 import add_arguments as add_plot_local_args
 from cli_commands.plot_floor_data_v2 import run_from_args as run_plot_local
 from cli_commands.plot_map_graph import add_arguments as add_plot_db_args
 from cli_commands.plot_map_graph import run_from_args as run_plot_db
+from cli_commands.print_tables import add_arguments as add_print_tables_args
+from cli_commands.print_tables import run_from_args as run_print_tables
 from cli_commands.recompute_edge_bearings import add_arguments as add_recompute_args
 from cli_commands.recompute_edge_bearings import run_from_args as run_recompute
 from cli_commands.run_population import main as run_population_main
@@ -65,6 +67,13 @@ def main() -> int:
     clear_db = subparsers.add_parser("clear-db", help="Clear deployed map data tables")
     add_clear_db_args(clear_db)
     clear_db.set_defaults(handler=run_clear_db)
+
+    print_tables = subparsers.add_parser(
+        "print-tables",
+        help="Print every table and rows from deployed map DB",
+    )
+    add_print_tables_args(print_tables)
+    print_tables.set_defaults(handler=run_print_tables)
 
     args = parser.parse_args()
     handler = getattr(args, "handler", None)

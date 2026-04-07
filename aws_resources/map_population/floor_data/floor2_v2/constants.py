@@ -32,14 +32,12 @@ class DoorRef:
     id: str
     label: str
     side_by_bearing: list[DoorSideByBearing]
-    offset_feet: float = 0.0
 
     def asdict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "label": self.label,
             "side_by_bearing": [entry.asdict() for entry in self.side_by_bearing],
-            "offset_feet": self.offset_feet,
         }
 
 

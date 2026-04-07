@@ -66,6 +66,7 @@ Set required env before DB operations:
    ```bash
    python cli.py audit-bearings --all
    python cli.py recompute-bearings
+   python cli.py print-tables --limit 25
    ```
 
 8. Optional destructive data clear (keeps schema, removes map data rows):
