@@ -126,6 +126,7 @@ jobs:
         env:
           DB_SECRET_ARN: ${{ steps.shared-outputs.outputs.db_secret_arn }}
           AWS_REGION: us-east-1
+          SCHEMA_INIT_ALLOW_DESTRUCTIVE_RESET: "true"
         run: |
           python populate_rds.py
 

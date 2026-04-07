@@ -82,6 +82,26 @@ cdk -a "python3 app.py" deploy StrideSharedStack "$STACK_NAME" --require-approva
 - **Shared Stack Deploy** (manual `workflow_dispatch`): optional path to deploy or repair **only** `StrideSharedStack` and initialize/populate the shared DB—see that workflow for one-off maintenance.
 - **Cleanup** workflow: deletes branch stacks after merge; **does not** delete `StrideSharedStack`.
 
+## Schema vs map tooling boundary
+
+- `schema_initializer` owns relational DDL only (table/index creation and schema reset safety controls).
+- `map_population` owns map-definition validation plus RDS map seed data writes (`Buildings`, `Floors`, `MapNodes`, `MapEdges`, `Landmarks`).
+- `object_config_seed` owns DynamoDB COCO class config seeding and is intentionally separate from map population.
+
+The current schema path is still drop/recreate. To prevent accidental destructive runs, schema init requires explicit opt-in:
+
+```bash
+cd aws_resources/schema_initializer
+SCHEMA_INIT_ALLOW_DESTRUCTIVE_RESET=true python populate_rds.py
+```
+
+Then run map seeding separately through the unified CLI:
+
+```bash
+cd aws_resources/map_population
+python cli.py populate
+```
+
 ### Map tooling commands
 
 Use the unified CLI:
