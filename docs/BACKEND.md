@@ -15,7 +15,7 @@ To install python dependencies, run:
 ```bash
 pip install -r requirements.txt
 ```
-Note: Make sure to install the schema_intializer requirements to the schema_initializer directory if you are trying to run a manual aws deployment.
+Note: Make sure to install the `schema_initializer` requirements into that directory if you are trying to run a manual AWS deployment.
 
 Note: gradle -version should show something like this:  
 Launcher JVM:  21.0.9 (Microsoft 21.0.9+10-LTS)  
@@ -28,9 +28,22 @@ cdk deploy
 ```
 
 # Database Specific Setup
-Be careful when making changes to the database schema, the current initialization script will clean up the old database completely if any updates are made.
-The schema_initializer lambda is triggered on creation of the lambda and on update. You can also manually trigger it through the test window within the AWS Lambda console.
-To verify the databse schema after making any changes, run the following command from the aws_resources/schema_initializer directory:
+Be careful when making changes to the database schema: the current initializer still uses a drop/recreate flow.
+`schema_initializer` is responsible for DDL only, while `map_population` is responsible for map data validation and seeding.
+
+Run schema initialization manually from `aws_resources/schema_initializer` with explicit destructive opt-in:
+
+```bash
+SCHEMA_INIT_ALLOW_DESTRUCTIVE_RESET=true python populate_rds.py
+```
+
+Then run map seeding from `aws_resources/map_population`:
+
+```bash
+python cli.py populate
+```
+
+To verify the database schema after making any changes, run the following command from `aws_resources/schema_initializer`:
 ```bash
 python verify_db_init.py
 ```

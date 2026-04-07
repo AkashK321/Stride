@@ -402,6 +402,7 @@ jobs:
         env:
           DB_SECRET_ARN: ${{ steps.stack-outputs.outputs.stride_db_secret_arn }}
           AWS_REGION: us-east-1
+          SCHEMA_INIT_ALLOW_DESTRUCTIVE_RESET: "true"
         run: |
           echo "Running RDS schema initialization script..."
           python populate_rds.py

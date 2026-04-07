@@ -8,9 +8,12 @@ import json
 import pg8000
 import boto3
 import logging
+import sys
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+DESTRUCTIVE_RESET_FLAG = "SCHEMA_INIT_ALLOW_DESTRUCTIVE_RESET"
 
 def get_db_secret():
     """Retrieves database credentials from AWS Secrets Manager."""
@@ -23,8 +26,26 @@ def get_db_secret():
     response = client.get_secret_value(SecretId=secret_arn)
     return json.loads(response['SecretString'])
 
+
+def ensure_destructive_reset_is_explicit():
+    """
+    Guardrail: schema init currently drops and recreates map tables.
+    Require explicit operator opt-in to avoid accidental data loss.
+    """
+    allow_reset = os.environ.get(DESTRUCTIVE_RESET_FLAG, "").strip().lower()
+    if allow_reset not in ("1", "true", "yes"):
+        logger.error(
+            "Refusing destructive schema reset. Set %s=true to continue.",
+            DESTRUCTIVE_RESET_FLAG,
+        )
+        logger.error(
+            "This tool owns DDL only. Run map_population/cli.py populate separately for map seed data."
+        )
+        sys.exit(1)
+
 def main():
     print("Starting Schema Initialization...")
+    ensure_destructive_reset_is_explicit()
     
     # 1. Get Credentials
     creds = get_db_secret()
@@ -48,7 +69,8 @@ def main():
         
         # ... inside handler() ...
         
-        # Cleanup existing tables if they exist
+        # Cleanup existing tables if they exist.
+        # NOTE: This is intentionally destructive while migration tooling is pending.
         cleanup_commands = [
             "DROP TABLE IF EXISTS Rooms CASCADE;", 
             "DROP TABLE IF EXISTS Landmarks CASCADE;", # Drops the conflict source
