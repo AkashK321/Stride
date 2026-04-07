@@ -8,7 +8,7 @@ from .constants import DoorRef, DoorSideByBearing, HallwayPointNode, Intersectio
 
 NODES = [
     HallwayPointNode(
-        id="n_west_116",
+        id="room_206_207",
         x_feet=-83.5,
         y_feet=116.0,
         doors=[
@@ -29,7 +29,7 @@ NODES = [
         ],
     ).asdict(),
     HallwayPointNode(
-        id="n_west_106",
+        id="room_208_209",
         x_feet=-83.5,
         y_feet=106.0,
         doors=[

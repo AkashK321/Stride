@@ -7,14 +7,13 @@ from populate_floor_data import (
     calculate_bearing,
     calculate_distance,
     build_node_meta_for_storage,
-    feet_to_pixels,
+    rotate_coords_for_storage,
 )
 
-def test_feet_to_pixels():
-    """Test coordinate conversion"""
-    assert feet_to_pixels(0) == 0
-    assert feet_to_pixels(10) == 100
-    assert feet_to_pixels(5.5) == 55
+def test_rotate_coords_for_storage_zero_angle():
+    """0-degree offset should preserve coordinates."""
+    assert rotate_coords_for_storage(0, 0, 0) == (0, 0)
+    assert rotate_coords_for_storage(10, 5, 0) == (10, 5)
 
 
 def test_calculate_bearing():
@@ -35,11 +34,11 @@ def test_calculate_bearing():
 def test_calculate_distance():
     """Test distance calculation"""
     # 10 feet horizontal = 3.048 meters
-    distance = calculate_distance(0, 0, 100, 0)  # 100 pixels = 10 feet
+    distance = calculate_distance(0, 0, 10, 0)
     assert distance == pytest.approx(3.048, abs=0.01)
     
-    # Pythagorean: 3-4-5 triangle (30-40-50 pixels = 3-4-5 feet)
-    distance = calculate_distance(0, 0, 30, 40)
+    # Pythagorean: 3-4-5 triangle in feet
+    distance = calculate_distance(0, 0, 3, 4)
     expected = 5 * 0.3048  # 5 feet in meters
     assert distance == pytest.approx(expected, abs=0.01)
     

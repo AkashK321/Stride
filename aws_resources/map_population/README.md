@@ -27,6 +27,7 @@ Set required env before DB operations:
 - `DB_SECRET_ARN` (Secrets Manager ARN for shared RDS credentials)
 - `AWS_REGION` (usually `us-east-1`)
 - AWS credentials in your shell/profile (`~/.aws/credentials` or role)
+- `COORDINATE_ANGLE_OFFSET_DEG` (optional; defaults to `51`, applied during upload)
 
 ## Iteration loop (authoring map data)
 
@@ -90,5 +91,6 @@ Default plot files are saved under `aws_resources/map_population/plots/`:
 ## Notes
 
 - `populate_rds.py` is intentionally destructive in the current phase; never run it against an environment you do not intend to reset.
+- Upload now applies only the angle-offset coordinate transform (no mirroring, no feet-to-pixels transform).
 - COCO object config seeding is separate (`aws_resources/object_config_seed`) and not part of map population.
 
