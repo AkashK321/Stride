@@ -117,10 +117,10 @@ Use the unified CLI:
 cd aws_resources/map_population
 python cli.py validate
 python cli.py populate
-python cli.py plot-local -- --module floor_data.floor2_v2 --var FLOOR2_DATA_V2 --floor-number 2
-python cli.py plot-db -- --floor-number 2 --building-id B01 --show-edge-bearings
-python cli.py audit-bearings -- --all
-python cli.py recompute-bearings -- --dry-run
+python cli.py plot-local --module floor_data.floor2_v2 --var FLOOR2_DATA_V2 --floor-number 2
+python cli.py plot-db --floor-number 2 --building-id B01 --show-edge-bearings
+python cli.py audit-bearings --all
+python cli.py recompute-bearings
 ```
 
 ## Verify deployments

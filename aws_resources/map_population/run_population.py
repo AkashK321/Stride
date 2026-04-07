@@ -3,7 +3,6 @@ Main script to populate the database with floor data.
 Run this after schema initialization is complete.
 """
 
-import sys
 import ssl
 import logging
 
@@ -24,13 +23,13 @@ from populate_floor_data import populate_database, get_db_secret
 import pg8000
 
 
-def main():
+def main() -> int:
     """Main entry point for database population."""
-    
+
     logger.info("🚀 Starting database population...")
-    
+
     conn = None
-    
+
     try:
         # Connect to database
         logger.info("📡 Connecting to database...")
@@ -52,7 +51,7 @@ def main():
         all_buildings_data = get_all_buildings_data()
         if not all_buildings_data:
             logger.error("❌ No map datasets registered. Update floor_data/registry.py")
-            sys.exit(1)
+            return 1
         for building_data in all_buildings_data:
             logger.info("📊 Populating %s...", building_data.get("building_name", "<unknown building>"))
             populate_database(conn, building_data)
@@ -90,15 +89,16 @@ def main():
         logger.error(f"❌ Error during population: {e}")
         import traceback
         traceback.print_exc()
-        sys.exit(1)
-        
+        return 1
+
     finally:
         if conn:
             conn.close()
             logger.info("✓ Database connection closed")
-    
+
     logger.info("\n🎉 Population completed successfully!")
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())
