@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from populate_floor_data import (
     calculate_bearing,
     calculate_distance,
+    build_node_meta_for_storage,
     feet_to_pixels,
 )
 
@@ -53,4 +54,33 @@ def test_calculate_bearing_edge_cases():
     
     # Diagonal Southeast  
     assert calculate_bearing(0, 0, 10, 10) == pytest.approx(135, abs=0.1)
+
+
+def test_build_node_meta_for_storage_from_semantic_fields():
+    """Top-level doors/intersections should be persisted in NodeMeta."""
+    node = {
+        "id": "n1",
+        "x_feet": 0,
+        "y_feet": 0,
+        "type": "HallwayPoint",
+        "doors": [{"id": "room_101"}],
+        "intersections": [{"id": "x1", "kind": "tee"}],
+    }
+    assert build_node_meta_for_storage(node) == {
+        "doors": [{"id": "room_101"}],
+        "intersections": [{"id": "x1", "kind": "tee"}],
+    }
+
+
+def test_build_node_meta_for_storage_prefers_explicit_node_meta():
+    """Legacy explicit node_meta should continue to pass through unchanged."""
+    node = {
+        "id": "n1",
+        "x_feet": 0,
+        "y_feet": 0,
+        "type": "HallwayPoint",
+        "doors": [{"id": "room_101"}],
+        "node_meta": {"custom": "value"},
+    }
+    assert build_node_meta_for_storage(node) == {"custom": "value"}
 

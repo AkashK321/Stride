@@ -78,30 +78,22 @@ cdk -a "python3 app.py" deploy StrideSharedStack "$STACK_NAME" --require-approva
 - **Infrastructure Deploy** (`.github/workflows/infrastructure-deploy.yaml`), when run after a successful backend build:
   - Deploys **`StrideSharedStack` and the branch stack** in one `cdk deploy` (shared RDS secret and branch API outputs are both written to `cdk-outputs.json`).
   - Runs shared **RDS schema** and **floor/map population** using `RdsSecretArn` from the shared stack (idempotent).
+- **Object Config Seed** (`.github/workflows/object-config-seed.yaml`): manual workflow that seeds COCO class metadata into the branch DynamoDB config table.
 - **Shared Stack Deploy** (manual `workflow_dispatch`): optional path to deploy or repair **only** `StrideSharedStack` and initialize/populate the shared DB—see that workflow for one-off maintenance.
 - **Cleanup** workflow: deletes branch stacks after merge; **does not** delete `StrideSharedStack`.
 
-### Bearing alignment calibration (Issue 171)
+### Map tooling commands
 
-`aws_resources/data_population/populate_floor_data.py` writes true-compass `MapEdges.Bearing` values using:
-
-- `TRUE_NORTH_OFFSET_DEGREES` (default `51`)
-- `BEARING_HORIZONTAL_FLIP` (default `true`)
-- `BEARING_HORIZONTAL_MODE` (`bands` or `cones`, default `bands`)
-
-CI workflows set these variables on the floor-data population step so production values are reproducible. For existing deployed data, use:
+Use the unified CLI:
 
 ```bash
-cd aws_resources/data_population
-python recompute_edge_bearings.py --dry-run
-python recompute_edge_bearings.py --apply
-```
-
-For on-site validation checklist generation:
-
-```bash
-cd aws_resources/data_population
-python list_edges_for_bearing_check.py --all
+cd aws_resources/map_population
+python cli.py validate
+python cli.py populate
+python cli.py plot-local -- --module floor_data.floor2_v2 --var FLOOR2_DATA_V2 --floor-number 2
+python cli.py plot-db -- --floor-number 2 --building-id B01 --show-edge-bearings
+python cli.py audit-bearings -- --all
+python cli.py recompute-bearings -- --dry-run
 ```
 
 ## Verify deployments

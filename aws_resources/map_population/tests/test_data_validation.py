@@ -1,9 +1,6 @@
 import pytest
 
-try:
-    from floor_data.floor2_v2 import FLOOR2_DATA_V2 as FLOOR2_DATA
-except ImportError:
-    from floor_data.floor2 import FLOOR2_DATA
+from floor_data.floor2_v2 import FLOOR2_DATA_V2 as FLOOR2_DATA
 
 
 def test_building_has_required_fields():
@@ -79,7 +76,7 @@ def test_all_nodes_have_required_fields():
 
 def test_all_edges_have_required_fields():
     """Test that all edges have required fields"""
-    required = ['start', 'end', 'bidirectional']
+    required = ['start', 'end', 'bidirectional', 'bearing_deg', 'rev_bearing_deg']
     for floor in FLOOR2_DATA['floors']:
         for edge in floor['edges']:
             for field in required:
@@ -89,7 +86,7 @@ def test_all_edges_have_required_fields():
 
 def test_all_landmarks_have_required_fields():
     """Test that all landmarks have required fields"""
-    required = ['name', 'x_feet', 'y_feet', 'nearest_node', 'bearing']
+    required = ['name', 'x_feet', 'y_feet', 'nearest_node', 'door_id']
     for floor in FLOOR2_DATA['floors']:
         for landmark in floor['landmarks']:
             for field in required:
@@ -99,20 +96,21 @@ def test_all_landmarks_have_required_fields():
 
 def test_valid_node_types():
     """Test that node types are valid"""
-    valid_types = {'Intersection', 'Corner', 'Elevator', 'Stairwell', 'Door'}
+    valid_types = {'Intersection', 'Corner', 'Elevator', 'Stairwell', 'Door', 'HallwayPoint'}
     for floor in FLOOR2_DATA['floors']:
         for node in floor['nodes']:
             assert node['type'] in valid_types, \
                 f"Node '{node['id']}' has invalid type '{node['type']}'"
 
 
-def test_valid_bearings():
-    """Test that bearings are valid compass directions"""
-    valid_bearings = {'North', 'South', 'East', 'West'}
+def test_edge_reverse_bearings_are_opposites():
+    """Reverse bearing should be exactly +180 mod 360."""
     for floor in FLOOR2_DATA['floors']:
-        for landmark in floor['landmarks']:
-            assert landmark['bearing'] in valid_bearings, \
-                f"Landmark '{landmark['name']}' has invalid bearing '{landmark['bearing']}'"
+        for edge in floor['edges']:
+            fwd = float(edge['bearing_deg']) % 360.0
+            rev = float(edge['rev_bearing_deg']) % 360.0
+            assert rev == pytest.approx((fwd + 180.0) % 360.0, abs=1e-6), \
+                f"Edge {edge['start']}->{edge['end']} has invalid reverse bearing"
 
 
 def test_coordinates_are_numeric():
@@ -125,20 +123,32 @@ def test_coordinates_are_numeric():
                 f"Node '{node['id']}' y_feet is not numeric"
 
 
-def test_door_nodes_have_expected_node_meta_shape_when_present():
-    """Door nodes in v2 should include canonical side metadata."""
+def test_hallwaypoint_doors_have_side_by_bearing():
+    """HallwayPoint doors should include side_by_bearing maps."""
     for floor in FLOOR2_DATA['floors']:
         for node in floor['nodes']:
-            if node.get('type') != 'Door':
+            if node.get('type') != 'HallwayPoint':
                 continue
-            node_meta = node.get('node_meta')
-            if node_meta is None:
+            for door in node.get('doors', []):
+                assert 'id' in door
+                assert 'label' in door
+                assert 'side_by_bearing' in door
+                assert len(door['side_by_bearing']) > 0
+                for side_entry in door['side_by_bearing']:
+                    assert side_entry.get('side') in {'left', 'right'}
+                    assert isinstance(side_entry.get('bearing_deg'), (int, float))
+
+
+def test_landmark_door_id_exists_on_nearest_node():
+    """If landmark declares door_id, it must exist on nearest node doors."""
+    for floor in FLOOR2_DATA['floors']:
+        nodes_by_id = {n['id']: n for n in floor['nodes']}
+        for landmark in floor['landmarks']:
+            door_id = landmark.get('door_id')
+            if door_id is None:
                 continue
-            assert 'door_id' in node_meta, f"Door node '{node['id']}' missing node_meta.door_id"
-            assert 'side_canonical' in node_meta, f"Door node '{node['id']}' missing node_meta.side_canonical"
-            assert node_meta['side_canonical'] in {'left', 'right'}, \
-                f"Door node '{node['id']}' has invalid side_canonical '{node_meta['side_canonical']}'"
-            assert 'canonical_edge_start' in node_meta, \
-                f"Door node '{node['id']}' missing node_meta.canonical_edge_start"
-            assert 'canonical_edge_end' in node_meta, \
-                f"Door node '{node['id']}' missing node_meta.canonical_edge_end"
+            nearest = nodes_by_id.get(landmark['nearest_node'])
+            assert nearest is not None
+            door_ids = {door.get('id') for door in nearest.get('doors', [])}
+            assert door_id in door_ids, \
+                f"Landmark '{landmark['name']}' has unknown door_id '{door_id}' at node '{landmark['nearest_node']}'"

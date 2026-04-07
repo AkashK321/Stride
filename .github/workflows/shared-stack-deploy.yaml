@@ -1,5 +1,6 @@
 # Manual repair: deploy StrideSharedStack only and run the same RDS init + floor
-# population as Infrastructure Deploy (populate_rds.py, run_population.py).
+# population as Infrastructure Deploy (populate_rds.py, cli.py populate).
+# COCO object-config seeding is intentionally handled in a separate workflow.
 # Routine branch deploys already run shared + branch + population via
 # .github/workflows/infrastructure-deploy.yaml.
 name: Shared Stack Deploy
@@ -45,7 +46,7 @@ jobs:
           cache-dependency-path: |
             aws_resources/requirements.txt
             aws_resources/schema_initializer/requirements.txt
-            aws_resources/data_population/requirements.txt
+            aws_resources/map_population/requirements.txt
 
       - name: Install Python dependencies
         working-directory: aws_resources
@@ -53,7 +54,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install --upgrade --target schema_initializer -r schema_initializer/requirements.txt
-          pip install -r data_population/requirements.txt
+          pip install -r map_population/requirements.txt
 
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
@@ -129,15 +130,12 @@ jobs:
           python populate_rds.py
 
       - name: Populate shared RDS floor data
-        working-directory: aws_resources/data_population
+        working-directory: aws_resources/map_population
         env:
           DB_SECRET_ARN: ${{ steps.shared-outputs.outputs.db_secret_arn }}
           AWS_REGION: us-east-1
-          TRUE_NORTH_OFFSET_DEGREES: "51"
-          BEARING_HORIZONTAL_FLIP: "true"
-          BEARING_HORIZONTAL_MODE: "bands"
         run: |
-          python run_population.py
+          python cli.py populate
 
       - name: Deployment summary
         if: always()
@@ -150,6 +148,6 @@ jobs:
             echo "- **Stack**: \`StrideSharedStack\`"
             echo "- **Region**: \`us-east-1\`"
             echo "- **Schema init**: \`populate_rds.py\`"
-            echo "- **Floor data population**: \`run_population.py\`"
+            echo "- **Floor data population**: \`cli.py populate\`"
             echo "- **Time**: \`${DEPLOY_TIME}\`"
           } >> $GITHUB_STEP_SUMMARY

@@ -3,7 +3,6 @@ Main script to populate the database with floor data.
 Run this after schema initialization is complete.
 """
 
-import os
 import sys
 import ssl
 import logging
@@ -18,16 +17,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Import your floor data
-try:
-    from floor_data.floor2_v2 import FLOOR2_DATA_V2 as FLOOR_DATA
-except ImportError:
-    try:
-        from floor_data.floor2 import FLOOR2_DATA as FLOOR_DATA
-        logger.warning("⚠️ floor2_v2.py not found. Falling back to legacy floor2.py data.")
-    except ImportError:
-        logger.error("❌ Could not import floor data. Make sure floor_data/floor2_v2.py or floor_data/floor2.py exists!")
-        sys.exit(1)
+from floor_data.registry import get_all_buildings_data
 
 # Import populate function
 from populate_floor_data import populate_database, get_db_secret
@@ -58,10 +48,15 @@ def main():
         )
         logger.info("✓ Connected to database successfully")
         
-        # Populate with Floor 2 data
-        logger.info("📊 Populating Floor 2 data...")
-        populate_database(conn, FLOOR_DATA)
-        logger.info("✓ Successfully populated Floor 2 data!")
+        # Populate all registered building/floor data.
+        all_buildings_data = get_all_buildings_data()
+        if not all_buildings_data:
+            logger.error("❌ No map datasets registered. Update floor_data/registry.py")
+            sys.exit(1)
+        for building_data in all_buildings_data:
+            logger.info("📊 Populating %s...", building_data.get("building_name", "<unknown building>"))
+            populate_database(conn, building_data)
+        logger.info("✓ Successfully populated registered map data!")
         
         # Print summary
         cursor = conn.cursor()

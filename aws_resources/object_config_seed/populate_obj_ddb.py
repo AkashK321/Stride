@@ -1,8 +1,6 @@
 import boto3
 import os
-import json
 import logging
-import cfnresponse
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

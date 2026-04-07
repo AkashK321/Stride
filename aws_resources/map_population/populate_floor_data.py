@@ -68,6 +68,23 @@ def map_x_feet_for_storage(x_feet):
     return -x_feet if _get_coordinate_mirror_x() else x_feet
 
 
+def build_node_meta_for_storage(node):
+    """
+    Normalize per-node metadata payload for DB storage.
+
+    Supports both legacy `node_meta` and v2 top-level semantic fields.
+    """
+    if node.get("node_meta") is not None:
+        return node["node_meta"]
+
+    semantic_meta = {}
+    if "doors" in node:
+        semantic_meta["doors"] = node.get("doors", [])
+    if "intersections" in node:
+        semantic_meta["intersections"] = node.get("intersections", [])
+    return semantic_meta or None
+
+
 def populate_database(conn, building_data):
     """Main function to populate all tables with building data."""
     cursor = conn.cursor()
@@ -124,6 +141,7 @@ def populate_database(conn, building_data):
             for node in floor_data.get('nodes', []):
                 x_pixels = feet_to_pixels(map_x_feet_for_storage(node['x_feet']))
                 y_pixels = feet_to_pixels(node['y_feet'])
+                node_meta = build_node_meta_for_storage(node)
                 
                 cursor.execute(
                     """
@@ -144,7 +162,7 @@ def populate_database(conn, building_data):
                         x_pixels,
                         y_pixels,
                         node['type'],
-                        json.dumps(node.get('node_meta')) if node.get('node_meta') is not None else None,
+                        json.dumps(node_meta) if node_meta is not None else None,
                     )
                 )
                 node_coords[node['id']] = (x_pixels, y_pixels)
@@ -158,9 +176,10 @@ def populate_database(conn, building_data):
                 x2, y2 = node_coords[end_node_key]
                 
                 distance = calculate_distance(x1, y1, x2, y2)
-                # Coordinates are now authored in true-north orientation.
-                # No runtime mirror/offset/flip transformations are applied.
-                bearing = calculate_bearing(x1, y1, x2, y2)
+                # Use authored edge bearings when provided; otherwise compute from geometry.
+                bearing = edge.get("bearing_deg")
+                if bearing is None:
+                    bearing = calculate_bearing(x1, y1, x2, y2)
                 cursor.execute(
                     """
                     INSERT INTO MapEdges (FloorID, StartNodeID, EndNodeID, DistanceMeters, Bearing, IsBidirectional)
@@ -193,6 +212,9 @@ def populate_database(conn, building_data):
                     nx, ny = node_coords[nearest_node_key]
                     pixel_dist = math.sqrt((x_pixels - nx)**2 + (y_pixels - ny)**2)
                     distance_to_node = (pixel_dist / FEET_TO_PIXELS) * 0.3048  # Convert to meters
+                # Landmark cardinal bearings are no longer part of map authoring contract.
+                # Keep DB column as nullable/legacy for backend compatibility.
+                bearing_from_node = landmark.get("bearing_from_node")
                 
                 cursor.execute(
                     """
@@ -213,7 +235,7 @@ def populate_database(conn, building_data):
                         landmark['name'],
                         nearest_node_key,
                         distance_to_node,
-                        landmark.get('bearing'),
+                        bearing_from_node,
                         x_pixels,
                         y_pixels
                     )
@@ -256,7 +278,7 @@ def main():
                     {'start': 'n1', 'end': 'n2', 'bidirectional': True},
                 ],
                 'landmarks': [
-                    {'name': 'Room 101', 'x_feet': 50, 'y_feet': 0, 'nearest_node': 'n1', 'bearing': 'East'},
+                    {'name': 'Room 101', 'x_feet': 50, 'y_feet': 0, 'nearest_node': 'n1', 'door_id': 'room_101'},
                 ]
             }
         ]
