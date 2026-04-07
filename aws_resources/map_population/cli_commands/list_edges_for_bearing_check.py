@@ -1,9 +1,6 @@
 """
 List edges from MapEdges for on-site bearing validation.
-
-Usage:
-  python list_edges_for_bearing_check.py --all
-  python list_edges_for_bearing_check.py --floor-id 2 --limit 20
+Invoked by `python cli.py audit-bearings`.
 """
 
 import argparse
@@ -70,9 +67,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def run_from_args(args: argparse.Namespace) -> int:
-
     row_limit = None if args.all else args.limit
-
     conn = _connect()
     try:
         cursor = conn.cursor()
@@ -92,3 +87,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

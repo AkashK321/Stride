@@ -1,10 +1,6 @@
 """
 Recompute and optionally apply true-compass bearings for existing MapEdges rows.
-
-Usage:
-  python recompute_edge_bearings.py
-  python recompute_edge_bearings.py --apply
-  python recompute_edge_bearings.py --apply --floor-id 2
+Invoked by `python cli.py recompute-bearings`.
 """
 
 import argparse
@@ -14,10 +10,7 @@ import ssl
 import pg8000
 from dotenv import load_dotenv
 
-from populate_floor_data import (
-    calculate_bearing,
-    get_db_secret,
-)
+from populate_floor_data import calculate_bearing, get_db_secret
 
 load_dotenv()
 
@@ -79,10 +72,9 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         default=0.05,
         help="Only count as changed if abs(delta) exceeds tolerance",
     )
-    
+
 
 def run_from_args(args: argparse.Namespace) -> int:
-
     conn = None
     try:
         conn = _connect()
@@ -138,3 +130,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
