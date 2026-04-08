@@ -1,0 +1,252 @@
+[
+  {
+    "id": "staircase_main_2S01",
+    "xFeet": 0,
+    "yFeet": 0
+  },
+  {
+    "id": "stair_west_corner",
+    "xFeet": -13,
+    "yFeet": 0
+  },
+  {
+    "id": "stair_east_corner",
+    "xFeet": 13,
+    "yFeet": 0
+  },
+  {
+    "id": "r226_door",
+    "xFeet": -28,
+    "yFeet": 0
+  },
+  {
+    "id": "r224_door",
+    "xFeet": -54,
+    "yFeet": 0
+  },
+  {
+    "id": "r222_door",
+    "xFeet": -82,
+    "yFeet": 0
+  },
+  {
+    "id": "southwest_corner",
+    "xFeet": -88,
+    "yFeet": 0
+  },
+  {
+    "id": "r220_door",
+    "xFeet": -88,
+    "yFeet": 4
+  },
+  {
+    "id": "r218_door",
+    "xFeet": -88,
+    "yFeet": 14
+  },
+  {
+    "id": "r216_door",
+    "xFeet": -88,
+    "yFeet": 42
+  },
+  {
+    "id": "r214_door",
+    "xFeet": -88,
+    "yFeet": 45
+  },
+  {
+    "id": "vend_south_corner",
+    "xFeet": -88,
+    "yFeet": 56
+  },
+  {
+    "id": "r212_door",
+    "xFeet": -88,
+    "yFeet": 56
+  },
+  {
+    "id": "staircase_west_2S03",
+    "xFeet": -88,
+    "yFeet": 66
+  },
+  {
+    "id": "hallway_Bside",
+    "xFeet": -88,
+    "yFeet": 72
+  },
+  {
+    "id": "r208_door",
+    "xFeet": -88,
+    "yFeet": 96
+  },
+  {
+    "id": "r206_door",
+    "xFeet": -88,
+    "yFeet": 56
+  },
+  {
+    "id": "r207_door",
+    "xFeet": -88,
+    "yFeet": 56
+  },
+  {
+    "id": "r209_door",
+    "xFeet": -79,
+    "yFeet": 106
+  },
+  {
+    "id": "r211_door",
+    "xFeet": -79,
+    "yFeet": 71
+  },
+  {
+    "id": "r215_door",
+    "xFeet": -79,
+    "yFeet": 62
+  },
+  {
+    "id": "r217_door",
+    "xFeet": -79,
+    "yFeet": 32
+  },
+  {
+    "id": "r221_door",
+    "xFeet": -79,
+    "yFeet": 21
+  },
+  {
+    "id": "r219_door",
+    "xFeet": -79,
+    "yFeet": 14
+  },
+  {
+    "id": "r225_door",
+    "xFeet": -60,
+    "yFeet": 9
+  },
+  {
+    "id": "r237_door",
+    "xFeet": 63.6,
+    "yFeet": 9
+  },
+  {
+    "id": "elevator_2e01",
+    "xFeet": 77.6,
+    "yFeet": 14.6
+  },
+  {
+    "id": "r241_door",
+    "xFeet": 77.6,
+    "yFeet": 20.6
+  },
+  {
+    "id": "r241a_door",
+    "xFeet": 77.6,
+    "yFeet": 34.2
+  },
+  {
+    "id": "r230_door",
+    "xFeet": 18,
+    "yFeet": 0
+  },
+  {
+    "id": "r232_door",
+    "xFeet": 27,
+    "yFeet": 0
+  },
+  {
+    "id": "r234_door",
+    "xFeet": 38,
+    "yFeet": 0
+  },
+  {
+    "id": "r236_door",
+    "xFeet": 64,
+    "yFeet": 0
+  },
+  {
+    "id": "southeast_corner",
+    "xFeet": 88,
+    "yFeet": 0
+  },
+  {
+    "id": "r238_door",
+    "xFeet": 88,
+    "yFeet": 3
+  },
+  {
+    "id": "r240_door",
+    "xFeet": 88,
+    "yFeet": 13.8
+  },
+  {
+    "id": "r240a_door",
+    "xFeet": 88,
+    "yFeet": 20.2
+  },
+  {
+    "id": "hallway_MSEEcrossing",
+    "xFeet": 88,
+    "yFeet": 25.8
+  },
+  {
+    "id": "r242_door",
+    "xFeet": 88,
+    "yFeet": 43.4
+  },
+  {
+    "id": "r244_door",
+    "xFeet": 88,
+    "yFeet": 51.4
+  },
+  {
+    "id": "staircase_east_2S02",
+    "xFeet": 88,
+    "yFeet": 59.4
+  },
+  {
+    "id": "r243_door",
+    "xFeet": 88,
+    "yFeet": 73
+  },
+  {
+    "id": "r245_door",
+    "xFeet": 88,
+    "yFeet": 83.4
+  },
+  {
+    "id": "offices_door",
+    "xFeet": 82.8,
+    "yFeet": 96.2
+  },
+  {
+    "id": "inner_west_hall_north",
+    "xFeet": -79,
+    "yFeet": 110
+  },
+  {
+    "id": "inner_west_hall_south",
+    "xFeet": -79,
+    "yFeet": 9
+  },
+  {
+    "id": "west_cross_north",
+    "xFeet": -88,
+    "yFeet": 110
+  },
+  {
+    "id": "east_inner_south",
+    "xFeet": 77.6,
+    "yFeet": 9
+  },
+  {
+    "id": "west_cross_south",
+    "xFeet": -88,
+    "yFeet": 9
+  },
+  {
+    "id": "east_office_hall_mid",
+    "xFeet": 88,
+    "yFeet": 96
+  }
+]

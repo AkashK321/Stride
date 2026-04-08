@@ -16,6 +16,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import * as Location from "expo-location";
+import { headingDegreesFromExpoHeading } from "../utils/locationHeading";
 
 // --- Tunable constants ---
 const ROLLING_WINDOW = 10; // number of samples to average over
@@ -64,11 +65,7 @@ export function useHeading(): UseHeadingResult {
         const headingSub = await Location.watchHeadingAsync((headingData) => {
           if (cancelled) return;
 
-          // Prefer true north; fall back to magnetic heading indoors
-          const raw =
-            headingData.trueHeading != null && headingData.trueHeading >= 0
-              ? headingData.trueHeading
-              : headingData.magHeading;
+          const raw = headingDegreesFromExpoHeading(headingData);
 
           // Push into rolling buffer, evict oldest sample when full
           const samples = samplesRef.current;

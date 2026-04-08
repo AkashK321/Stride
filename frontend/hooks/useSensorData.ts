@@ -12,6 +12,7 @@
 import * as React from "react";
 import * as Location from "expo-location";
 import { Accelerometer, Gyroscope } from "expo-sensors";
+import { headingDegreesFromExpoHeading } from "../utils/locationHeading";
 
 export interface GpsData {
   latitude: number;
@@ -105,7 +106,7 @@ export function useSensorData(): UseSensorDataReturn {
       // Heading subscription
       try {
         const headingSub = await Location.watchHeadingAsync((heading) => {
-          headingRef.current = heading.trueHeading ?? heading.magHeading;
+          headingRef.current = headingDegreesFromExpoHeading(heading);
         });
         headingWatchRef.current = headingSub;
       } catch (e) {

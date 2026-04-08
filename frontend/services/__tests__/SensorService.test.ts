@@ -7,6 +7,11 @@ const mockAccelListener = jest.fn();
 const mockGyroListener = jest.fn();
 const mockMagnetListener = jest.fn();
 
+jest.mock("expo-location", () => ({
+  requestForegroundPermissionsAsync: jest.fn(() => Promise.resolve({ status: "granted" })),
+  watchHeadingAsync: jest.fn(() => Promise.resolve({ remove: jest.fn() })),
+}));
+
 jest.mock("expo-sensors", () => ({
   Accelerometer: {
     setUpdateInterval: jest.fn(),
@@ -66,6 +71,7 @@ import SensorServiceInstance, {
   Vector3D,
 } from "../SensorService";
 import * as Sensors from "expo-sensors";
+import * as Location from "expo-location";
 
 // Get the class from the instance's constructor
 const SensorServiceClass = (SensorServiceInstance as any).constructor;
@@ -124,6 +130,7 @@ describe("SensorService", () => {
       const localization = service.getCurrentLocalization();
       expect(localization.position).toEqual({ x: 0, y: 0, z: 0 });
       expect(localization.heading).toBe(0);
+      expect(localization.headingRawDeg).toBeNull();
       expect(localization.stepCount).toBe(0);
       expect(localization.distance).toBe(0);
     });
@@ -136,6 +143,13 @@ describe("SensorService", () => {
       expect(Sensors.Accelerometer.addListener).toHaveBeenCalled();
       expect(Sensors.Gyroscope.addListener).toHaveBeenCalled();
       expect(Sensors.Magnetometer.addListener).toHaveBeenCalled();
+    });
+
+    it("starts expo-location heading watch", async () => {
+      service.startMonitoring();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(Location.watchHeadingAsync).toHaveBeenCalled();
     });
 
     it("does not subscribe again if already monitoring", () => {
@@ -249,7 +263,7 @@ describe("SensorService", () => {
       const callback = jest.fn();
       service.subscribeToLocalization(callback);
 
-      // Set magnetometer for heading calculation
+      (service as any).lastExpoHeadingRawDeg = 45;
       mockMagnetListener({ x: 1, y: -1, z: 0 });
 
       (service as any).processUpdate();
@@ -257,26 +271,26 @@ describe("SensorService", () => {
       expect(callback).toHaveBeenCalled();
       const locData = callback.mock.calls[0][0] as LocalizationData;
       expect(locData.heading).toBeDefined();
+      expect(locData.headingRawDeg).toBe(45);
     });
   });
 
   describe("updateLocalization", () => {
-    it("calculates heading from magnetometer", () => {
-      // Heading = atan2(-my, mx) * (180 / PI)
-      // For mx=1, my=-1: atan2(1, 1) = 45 degrees
-      mockMagnetListener({ x: 1, y: -1, z: 0 });
+    it("uses expo-location heading when available", () => {
+      (service as any).lastExpoHeadingRawDeg = 90;
 
       const reading: SensorReading = {
         accelerometer: { x: 0, y: 0, z: 0 },
         gyroscope: { x: 0, y: 0, z: 0 },
-        magnetometer: { x: 1, y: -1, z: 0 },
+        magnetometer: { x: 0, y: 0, z: 0 },
         timestamp: Date.now(),
       };
 
       (service as any).updateLocalization(reading);
 
       const localization = service.getCurrentLocalization();
-      expect(localization.heading).toBeCloseTo(45, 1);
+      expect(localization.heading).toBeCloseTo(90, 0);
+      expect(localization.headingRawDeg).toBe(90);
     });
 
     it("detects steps when accelerometer magnitude exceeds threshold", () => {
