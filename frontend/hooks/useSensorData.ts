@@ -232,6 +232,7 @@ export function useSensorData(): UseSensorDataReturn {
         estimatedTotalSteps += (currentSpeed * Math.min(timeSincePedo, 5000));
     }
     console.log(`Estimated total steps: ${estimatedTotalSteps}`);
+    console.log(`Last snapshot steps: ${lastSnapshotStepsRef.current}`);
 
     let deltaSteps = estimatedTotalSteps - lastSnapshotStepsRef.current;
     if (deltaSteps < 0) deltaSteps = 0;
