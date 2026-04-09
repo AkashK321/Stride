@@ -8,6 +8,7 @@ import collections
 import importlib
 import json
 import math
+import re
 from pathlib import Path
 
 
@@ -64,6 +65,55 @@ def _resolve_output_path(output_arg: str | None, floor_number: int) -> Path:
         output_path = _default_output_path(floor_number)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     return output_path
+
+
+def _infer_floor_number(floor_identifier: str) -> int | None:
+    match = re.match(r"^floor(\d+)(?:_.+)?$", floor_identifier)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def _parse_floor_number_arg(floor_number_arg: str | None) -> int | None:
+    if floor_number_arg is None:
+        return None
+    if floor_number_arg.isdigit():
+        return int(floor_number_arg)
+    inferred = _infer_floor_number(floor_number_arg)
+    if inferred is not None:
+        return inferred
+    raise SystemExit(
+        f"Invalid --floor-number value: {floor_number_arg!r}. "
+        "Use an integer (for example: 0) or a floor id (for example: floor0)."
+    )
+
+
+def _infer_data_var_name(floor_identifier: str) -> str | None:
+    match = re.match(r"^floor(\d+)(?:_(.+))?$", floor_identifier)
+    if not match:
+        return None
+    floor_number = match.group(1)
+    suffix = match.group(2)
+    if suffix:
+        return f"FLOOR{floor_number}_DATA_{suffix.upper()}"
+    return f"FLOOR{floor_number}_DATA"
+
+
+def _resolve_data_source(
+    floor_identifier: str,
+    module_override: str | None,
+    var_override: str | None,
+) -> tuple[str, str]:
+    module_name = module_override or (
+        floor_identifier if "." in floor_identifier else f"floor_data.{floor_identifier}"
+    )
+    var_name = var_override or _infer_data_var_name(floor_identifier)
+    if not var_name:
+        raise SystemExit(
+            "Could not infer --var from --floor. Provide --var explicitly, "
+            "for example: --var FLOOR0_DATA"
+        )
+    return module_name, var_name
 
 
 def plot_floor(data_obj, floor_number, compare_data_obj=None, output_path: Path | None = None):
@@ -199,11 +249,20 @@ def plot_floor(data_obj, floor_number, compare_data_obj=None, output_path: Path 
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--module", default="floor_data.floor2_v2")
-    parser.add_argument("--var", default="FLOOR2_DATA_V2")
+    parser.add_argument(
+        "--floor",
+        default="floor2_v2",
+        help="Floor package id or module path (examples: floor2_v2, floor0, floor_data.floor2_v2).",
+    )
+    parser.add_argument("--module", default=None, help="Optional full module path override.")
+    parser.add_argument("--var", default=None, help="Optional data variable override.")
     parser.add_argument("--compare-module", default=None)
     parser.add_argument("--compare-var", default="FLOOR2_DATA")
-    parser.add_argument("--floor-number", type=int, default=2)
+    parser.add_argument(
+        "--floor-number",
+        default=None,
+        help="Floor number override. Accepts 0 or floor0-style values.",
+    )
     parser.add_argument(
         "--output",
         default=None,
@@ -217,14 +276,31 @@ def run_from_args(args: argparse.Namespace) -> int:
     except ImportError as exc:
         raise SystemExit("matplotlib is required. Install with: pip install matplotlib") from exc
 
-    module = importlib.import_module(args.module)
-    data_obj = getattr(module, args.var)
+    module_name, var_name = _resolve_data_source(args.floor, args.module, args.var)
+    module = importlib.import_module(module_name)
+    try:
+        data_obj = getattr(module, var_name)
+    except AttributeError as exc:
+        raise SystemExit(
+            f"Module {module_name!r} does not define {var_name!r}. "
+            "Pass --var explicitly if your export name is different."
+        ) from exc
+
+    floor_number = _parse_floor_number_arg(args.floor_number)
+    if floor_number is None:
+        floor_number = _infer_floor_number(args.floor)
+    if floor_number is None:
+        raise SystemExit(
+            "Unable to infer floor number from --floor. "
+            "Provide --floor-number explicitly."
+        )
+
     compare_obj = None
     if args.compare_module:
         compare_module = importlib.import_module(args.compare_module)
         compare_obj = getattr(compare_module, args.compare_var)
-    output_path = _resolve_output_path(args.output, args.floor_number)
-    plot_floor(data_obj, args.floor_number, compare_obj, output_path=output_path)
+    output_path = _resolve_output_path(args.output, floor_number)
+    plot_floor(data_obj, floor_number, compare_obj, output_path=output_path)
     return 0
 
 
