@@ -48,6 +48,8 @@ export interface UseSensorDataReturn {
   getSnapshot: () => SensorSnapshot;
   /** Whether location permission has been granted */
   hasLocationPermission: boolean;
+  /** Whether pedometer permission has been granted */
+  hasPedometerPermission: boolean;
   /** Start sensor subscriptions */
   start: () => Promise<void>;
   /** Stop sensor subscriptions */
@@ -61,6 +63,7 @@ const DISTANCE_INTERPOLATION_ENABLED = process.env.ENABLE_DISTANCE_INTERPOLATION
 
 export function useSensorData(): UseSensorDataReturn {
   const [hasLocationPermission, setHasLocationPermission] = React.useState(false);
+  const [hasPedometerPermission, setHasPedometerPermission] = React.useState(false);
   const [isActive, setIsActive] = React.useState(false);
 
   // Store latest readings in refs for instant access without re-renders
@@ -87,6 +90,10 @@ export function useSensorData(): UseSensorDataReturn {
     // Request location permission
     const { status } = await Location.requestForegroundPermissionsAsync();
     const locationGranted = status === "granted";
+    const pedoPerm = await Pedometer.requestPermissionsAsync();
+    console.log(`Pedometer permission status: ${pedoPerm.status}`);
+    const pedoGranted = pedoPerm.granted;
+    setHasPedometerPermission(pedoGranted);
     setHasLocationPermission(locationGranted);
 
     // GPS subscription
@@ -157,8 +164,7 @@ export function useSensorData(): UseSensorDataReturn {
 
     // Pedometer subscription for distance tracking
     try {
-      const pedoPerm = await Pedometer.requestPermissionsAsync();
-      if (pedoPerm.granted) {
+      if (pedoGranted) {
         console.log("Pedometer permission granted, starting step count watch");
         const pedoSub = Pedometer.watchStepCount((result) => {
           const now = Date.now();
@@ -246,6 +252,7 @@ export function useSensorData(): UseSensorDataReturn {
   return {
     getSnapshot,
     hasLocationPermission,
+    hasPedometerPermission,
     start,
     stop,
     isActive,
