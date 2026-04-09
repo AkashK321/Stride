@@ -159,8 +159,10 @@ export function useSensorData(): UseSensorDataReturn {
     try {
       const pedoPerm = await Pedometer.requestPermissionsAsync();
       if (pedoPerm.granted) {
+        console.log("Pedometer permission granted, starting step count watch");
         const pedoSub = Pedometer.watchStepCount((result) => {
           const now = Date.now();
+          console.log(`Pedometer update: ${result.steps} steps at ${now}`);
           if (lastPedometerTimeRef.current !== 0) {
             const deltaSteps = result.steps - lastPedometerStepsRef.current;
             const deltaTime = now - lastPedometerTimeRef.current;
@@ -216,12 +218,14 @@ export function useSensorData(): UseSensorDataReturn {
     const now = Date.now();
     let currentSpeed = speedRef.current;
     const timeSincePedo = now - lastPedometerTimeRef.current;
+    console.log(`Time since last pedometer update: ${timeSincePedo}ms, current speed: ${currentSpeed} steps/ms`);
 
     // Estimate current total steps based on last known steps + interpolated speed
     var estimatedTotalSteps = lastPedometerStepsRef.current
     if (DISTANCE_INTERPOLATION_ENABLED) {
         estimatedTotalSteps += (currentSpeed * Math.min(timeSincePedo, 5000));
     }
+    console.log(`Estimated total steps: ${estimatedTotalSteps}`);
 
     let deltaSteps = estimatedTotalSteps - lastSnapshotStepsRef.current;
     if (deltaSteps < 0) deltaSteps = 0;
