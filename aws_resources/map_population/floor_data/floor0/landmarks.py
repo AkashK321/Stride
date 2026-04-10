@@ -28,8 +28,10 @@ LANDMARKS = [
     landmark("Room 048", 87, 34, nearest_node="hall_048", door_id="room_048"),
     landmark("Room 050", 87, 44, nearest_node="hall_050", door_id="room_050"),
     landmark("Room 052", 87, 52, nearest_node="hall_052", door_id="room_052"),
-    landmark("Room 054", 90, 90, nearest_node="hall_054", door_id="room_054"),
-    landmark("Room 054B", 90, 78, nearest_node="hall_054b", door_id="room_054b"),
+    landmark("Room 054", 92, 90, nearest_node="hall_054", door_id="room_054"),
+    landmark("Room 054B", 92, 78, nearest_node="hall_054b", door_id="room_054b"),
+    landmark("Room 056", 98, 150, nearest_node="hall_056", door_id="room_056"),
+    landmark("Room 056B", 93, 103, nearest_node="hall_056b", door_id="room_056b"),
 
     landmark("Room 005", -70, 68, nearest_node="hall_005", door_id="room_005"),
     landmark("Room 005B", -67, 62, nearest_node="hall_005", door_id="room_005b"),
@@ -42,6 +44,11 @@ LANDMARKS = [
     landmark("Room 047", 78, 49, nearest_node="hall_047", door_id="room_047"),
     landmark("Room 049", 78, 64, nearest_node="hall_049", door_id="room_049"),
     landmark("Room 051", 78, 77, nearest_node="hall_051", door_id="room_051"),
+    landmark("Room 059", 82, 145, nearest_node="hall_059", door_id="room_059"),
+    landmark("Room 061", 51, 108, nearest_node="hall_061", door_id="room_061"),
+    landmark("Room 065", -2, 108, nearest_node="hall_069", door_id="room_069"),
+    landmark("Room 069", -46, 108, nearest_node="hall_069", door_id="room_069"),
+
 
 
 
