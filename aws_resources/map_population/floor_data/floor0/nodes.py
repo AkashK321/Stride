@@ -288,7 +288,7 @@ NODES = [
     ).asdict(),
     HallwayPointNode(
         id="hall_054",
-        x_feet= 92,
+        x_feet= 89,
         y_feet= 90,
         doors=[
             DoorRef(
@@ -303,12 +303,42 @@ NODES = [
     ).asdict(),
     HallwayPointNode(
         id="hall_054b",
-        x_feet= 92,
+        x_feet= 89,
         y_feet= 78,
         doors=[
             DoorRef(
                 id="room_054",
                 label="Room 054B",
+                side_by_bearing=[
+                    DoorSideByBearing(bearing_deg=0, side="right"), 
+                    DoorSideByBearing(bearing_deg=180, side="left"), 
+                ],
+            ),
+        ],
+    ).asdict(),
+    HallwayPointNode(
+        id="hall_056",
+        x_feet= 89,
+        y_feet= 150,
+        doors=[
+            DoorRef(
+                id="room_056",
+                label="Room 056",
+                side_by_bearing=[
+                    DoorSideByBearing(bearing_deg=0, side="right"), 
+                    DoorSideByBearing(bearing_deg=180, side="left"), 
+                ],
+            ),
+        ],
+    ).asdict(),
+    HallwayPointNode(
+        id="hall_056b",
+        x_feet= 87,
+        y_feet= 103,
+        doors=[
+            DoorRef(
+                id="room_056b",
+                label="Room 056b",
                 side_by_bearing=[
                     DoorSideByBearing(bearing_deg=0, side="right"), 
                     DoorSideByBearing(bearing_deg=180, side="left"), 
@@ -349,7 +379,7 @@ NODES = [
             ),
         ],
     ).asdict(),
-      HallwayPointNode(
+    HallwayPointNode(
         id="hall_039",
         x_feet= 66,
         y_feet= 4.5,
@@ -357,6 +387,66 @@ NODES = [
             DoorRef(
                 id="room_039",
                 label="Room 039",
+                side_by_bearing=[
+                    DoorSideByBearing(bearing_deg=270, side="left"), # 321 degrees
+                    DoorSideByBearing(bearing_deg=90, side="right"), # 141 degrees 
+                ],
+            ),
+        ],
+    ).asdict(),
+    HallwayPointNode(
+        id="hall_059",
+        x_feet= 87,
+        y_feet= 145,
+        doors=[
+            DoorRef(
+                id="room_059",
+                label="Room 059",
+                side_by_bearing=[
+                    DoorSideByBearing(bearing_deg=270, side="left"), # 321 degrees
+                    DoorSideByBearing(bearing_deg=90, side="right"), # 141 degrees 
+                ],
+            ),
+        ],
+    ).asdict(),
+    HallwayPointNode(
+        id="hall_061",
+        x_feet= 51,
+        y_feet= 103,
+        doors=[
+            DoorRef(
+                id="room_061",
+                label="Room 061",
+                side_by_bearing=[
+                    DoorSideByBearing(bearing_deg=270, side="left"), # 321 degrees
+                    DoorSideByBearing(bearing_deg=90, side="right"), # 141 degrees 
+                ],
+            ),
+        ],
+    ).asdict(),
+    HallwayPointNode(
+        id="hall_065",
+        x_feet= -2,
+        y_feet= 103,
+        doors=[
+            DoorRef(
+                id="room_065",
+                label="Room 065",
+                side_by_bearing=[
+                    DoorSideByBearing(bearing_deg=270, side="left"), # 321 degrees
+                    DoorSideByBearing(bearing_deg=90, side="right"), # 141 degrees 
+                ],
+            ),
+        ],
+    ).asdict(),
+    HallwayPointNode(
+        id="hall_069",
+        x_feet= -46,
+        y_feet= 103,
+        doors=[
+            DoorRef(
+                id="room_069",
+                label="Room 069",
                 side_by_bearing=[
                     DoorSideByBearing(bearing_deg=270, side="left"), # 321 degrees
                     DoorSideByBearing(bearing_deg=90, side="right"), # 141 degrees 
