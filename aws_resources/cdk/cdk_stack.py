@@ -176,7 +176,9 @@ class CdkStack(Stack):
             "cognito-idp:AdminCreateUser",
             "cognito-idp:AdminSetUserPassword",
             "cognito-idp:AdminDeleteUser",  # For cleanup on registration failure
-            "cognito-idp:ListUsers"  # For checking duplicate email/phone
+            "cognito-idp:ListUsers",  # For checking duplicate email/phone
+            "cognito-idp:ConfirmSignUp",
+            "cognito-idp:ResendConfirmationCode",
         )
 
         # Add Cognito configuration to Lambda environment
@@ -207,6 +209,10 @@ class CdkStack(Stack):
 
         register = api.root.add_resource("register")
         register.add_method("POST", integration=apigw.LambdaIntegration(auth_handler))
+        register_confirm = register.add_resource("confirm")
+        register_confirm.add_method("POST", integration=apigw.LambdaIntegration(auth_handler))
+        register_resend_code = register.add_resource("resend-code")
+        register_resend_code.add_method("POST", integration=apigw.LambdaIntegration(auth_handler))
 
         search = api.root.add_resource("search")
         search.add_method("GET", integration=apigw.LambdaIntegration(static_navigation_handler))
