@@ -44,6 +44,7 @@ export interface TextFieldProps {
   autoFocus?: boolean;
   returnKeyType?: "done" | "go" | "next" | "search" | "send";
   onSubmitEditing?: () => void;
+  maxLength?: number;
   accessibilityLabel?: string;
   accessibilityHint?: string;
   style?: ViewStyle;
@@ -68,6 +69,7 @@ const TextField = React.forwardRef<TextInput, TextFieldProps>(({
   autoFocus = false,
   returnKeyType = "done",
   onSubmitEditing,
+  maxLength,
   accessibilityLabel,
   accessibilityHint,
   style,
@@ -138,6 +140,7 @@ const TextField = React.forwardRef<TextInput, TextFieldProps>(({
           autoFocus,
           returnKeyType,
           onSubmitEditing,
+          maxLength,
           onFocus: handleFocus,
           onBlur: handleBlur,
           accessibilityLabel: accessibilityLabel || label || placeholder,
