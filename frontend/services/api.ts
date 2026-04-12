@@ -60,8 +60,8 @@ export interface RegisterRequest {
   username: string;
   password: string;
   passwordConfirm: string;
-  email: string;
-  phoneNumber: string;
+  email?: string;
+  phoneNumber?: string;
   firstName: string;
   lastName: string;
 }

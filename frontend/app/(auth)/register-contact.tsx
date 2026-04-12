@@ -36,7 +36,19 @@ export default function RegisterContact() {
   const [emailError, setEmailError] = React.useState("");
   const [phoneNumber, setPhoneNumber] = React.useState("");
   const [phoneNumberError, setPhoneNumberError] = React.useState("");
+  const [contactMode, setContactMode] = React.useState<"phone" | "email">("phone");
   const [isLoading, setIsLoading] = React.useState(false);
+
+  const handleEmailChange = (text: string) => {
+    setEmail(text);
+    setEmailError("");
+  };
+
+  const handleContactModeToggle = () => {
+    setContactMode((current) => (current === "phone" ? "email" : "phone"));
+    setEmailError("");
+    setPhoneNumberError("");
+  };
 
   // Format phone number as user types (defaults to US format)
   const handlePhoneNumberChange = (text: string) => {
@@ -102,24 +114,25 @@ export default function RegisterContact() {
     // Validate inputs
     let hasErrors = false;
 
-    if (!email.trim()) {
+    const trimmedEmail = email.trim();
+    const hasEmail = trimmedEmail.length > 0;
+    const hasPhoneInput = phoneNumber.trim().length > 0;
+    const e164Phone = hasPhoneInput ? formatPhoneToE164(phoneNumber) : null;
+
+    if (contactMode === "email" && !hasEmail) {
       setEmailError("Email is required");
       hasErrors = true;
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+    } else if (hasEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
       setEmailError("Please enter a valid email address");
       hasErrors = true;
     }
 
-    if (!phoneNumber.trim()) {
+    if (contactMode === "phone" && !hasPhoneInput) {
       setPhoneNumberError("Phone number is required");
       hasErrors = true;
-    } else {
-      // Validate and convert phone number to E.164 format
-      const e164Phone = formatPhoneToE164(phoneNumber);
-      if (!e164Phone) {
-        setPhoneNumberError("Please enter a valid phone number");
-        hasErrors = true;
-      }
+    } else if (hasPhoneInput && !e164Phone) {
+      setPhoneNumberError("Please enter a valid phone number");
+      hasErrors = true;
     }
 
     if (hasErrors) {
@@ -136,24 +149,20 @@ export default function RegisterContact() {
     setIsLoading(true);
 
     try {
-      // Convert phone number to E.164 format
-      const e164Phone = formatPhoneToE164(phoneNumber);
-      if (!e164Phone) {
-        setPhoneNumberError("Please enter a valid phone number");
-        setIsLoading(false);
-        return;
-      }
-
-      // Call register API with all data
-      await register({
+      const trimmedEmail = email.trim();
+      const e164Phone = phoneNumber.trim() ? formatPhoneToE164(phoneNumber) : null;
+      const registrationPayload = {
         username: params.username,
         password: params.password,
         passwordConfirm: params.password,
-        email: email.trim(),
-        phoneNumber: e164Phone, // Use E.164 formatted phone number
         firstName: params.firstName,
         lastName: params.lastName,
-      });
+        ...(trimmedEmail ? { email: trimmedEmail } : {}),
+        ...(e164Phone ? { phoneNumber: e164Phone } : {}),
+      };
+
+      // Call register API with all provided data
+      await register(registrationPayload);
 
       // Automatically log the user in after successful registration
       try {
@@ -293,45 +302,67 @@ export default function RegisterContact() {
             },
             accessibilityLabel: "Registration form step 2",
           },
-          "Step 3 of 3: Email & Contact"
+          "Step 3 of 3: Contact"
         ),
-        React.createElement(TextField, {
-          ref: emailRef,
-          value: email,
-          onChangeText: setEmail,
-          error: emailError,
-          autoCapitalize: "none",
-          autoComplete: "email",
-          keyboardType: "email-address",
-          returnKeyType: "next",
-          onSubmitEditing: () => {
-            phoneNumberRef.current?.focus();
+        contactMode === "email"
+          ? React.createElement(TextField, {
+              ref: emailRef,
+              value: email,
+              onChangeText: handleEmailChange,
+              error: emailError,
+              autoCapitalize: "none",
+              autoComplete: "email",
+              keyboardType: "email-address",
+              returnKeyType: "done",
+              onSubmitEditing: handleRegister,
+              placeholder: "Email",
+              accessibilityLabel: "Email",
+              accessibilityHint: "Enter your email address.",
+              style: {
+                width: "100%",
+                marginBottom: spacing.xs,
+              },
+            })
+          : React.createElement(TextField, {
+              ref: phoneNumberRef,
+              value: phoneNumber,
+              onChangeText: handlePhoneNumberChange,
+              error: phoneNumberError,
+              autoComplete: "tel",
+              keyboardType: "phone-pad",
+              returnKeyType: "done",
+              onSubmitEditing: handleRegister,
+              placeholder: "Phone Number",
+              accessibilityLabel: "Phone Number",
+              accessibilityHint: "Enter your phone number (e.g., (812) 294-9840). It will be automatically formatted.",
+              style: {
+                width: "100%",
+                marginBottom: spacing.xs,
+              },
+            }),
+        React.createElement(
+          Pressable,
+          {
+            onPress: handleContactModeToggle,
+            accessibilityRole: "button",
+            accessibilityLabel: contactMode === "phone" ? "Use email instead" : "Use phone instead",
+            style: {
+              alignSelf: "flex-start",
+              marginBottom: spacing.sm,
+              marginLeft: spacing.xs,
+            },
           },
-          placeholder: "Email",
-          accessibilityLabel: "Email",
-          accessibilityHint: "Enter your email address. Press next to move to phone number field.",
-          style: {
-            width: "100%",
-            marginBottom: spacing.md,
-          },
-        }),
-        React.createElement(TextField, {
-          ref: phoneNumberRef,
-          value: phoneNumber,
-          onChangeText: handlePhoneNumberChange,
-          error: phoneNumberError,
-          autoComplete: "tel",
-          keyboardType: "phone-pad",
-          returnKeyType: "done",
-          onSubmitEditing: handleRegister,
-          placeholder: "Phone Number",
-          accessibilityLabel: "Phone Number",
-          accessibilityHint: "Enter your phone number (e.g., (812) 294-9840). It will be automatically formatted.",
-          style: {
-            width: "100%",
-            marginBottom: spacing.md,
-          },
-        }),
+          React.createElement(
+            Text,
+            {
+              style: {
+                ...typography.label,
+                color: colors.primary,
+              },
+            },
+            contactMode === "phone" ? "Use email instead" : "Use phone instead"
+          )
+        ),
         React.createElement(Button, {
           onPress: handleRegister,
           title: "Create Account",
