@@ -412,18 +412,16 @@ def test_register_weak_password_too_short(api_base_url):
         timestamp = int(time.time())
         random_suffix = ''.join(random.choices(string.ascii_lowercase, k=4))
         
-        response = requests.post(
-            f"{api_base_url}/register",
-            json={
+        response = register_user_with_retry(
+            api_base_url,
+            {
                 "username": f"testuser_{timestamp}_{random_suffix}_{idx}",
                 "password": weak_password,
                 "passwordConfirm": weak_password,
                 "email": f"test_{timestamp}_{random_suffix}_{idx}@example.com",
                 "firstName": "Test",
                 "lastName": "User"
-            },
-            headers={"Content-Type": "application/json"},
-            timeout=10
+            }
         )
         
         assert response.status_code == 400, f"Expected 400 for password '{weak_password}', got {response.status_code}: {response.text}"
@@ -449,18 +447,16 @@ def test_register_weak_password_missing_requirements(api_base_url):
         timestamp = int(time.time())
         random_suffix = ''.join(random.choices(string.ascii_lowercase, k=4))
         
-        response = requests.post(
-            f"{api_base_url}/register",
-            json={
+        response = register_user_with_retry(
+            api_base_url,
+            {
                 "username": f"testuser_{timestamp}_{random_suffix}_{idx}",
                 "password": weak_password,
                 "passwordConfirm": weak_password,
                 "email": f"test_{timestamp}_{random_suffix}_{idx}@example.com",
                 "firstName": "Test",
                 "lastName": "User"
-            },
-            headers={"Content-Type": "application/json"},
-            timeout=10
+            }
         )
         
         assert response.status_code == 400, f"Expected 400 for password '{weak_password}', got {response.status_code}: {response.text}"

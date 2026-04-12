@@ -10,6 +10,10 @@ import time
 import random
 import string
 
+REGISTER_TIMEOUT_SECONDS = 10
+REGISTER_RETRY_ATTEMPTS = 3
+REGISTER_INITIAL_BACKOFF_SECONDS = 1.0
+
 
 @pytest.fixture
 def api_base_url():
@@ -36,21 +40,46 @@ def test_user_credentials():
     }
 
 
+def register_user_with_retry(api_base_url, payload):
+    """Register test users with retry/backoff when Cognito returns transient 429."""
+    delay_seconds = REGISTER_INITIAL_BACKOFF_SECONDS
+    last_response = None
+
+    for attempt in range(REGISTER_RETRY_ATTEMPTS):
+        response = requests.post(
+            f"{api_base_url}/register",
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=REGISTER_TIMEOUT_SECONDS
+        )
+        last_response = response
+
+        if response.status_code != 429:
+            return response
+
+        if attempt < REGISTER_RETRY_ATTEMPTS - 1:
+            time.sleep(delay_seconds)
+            delay_seconds *= 2
+
+    pytest.skip(
+        "Registration endpoint remained rate-limited "
+        f"after {REGISTER_RETRY_ATTEMPTS} attempts: {last_response.text}"
+    )
+
+
 def test_login_requires_confirmation_after_registration(api_base_url, test_user_credentials):
     """Test login is blocked until a newly registered user is confirmed."""
     # First register a user
-    register_response = requests.post(
-        f"{api_base_url}/register",
-        json={
+    register_response = register_user_with_retry(
+        api_base_url,
+        {
             "username": test_user_credentials["username"],
             "password": test_user_credentials["password"],
             "passwordConfirm": test_user_credentials["passwordConfirm"],
             "email": test_user_credentials["email"],
             "firstName": test_user_credentials["firstName"],
             "lastName": test_user_credentials["lastName"]
-        },
-        headers={"Content-Type": "application/json"},
-        timeout=10
+        }
     )
     assert register_response.status_code == 201
 
@@ -125,18 +154,16 @@ def test_login_invalid_json(api_base_url):
 def test_login_whitespace_normalization_for_unconfirmed_user(api_base_url, test_user_credentials):
     """Test that whitespace in username is trimmed before unconfirmed-user login check."""
     # Register a user
-    register_response = requests.post(
-        f"{api_base_url}/register",
-        json={
+    register_response = register_user_with_retry(
+        api_base_url,
+        {
             "username": test_user_credentials["username"],
             "password": test_user_credentials["password"],
             "passwordConfirm": test_user_credentials["passwordConfirm"],
             "email": test_user_credentials["email"],
             "firstName": test_user_credentials["firstName"],
             "lastName": test_user_credentials["lastName"]
-        },
-        headers={"Content-Type": "application/json"},
-        timeout=10
+        }
     )
     assert register_response.status_code == 201
 
