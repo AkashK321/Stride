@@ -12,6 +12,10 @@ import string
 REGISTER_TIMEOUT_SECONDS = 10
 REGISTER_RETRY_ATTEMPTS = 3
 REGISTER_INITIAL_BACKOFF_SECONDS = 1.0
+RESEND_RETRY_ATTEMPTS = 3
+RESEND_INITIAL_BACKOFF_SECONDS = 1.0
+TEST_CONFIRMATION_USERNAME_ENV = "TEST_CONFIRMATION_USERNAME"
+TEST_CONFIRMATION_CODE_ENV = "TEST_CONFIRMATION_CODE"
 
 
 @pytest.fixture
@@ -69,6 +73,36 @@ def register_user_with_retry(api_base_url, payload):
     )
 
 
+def resend_code_with_retry(api_base_url, username):
+    """
+    Request resend verification code with retry/backoff for transient 429s.
+    Skips the test if all attempts are rate-limited.
+    """
+    delay_seconds = RESEND_INITIAL_BACKOFF_SECONDS
+    last_response = None
+
+    for attempt in range(RESEND_RETRY_ATTEMPTS):
+        response = requests.post(
+            f"{api_base_url}/register/resend-code",
+            json={"username": username},
+            headers={"Content-Type": "application/json"},
+            timeout=REGISTER_TIMEOUT_SECONDS,
+        )
+        last_response = response
+
+        if response.status_code != 429:
+            return response
+
+        if attempt < RESEND_RETRY_ATTEMPTS - 1:
+            time.sleep(delay_seconds)
+            delay_seconds *= 2
+
+    pytest.skip(
+        "Resend endpoint remained rate-limited "
+        f"after {RESEND_RETRY_ATTEMPTS} attempts: {last_response.text}"
+    )
+
+
 def test_register_success(api_base_url, test_user_credentials):
     """Test successful user registration."""
     response = register_user_with_retry(
@@ -88,6 +122,99 @@ def test_register_success(api_base_url, test_user_credentials):
     assert "message" in data
     assert "User registered successfully" in data["message"]
     assert "username" in data
+
+
+def test_register_resend_code_success(api_base_url, test_user_credentials):
+    """Test resend-code succeeds for a newly registered unconfirmed user."""
+    register_response = register_user_with_retry(
+        api_base_url,
+        {
+            "username": test_user_credentials["username"],
+            "password": test_user_credentials["password"],
+            "passwordConfirm": test_user_credentials["passwordConfirm"],
+            "email": test_user_credentials["email"],
+            "firstName": test_user_credentials["firstName"],
+            "lastName": test_user_credentials["lastName"],
+        },
+    )
+    assert register_response.status_code == 201
+
+    response = resend_code_with_retry(api_base_url, test_user_credentials["username"])
+
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert "message" in data
+    assert "verification code" in data["message"].lower()
+
+
+def test_register_resend_code_missing_username(api_base_url):
+    """Test resend-code validation for missing username."""
+    response = requests.post(
+        f"{api_base_url}/register/resend-code",
+        json={"username": "   "},
+        headers={"Content-Type": "application/json"},
+        timeout=REGISTER_TIMEOUT_SECONDS,
+    )
+
+    assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert "error" in data
+    assert "username" in data["error"].lower()
+
+
+def test_register_confirm_invalid_code_returns_400(api_base_url, test_user_credentials):
+    """Test confirm endpoint returns 400 for an invalid confirmation code."""
+    register_response = register_user_with_retry(
+        api_base_url,
+        {
+            "username": test_user_credentials["username"],
+            "password": test_user_credentials["password"],
+            "passwordConfirm": test_user_credentials["passwordConfirm"],
+            "email": test_user_credentials["email"],
+            "firstName": test_user_credentials["firstName"],
+            "lastName": test_user_credentials["lastName"],
+        },
+    )
+    assert register_response.status_code == 201
+
+    response = requests.post(
+        f"{api_base_url}/register/confirm",
+        json={"username": test_user_credentials["username"], "code": "000000"},
+        headers={"Content-Type": "application/json"},
+        timeout=REGISTER_TIMEOUT_SECONDS,
+    )
+
+    # Shared environments may transiently rate-limit confirmation attempts.
+    if response.status_code == 429:
+        pytest.skip(f"Confirm endpoint was rate-limited: {response.text}")
+
+    assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert "error" in data
+    assert "code" in data["error"].lower() or "verification" in data["error"].lower()
+
+
+def test_register_confirm_success_with_known_code(api_base_url):
+    """Test confirm endpoint happy path using a known unconfirmed username+code."""
+    username = os.getenv(TEST_CONFIRMATION_USERNAME_ENV)
+    code = os.getenv(TEST_CONFIRMATION_CODE_ENV)
+    if not username or not code:
+        pytest.skip(
+            f"{TEST_CONFIRMATION_USERNAME_ENV} and {TEST_CONFIRMATION_CODE_ENV} are required "
+            "for happy-path confirmation test"
+        )
+
+    response = requests.post(
+        f"{api_base_url}/register/confirm",
+        json={"username": username, "code": code},
+        headers={"Content-Type": "application/json"},
+        timeout=REGISTER_TIMEOUT_SECONDS,
+    )
+
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert "message" in data
+    assert "verified" in data["message"].lower() or "confirmed" in data["message"].lower()
 
 
 def test_register_email_only_success(api_base_url, test_user_credentials):

@@ -651,6 +651,39 @@ class AuthHandlerTest {
     }
 
     @Test
+    @DisplayName("GET request to confirm returns 404")
+    fun `get request to confirm returns 404`() {
+        val event = APIGatewayProxyRequestEvent().apply {
+            httpMethod = "GET"
+            path = "/register/confirm"
+            body = """{"username":"testuser","code":"123456"}"""
+        }
+
+        val response = handler.handleRequest(event, mockContext)
+
+        assertEquals(404, response.statusCode)
+    }
+
+    @Test
+    @DisplayName("Confirm with username and code whitespace is normalized before validation")
+    fun `confirm trims username and code before validation`(envVars: EnvironmentVariables) {
+        envVars.set("USER_POOL_CLIENT_ID", "test-client-id")
+
+        val event = createConfirmEvent("  testuser  ", "  123456  ")
+
+        val response = handler.handleRequest(event, mockContext)
+
+        if (response.statusCode == 400) {
+            val responseBody = response.body
+            assertNotNull(responseBody)
+            assertFalse(
+                responseBody!!.contains("Username and code are required"),
+                "Whitespace should be trimmed before required-field validation"
+            )
+        }
+    }
+
+    @Test
     @DisplayName("Resend with missing environment variables returns 500")
     fun `resend missing environment returns 500`() {
         val event = createResendEvent("testuser")
@@ -722,6 +755,39 @@ class AuthHandlerTest {
         assertNotNull(responseBody)
         assertTrue(responseBody!!.contains("error"))
         assertTrue(responseBody.contains("Username is required"))
+    }
+
+    @Test
+    @DisplayName("GET request to resend-code returns 404")
+    fun `get request to resend-code returns 404`() {
+        val event = APIGatewayProxyRequestEvent().apply {
+            httpMethod = "GET"
+            path = "/register/resend-code"
+            body = """{"username":"testuser"}"""
+        }
+
+        val response = handler.handleRequest(event, mockContext)
+
+        assertEquals(404, response.statusCode)
+    }
+
+    @Test
+    @DisplayName("Resend with username whitespace is normalized before validation")
+    fun `resend trims username before validation`(envVars: EnvironmentVariables) {
+        envVars.set("USER_POOL_CLIENT_ID", "test-client-id")
+
+        val event = createResendEvent("   testuser   ")
+
+        val response = handler.handleRequest(event, mockContext)
+
+        if (response.statusCode == 400) {
+            val responseBody = response.body
+            assertNotNull(responseBody)
+            assertFalse(
+                responseBody!!.contains("Username is required"),
+                "Whitespace should be trimmed before required-field validation"
+            )
+        }
     }
 
     // Normalization tests (whitespace trimming)

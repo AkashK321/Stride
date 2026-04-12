@@ -155,4 +155,20 @@ describe("RegisterContact", () => {
       expect(mockReplace).toHaveBeenCalledWith("/verify?username=testuser");
     });
   });
+
+  it("routes to verify on not verified login error", async () => {
+    mockRegister.mockResolvedValue({
+      message: "User registered successfully",
+      username: "testuser",
+    });
+    mockLogin.mockRejectedValue(new Error("User is not verified"));
+
+    render(<RegisterContact />);
+    fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
+    fireEvent.press(screen.getByText("Create Account"));
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/verify?username=testuser");
+    });
+  });
 });

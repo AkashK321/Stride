@@ -347,6 +347,24 @@ describe("Login Screen (app/(auth)/index.tsx)", () => {
       expect(alertSpy).not.toHaveBeenCalled();
     });
 
+    it("routes to verify when API returns account not verified", async () => {
+      mockApiLogin.mockRejectedValueOnce(new Error("User is not verified"));
+
+      render(<Landing />);
+
+      fireEvent.changeText(screen.getByPlaceholderText("Username"), "testuser");
+      fireEvent.changeText(screen.getByPlaceholderText("Password"), "testpass");
+
+      await act(async () => {
+        fireEvent.press(screen.getByText("Sign in"));
+      });
+
+      await waitFor(() => {
+        expect(mockReplace).toHaveBeenCalledWith("/verify?username=testuser");
+      });
+      expect(alertSpy).not.toHaveBeenCalled();
+    });
+
     it("shows Alert.alert('Sign In Failed', ...) when the API call throws", async () => {
       const error = new Error("Network error");
       mockApiLogin.mockRejectedValueOnce(error);
