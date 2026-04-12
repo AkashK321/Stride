@@ -142,6 +142,7 @@ class CdkStack(Stack):
         user_pool = cognito.UserPool(
             self, "StrideUserPool",
             user_pool_name="stride-users",
+            self_sign_up_enabled=True,
             sign_in_aliases=cognito.SignInAliases(
                 username=True,
                 email=True,

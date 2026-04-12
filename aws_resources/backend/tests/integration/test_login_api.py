@@ -37,8 +37,8 @@ def test_user_credentials():
     }
 
 
-def test_login_success(api_base_url, test_user_credentials):
-    """Test successful login after registration."""
+def test_login_requires_confirmation_after_registration(api_base_url, test_user_credentials):
+    """Test login is blocked until a newly registered user is confirmed."""
     # First register a user
     register_response = requests.post(
         f"{api_base_url}/register",
@@ -56,7 +56,7 @@ def test_login_success(api_base_url, test_user_credentials):
     )
     assert register_response.status_code == 201
 
-    # Now login
+    # Newly registered user should not be able to login until confirmed
     response = requests.post(
         f"{api_base_url}/login",
         json={
@@ -67,14 +67,10 @@ def test_login_success(api_base_url, test_user_credentials):
         timeout=10
     )
 
-    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    assert response.status_code == 403, f"Expected 403, got {response.status_code}: {response.text}"
     data = response.json()
-    assert "accessToken" in data
-    assert "idToken" in data
-    assert "refreshToken" in data
-    assert "expiresIn" in data
-    assert "tokenType" in data
-    assert data["tokenType"] == "Bearer"
+    assert "error" in data
+    assert "not confirmed" in data["error"].lower()
 
 
 def test_login_invalid_credentials(api_base_url):
@@ -128,8 +124,8 @@ def test_login_invalid_json(api_base_url):
     assert "error" in data
 
 
-def test_login_whitespace_normalization(api_base_url, test_user_credentials):
-    """Test that whitespace in username/password is trimmed."""
+def test_login_whitespace_normalization_for_unconfirmed_user(api_base_url, test_user_credentials):
+    """Test that whitespace in username is trimmed before unconfirmed-user login check."""
     # Register a user
     register_response = requests.post(
         f"{api_base_url}/register",
@@ -158,8 +154,11 @@ def test_login_whitespace_normalization(api_base_url, test_user_credentials):
         timeout=10
     )
 
-    # Should succeed (whitespace trimmed)
-    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    # Should still hit the same unconfirmed account response (username was trimmed)
+    assert response.status_code == 403, f"Expected 403, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert "error" in data
+    assert "not confirmed" in data["error"].lower()
 
 
 def test_invalid_endpoint(api_base_url):

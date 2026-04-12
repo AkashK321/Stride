@@ -22,6 +22,11 @@ import { colors } from "../../theme/colors";
 import { login } from "../../services/api";
 import { useAuth } from "../../contexts/AuthContext";
 
+function isUnconfirmedAccountError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return normalized.includes("not confirmed") || normalized.includes("not verified");
+}
+
 export default function Landing() {
   const router = useRouter();
   const { login: authLogin, devBypass } = useAuth();
@@ -70,6 +75,11 @@ export default function Landing() {
     } catch (error) {
       // Handle error
       const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred";
+
+      if (isUnconfirmedAccountError(errorMessage)) {
+        router.replace(`/verify?username=${encodeURIComponent(username.trim())}`);
+        return;
+      }
       
       // Show error alert
       Alert.alert("Sign In Failed", errorMessage);

@@ -659,6 +659,24 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
         }
       }
     });
+
+    it("routes to verify when auto-login fails with not confirmed error", async () => {
+      mockApiRegister.mockResolvedValueOnce({ message: "Registration successful", username: "testuser" });
+      mockApiLogin.mockRejectedValueOnce(new Error("User account is not confirmed"));
+
+      render(<RegisterContact />);
+      const phoneInput = screen.getByPlaceholderText("Phone Number");
+      fireEvent.changeText(phoneInput, "8122949840");
+
+      await act(async () => {
+        fireEvent.press(screen.getByText("Create Account"));
+      });
+
+      await waitFor(() => {
+        expect(mockReplace).toHaveBeenCalledWith("/verify?username=testuser");
+      });
+      expect(alertSpy).not.toHaveBeenCalledWith("Registration Successful", expect.any(String), expect.anything());
+    });
   });
 
   // --- Missing params handling ---

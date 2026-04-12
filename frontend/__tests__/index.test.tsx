@@ -14,10 +14,11 @@ import { useAuth } from "../contexts/AuthContext";
 
 // Mock expo-router
 const mockPush = jest.fn();
+const mockReplace = jest.fn();
 jest.mock("expo-router", () => ({
   useRouter: () => ({
     push: mockPush,
-    replace: jest.fn(),
+    replace: mockReplace,
     back: jest.fn(),
   }),
   useSegments: () => [],
@@ -328,6 +329,24 @@ describe("Login Screen (app/(auth)/index.tsx)", () => {
   // --- Failed sign-in flow ---
 
   describe("Failed sign-in flow", () => {
+    it("routes to verify when API returns account not confirmed", async () => {
+      mockApiLogin.mockRejectedValueOnce(new Error("User account is not confirmed"));
+
+      render(<Landing />);
+
+      fireEvent.changeText(screen.getByPlaceholderText("Username"), "testuser");
+      fireEvent.changeText(screen.getByPlaceholderText("Password"), "testpass");
+
+      await act(async () => {
+        fireEvent.press(screen.getByText("Sign in"));
+      });
+
+      await waitFor(() => {
+        expect(mockReplace).toHaveBeenCalledWith("/verify?username=testuser");
+      });
+      expect(alertSpy).not.toHaveBeenCalled();
+    });
+
     it("shows Alert.alert('Sign In Failed', ...) when the API call throws", async () => {
       const error = new Error("Network error");
       mockApiLogin.mockRejectedValueOnce(error);
