@@ -233,7 +233,7 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
             "UserNotFoundException" -> "User not found"
             "UserNotConfirmedException" -> "User account is not confirmed"
             "UsernameExistsException" -> "Username already exists"
-            "AliasExistsException" -> "An account with this email or phone number already exists"
+            "AliasExistsException" -> "An account with this email already exists"
             "InvalidPasswordException" -> "Password does not meet requirements"
             "InvalidParameterException" -> {
                 // Try to extract meaningful part from error message
@@ -367,12 +367,6 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
         return email?.trim()?.lowercase()?.takeIf { it.isNotBlank() }
     }
 
-    private fun normalizePhoneNumber(phone: String?): String? {
-        if (phone.isNullOrBlank()) return null
-        // Remove common formatting characters, let Cognito validate format
-        return phone.trim().replace(Regex("[\\s\\-\\(\\)\\.]"), "").takeIf { it.isNotBlank() }
-    }
-
     private fun normalizeUsername(username: String?): String? {
         return username?.trim()?.takeIf { it.isNotBlank() }
     }
@@ -410,39 +404,6 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
         }
     }
 
-    /**
-     * Checks if a phone number already exists in the Cognito user pool.
-     * Uses ListUsers API with phone_number filter to check for existing users.
-     * 
-     * @param userPoolId The Cognito user pool ID
-     * @param phoneNumber The phone number to check (should already be normalized/E.164 format)
-     * @param context Lambda context for logging
-     * @return true if phone number exists, false otherwise
-     */
-    private fun checkPhoneNumberExists(userPoolId: String, phoneNumber: String, context: Context): Boolean {
-        return try {
-            val listUsersRequest = ListUsersRequest.builder()
-                .userPoolId(userPoolId)
-                .filter("phone_number = \"${phoneNumber}\"")
-                .limit(1)
-                .build()
-            
-            val response = cognitoClient.listUsers(listUsersRequest)
-            val exists = response.users().isNotEmpty()
-            
-            if (exists) {
-                context.logger.log("Phone number already exists: $phoneNumber")
-            }
-            
-            exists
-        } catch (e: Exception) {
-            // Log error but don't fail registration - let Cognito handle it
-            // This prevents the check from blocking registration if there's an API issue
-            context.logger.log("WARNING: Failed to check phone number existence: ${e.message}")
-            false
-        }
-    }
-
     private fun handleRegister(
         input: APIGatewayProxyRequestEvent,
         context: Context
@@ -465,13 +426,12 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
                 mapper.readValue<RegisterRequest>(body)
             } catch (e: Exception) {
                 context.logger.log("ERROR: Failed to parse request body: ${e.message}")
-                return createErrorResponse(400, "Invalid request format. Expected JSON with username, password, passwordConfirm, firstName, lastName, and at least one of email or phoneNumber")
+                return createErrorResponse(400, "Invalid request format. Expected JSON with username, password, passwordConfirm, email, firstName, and lastName")
             }
 
             // Normalize inputs (trim whitespace, lowercase email)
             val normalizedUsername = normalizeUsername(registerRequest.username)
             val normalizedEmail = normalizeEmail(registerRequest.email)
-            val normalizedPhone = normalizePhoneNumber(registerRequest.phoneNumber)
             val normalizedPassword = registerRequest.password?.trim()
             val normalizedPasswordConfirm = registerRequest.passwordConfirm?.trim()
             val normalizedFirstName = registerRequest.firstName?.trim()?.takeIf { it.isNotBlank() }
@@ -483,8 +443,8 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
                 return createErrorResponse(400, "Username, password, passwordConfirm, firstName, and lastName are required")
             }
 
-            if (normalizedEmail == null && normalizedPhone == null) {
-                return createErrorResponse(400, "At least one of email or phoneNumber is required")
+            if (normalizedEmail == null) {
+                return createErrorResponse(400, "Email is required")
             }
             
             // Validate password confirmation
@@ -505,23 +465,12 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
                 return createErrorResponse(400, "Last name must be 64 characters or less")
             }
 
-            // Check for duplicate email (if provided)
-            if (normalizedEmail != null) {
-                val emailExists = checkEmailExists(userPoolId, normalizedEmail, context)
-                if (emailExists) {
-                    return createErrorResponse(409, "An account with this email already exists")
-                }
+            val emailExists = checkEmailExists(userPoolId, normalizedEmail, context)
+            if (emailExists) {
+                return createErrorResponse(409, "An account with this email already exists")
             }
 
-            // Check for duplicate phone number (if provided)
-            if (normalizedPhone != null) {
-                val phoneExists = checkPhoneNumberExists(userPoolId, normalizedPhone, context)
-                if (phoneExists) {
-                    return createErrorResponse(409, "An account with this phone number already exists")
-                }
-            }
-
-            // Build user attributes list and include only provided identifiers
+            // Build user attributes list and include the required email attribute.
             val userAttributes = mutableListOf(
                 software.amazon.awssdk.services.cognitoidentityprovider.model.AttributeType.builder()
                     .name("given_name")
@@ -530,24 +479,12 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
                 software.amazon.awssdk.services.cognitoidentityprovider.model.AttributeType.builder()
                     .name("family_name")
                     .value(normalizedLastName)  // Last name
+                    .build(),
+                AttributeType.builder()
+                    .name("email")
+                    .value(normalizedEmail)  // Already lowercase and validated
                     .build()
             )
-            if (normalizedEmail != null) {
-                userAttributes.add(
-                    AttributeType.builder()
-                        .name("email")
-                        .value(normalizedEmail)  // Already lowercase and validated
-                        .build()
-                )
-            }
-            if (normalizedPhone != null) {
-                userAttributes.add(
-                    AttributeType.builder()
-                        .name("phone_number")
-                        .value(normalizedPhone)  // Already normalized
-                        .build()
-                )
-            }
 
             // Create user in Cognito with normalized values
             val createUserRequest = AdminCreateUserRequest.builder()
@@ -640,7 +577,6 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
         val password: String?,
         val passwordConfirm: String?,
         val email: String?,
-        val phoneNumber: String?,
         val firstName: String?,
         val lastName: String?
     )

@@ -241,14 +241,16 @@ class AuthHandlerTest {
         password: String,
         passwordConfirm: String,
         email: String,
-        phoneNumber: String,
+        _phoneNumber: String,
         firstName: String,
         lastName: String
     ): APIGatewayProxyRequestEvent {
+        // Kept for backwards-compatible test call sites while register is now email-only.
+        _phoneNumber.length
         return APIGatewayProxyRequestEvent().apply {
             httpMethod = "POST"
             path = "/register"
-            body = """{"username":"$username","password":"$password","passwordConfirm":"$passwordConfirm","email":"$email","phoneNumber":"$phoneNumber","firstName":"$firstName","lastName":"$lastName"}"""
+            body = """{"username":"$username","password":"$password","passwordConfirm":"$passwordConfirm","email":"$email","firstName":"$firstName","lastName":"$lastName"}"""
         }
     }
 
@@ -341,15 +343,15 @@ class AuthHandlerTest {
     }
 
     @Test
-    @DisplayName("Register with both email and phone missing returns 400")
-    fun `register missing both identifiers returns 400`(envVars: EnvironmentVariables) {
+    @DisplayName("Register with email missing returns 400")
+    fun `register missing email returns 400`(envVars: EnvironmentVariables) {
         // Given
         envVars.set("USER_POOL_ID", "test-pool-id")
 
         val event = APIGatewayProxyRequestEvent().apply {
             httpMethod = "POST"
             path = "/register"
-            body = """{"username":"testuser","password":"TestPass123!","passwordConfirm":"TestPass123!","firstName":"Test","lastName":"User","email":"","phoneNumber":""}"""
+            body = """{"username":"testuser","password":"TestPass123!","passwordConfirm":"TestPass123!","firstName":"Test","lastName":"User","email":""}"""
         }
 
         // When
@@ -360,12 +362,12 @@ class AuthHandlerTest {
         val responseBody = response.body
         assertNotNull(responseBody)
         assertTrue(responseBody!!.contains("error"))
-        assertTrue(responseBody.contains("At least one of email or phoneNumber is required"))
+        assertTrue(responseBody.contains("Email is required"))
     }
 
     @Test
-    @DisplayName("Register with email and phone fields omitted returns 400")
-    fun `register missing both identifiers when fields omitted returns 400`(envVars: EnvironmentVariables) {
+    @DisplayName("Register with email omitted returns 400")
+    fun `register missing email when field omitted returns 400`(envVars: EnvironmentVariables) {
         // Given
         envVars.set("USER_POOL_ID", "test-pool-id")
 
@@ -383,7 +385,7 @@ class AuthHandlerTest {
         val responseBody = response.body
         assertNotNull(responseBody)
         assertTrue(responseBody!!.contains("error"))
-        assertTrue(responseBody.contains("At least one of email or phoneNumber is required"))
+        assertTrue(responseBody.contains("Email is required"))
     }
 
     @Test
@@ -671,8 +673,8 @@ class AuthHandlerTest {
     }
 
     @Test
-    @DisplayName("Register with only phone does not fail identifier requirement")
-    fun `register with only phone passes identifier validation`(envVars: EnvironmentVariables) {
+    @DisplayName("Register with only phone fails because email is required")
+    fun `register with only phone fails email requirement`(envVars: EnvironmentVariables) {
         // Given
         envVars.set("USER_POOL_ID", "test-pool-id")
 
@@ -681,12 +683,11 @@ class AuthHandlerTest {
         // When
         val response = handler.handleRequest(event, mockContext)
 
-        // Then - should not fail the at-least-one-identifier validation
+        // Then
+        assertEquals(400, response.statusCode)
         val responseBody = response.body
-        if (response.statusCode == 400) {
-            assertNotNull(responseBody)
-            assertFalse(responseBody!!.contains("At least one of email or phoneNumber is required"))
-        }
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("Email is required"))
     }
 
     @Test
@@ -799,7 +800,7 @@ class AuthHandlerTest {
         val event = APIGatewayProxyRequestEvent().apply {
             httpMethod = "POST"
             path = "/register"
-            body = """{"username":"testuser","password":"TestPass123!","email":"test@example.com","phoneNumber":"+1234567890","firstName":"Test","lastName":"User"}"""
+            body = """{"username":"testuser","password":"TestPass123!","email":"test@example.com","firstName":"Test","lastName":"User"}"""
         }
         
         // When

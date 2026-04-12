@@ -1,7 +1,7 @@
 /**
  * Integration tests for registration screen Step 3 (app/(auth)/register-contact.tsx)
  * 
- * Tests the final step of registration including email/phone validation,
+ * Tests the final step of registration including email validation,
  * API integration (register + auto-login), error handling, and navigation.
  */
 
@@ -50,41 +50,6 @@ jest.mock("../contexts/AuthContext", () => ({
   }),
 }));
 
-// Mock libphonenumber-js
-jest.mock("libphonenumber-js", () => ({
-  parsePhoneNumber: jest.fn((phone, country) => {
-    // Simple mock - return valid phone number for 10-digit US numbers
-    const digits = phone.replace(/\D/g, "");
-    if (digits.length === 10) {
-      return {
-        isValid: () => true,
-        number: `+1${digits}`,
-      };
-    }
-    if (digits.length === 11 && digits.startsWith("1")) {
-      return {
-        isValid: () => true,
-        number: `+${digits}`,
-      };
-    }
-    return {
-      isValid: () => false,
-      number: null,
-    };
-  }),
-  AsYouType: jest.fn().mockImplementation((country) => {
-    return {
-      input: (digits: string) => {
-        // Simple formatting: (XXX) XXX-XXXX for 10 digits
-        const cleaned = digits.replace(/\D/g, "");
-        if (cleaned.length <= 3) return cleaned;
-        if (cleaned.length <= 6) return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3)}`;
-        return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6, 10)}`;
-      },
-    };
-  }),
-}));
-
 // Mock Alert.alert
 const alertSpy = jest.spyOn(Alert, "alert");
 
@@ -119,24 +84,14 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
       expect(screen.getByText(/Create your.*Stride.*account/)).toBeTruthy();
     });
 
-    it("renders the 'Step 3 of 3: Contact' label", () => {
+    it("renders the 'Step 3 of 3: Email' label", () => {
       render(<RegisterContact />);
-      expect(screen.getByText("Step 3 of 3: Contact")).toBeTruthy();
+      expect(screen.getByText("Step 3 of 3: Email")).toBeTruthy();
     });
 
-    it("does not render the email text field by default", () => {
+    it("renders the email text field", () => {
       render(<RegisterContact />);
-      expect(screen.queryByPlaceholderText("Email")).toBeNull();
-    });
-
-    it("renders the phone number text field", () => {
-      render(<RegisterContact />);
-      expect(screen.getByPlaceholderText("Phone Number")).toBeTruthy();
-    });
-
-    it("defaults to phone mode with email toggle text", () => {
-      render(<RegisterContact />);
-      expect(screen.getByText("Use email instead")).toBeTruthy();
+      expect(screen.getByPlaceholderText("Email")).toBeTruthy();
     });
 
     it("renders the 'Create Account' button", () => {
@@ -150,43 +105,11 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
     });
   });
 
-  describe("Contact mode toggle", () => {
-    it("toggles from phone mode to email mode", () => {
-      render(<RegisterContact />);
-
-      fireEvent.press(screen.getByText("Use email instead"));
-      expect(screen.getByText("Use phone instead")).toBeTruthy();
-      expect(screen.getByPlaceholderText("Email")).toBeTruthy();
-      expect(screen.queryByPlaceholderText("Phone Number")).toBeNull();
-    });
-  });
-
   // --- Email validation ---
 
   describe("Email validation", () => {
-    it("does not require email in default phone mode", async () => {
+    it("shows 'Email is required' when creating account with empty email", async () => {
       render(<RegisterContact />);
-
-      const phoneInput = screen.getByPlaceholderText("Phone Number");
-      fireEvent.changeText(phoneInput, "8122949840");
-      const createAccountButton = screen.getByText("Create Account");
-      await act(async () => {
-        fireEvent.press(createAccountButton);
-        await waitFor(() => {
-          expect(mockApiRegister).toHaveBeenCalled();
-        });
-      });
-
-      expect(mockApiRegister).toHaveBeenCalledWith(
-        expect.not.objectContaining({
-          email: expect.any(String),
-        })
-      );
-    });
-
-    it("shows 'Email is required' in email mode when creating account with empty email", async () => {
-      render(<RegisterContact />);
-      fireEvent.press(screen.getByText("Use email instead"));
 
       const createAccountButton = screen.getByText("Create Account");
       fireEvent.press(createAccountButton);
@@ -197,9 +120,8 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
       expect(mockApiRegister).not.toHaveBeenCalled();
     });
 
-    it("shows 'Please enter a valid email address' error for invalid email in email mode", async () => {
+    it("shows 'Please enter a valid email address' error for invalid email", async () => {
       render(<RegisterContact />);
-      fireEvent.press(screen.getByText("Use email instead"));
 
       const emailInput = screen.getByPlaceholderText("Email");
       fireEvent.changeText(emailInput, "invalid-email");
@@ -214,7 +136,6 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
 
     it("accepts valid email addresses", async () => {
       render(<RegisterContact />);
-      fireEvent.press(screen.getByText("Use email instead"));
 
       const emailInput = screen.getByPlaceholderText("Email");
       fireEvent.changeText(emailInput, "test@example.com");
@@ -236,7 +157,6 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
 
     it("trims whitespace from email before validation", async () => {
       render(<RegisterContact />);
-      fireEvent.press(screen.getByText("Use email instead"));
 
       const emailInput = screen.getByPlaceholderText("Email");
       fireEvent.changeText(emailInput, "  test@example.com  ");
@@ -257,119 +177,11 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
     });
   });
 
-  // --- Phone number validation ---
-
-  describe("Phone number validation", () => {
-    it("shows 'Phone number is required' error when creating account with empty phone", async () => {
-      render(<RegisterContact />);
-
-      const createAccountButton = screen.getByText("Create Account");
-      fireEvent.press(createAccountButton);
-
-      await waitFor(() => {
-        expect(screen.getByText("Phone number is required")).toBeTruthy();
-      });
-
-      expect(mockApiRegister).not.toHaveBeenCalled();
-    });
-
-    it("shows 'Please enter a valid phone number' error for invalid phone", async () => {
-      render(<RegisterContact />);
-      const phoneInput = screen.getByPlaceholderText("Phone Number");
-      fireEvent.changeText(phoneInput, "123");
-
-      const createAccountButton = screen.getByText("Create Account");
-      fireEvent.press(createAccountButton);
-
-      await waitFor(() => {
-        expect(screen.getByText("Please enter a valid phone number")).toBeTruthy();
-      });
-
-      expect(mockApiRegister).not.toHaveBeenCalled();
-    });
-
-    it("does not require phone in email mode", async () => {
-      render(<RegisterContact />);
-
-      fireEvent.press(screen.getByText("Use email instead"));
-      fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
-
-      const createAccountButton = screen.getByText("Create Account");
-      await act(async () => {
-        fireEvent.press(createAccountButton);
-        await waitFor(() => {
-          expect(mockApiRegister).toHaveBeenCalled();
-        });
-      });
-
-      expect(mockApiRegister).toHaveBeenCalledWith(
-        expect.not.objectContaining({
-          phoneNumber: expect.any(String),
-        })
-      );
-    });
-
-    it("formats phone number as user types", () => {
-      render(<RegisterContact />);
-
-      const phoneInput = screen.getByPlaceholderText("Phone Number");
-      fireEvent.changeText(phoneInput, "8122949840");
-
-      // Phone should be formatted
-      expect(phoneInput.props.value).toBe("(812) 294-9840");
-    });
-
-    it("accepts valid phone numbers", async () => {
-      render(<RegisterContact />);
-      const phoneInput = screen.getByPlaceholderText("Phone Number");
-      fireEvent.changeText(phoneInput, "8122949840");
-
-      const createAccountButton = screen.getByText("Create Account");
-      await act(async () => {
-        fireEvent.press(createAccountButton);
-        await waitFor(() => {
-          expect(mockApiRegister).toHaveBeenCalled();
-        });
-      });
-
-      // Phone should be converted to E.164 format
-      expect(mockApiRegister).toHaveBeenCalledWith(
-        expect.objectContaining({
-          phoneNumber: "+18122949840",
-        })
-      );
-    });
-  });
-
   // --- API integration ---
 
   describe("API integration", () => {
-    it("calls register() API with phone-only data in default mode", async () => {
+    it("calls register() API with email data", async () => {
       render(<RegisterContact />);
-      const phoneInput = screen.getByPlaceholderText("Phone Number");
-      fireEvent.changeText(phoneInput, "8122949840");
-
-      const createAccountButton = screen.getByText("Create Account");
-      await act(async () => {
-        fireEvent.press(createAccountButton);
-        await waitFor(() => {
-          expect(mockApiRegister).toHaveBeenCalled();
-        });
-      });
-
-      expect(mockApiRegister).toHaveBeenCalledWith({
-        username: "testuser",
-        password: "ValidPass123!",
-        passwordConfirm: "ValidPass123!",
-        phoneNumber: "+18122949840",
-        firstName: "John",
-        lastName: "Doe",
-      });
-    });
-
-    it("calls register() API with email-only data in email mode", async () => {
-      render(<RegisterContact />);
-      fireEvent.press(screen.getByText("Use email instead"));
       fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
 
       const createAccountButton = screen.getByText("Create Account");
@@ -392,8 +204,7 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
 
     it("calls login() API after successful registration", async () => {
       render(<RegisterContact />);
-      const phoneInput = screen.getByPlaceholderText("Phone Number");
-      fireEvent.changeText(phoneInput, "8122949840");
+      fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
 
       const createAccountButton = screen.getByText("Create Account");
       await act(async () => {
@@ -414,8 +225,7 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
 
     it("calls authLogin() with tokens after successful login", async () => {
       render(<RegisterContact />);
-      const phoneInput = screen.getByPlaceholderText("Phone Number");
-      fireEvent.changeText(phoneInput, "8122949840");
+      fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
 
       const createAccountButton = screen.getByText("Create Account");
       await act(async () => {
@@ -434,8 +244,7 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
 
     it("navigates to /home after successful registration and login", async () => {
       render(<RegisterContact />);
-      const phoneInput = screen.getByPlaceholderText("Phone Number");
-      fireEvent.changeText(phoneInput, "8122949840");
+      fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
 
       const createAccountButton = screen.getByText("Create Account");
       await act(async () => {
@@ -457,8 +266,7 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
       mockApiRegister.mockReturnValueOnce(registerPromise);
 
       const { UNSAFE_root } = render(<RegisterContact />);
-      const phoneInput = screen.getByPlaceholderText("Phone Number");
-      fireEvent.changeText(phoneInput, "8122949840");
+      fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
 
       const createAccountButton = screen.getByText("Create Account");
       fireEvent.press(createAccountButton);
@@ -487,8 +295,7 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
       mockApiRegister.mockRejectedValueOnce(error);
 
       render(<RegisterContact />);
-      const phoneInput = screen.getByPlaceholderText("Phone Number");
-      fireEvent.changeText(phoneInput, "8122949840");
+      fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
 
       const createAccountButton = screen.getByText("Create Account");
       await act(async () => {
@@ -506,8 +313,7 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
       mockApiRegister.mockRejectedValueOnce(error);
 
       render(<RegisterContact />);
-      const phoneInput = screen.getByPlaceholderText("Phone Number");
-      fireEvent.changeText(phoneInput, "8122949840");
+      fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
 
       const createAccountButton = screen.getByText("Create Account");
       await act(async () => {
@@ -547,7 +353,6 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
       mockApiRegister.mockRejectedValueOnce(error);
 
       render(<RegisterContact />);
-      fireEvent.press(screen.getByText("Use email instead"));
       const emailInput = screen.getByPlaceholderText("Email");
       fireEvent.changeText(emailInput, "test@example.com");
 
@@ -561,33 +366,12 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
       }, { timeout: 2000 });
     });
 
-    it("sets phone error when phone is already taken", async () => {
-      // Use error message that contains "phone" to match phone error condition
-      // Note: The code checks "username" || "already exists" first, so we need to avoid "already exists"
-      const error = new Error("This phone number is already registered");
-      mockApiRegister.mockRejectedValueOnce(error);
-
-      render(<RegisterContact />);
-      const phoneInput = screen.getByPlaceholderText("Phone Number");
-      fireEvent.changeText(phoneInput, "8122949840");
-
-      const createAccountButton = screen.getByText("Create Account");
-      await act(async () => {
-        fireEvent.press(createAccountButton);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText("An account with this phone number already exists")).toBeTruthy();
-      }, { timeout: 2000 });
-    });
-
     it("shows alert and navigates back when password error occurs", async () => {
       const error = new Error("Password does not meet requirements");
       mockApiRegister.mockRejectedValueOnce(error);
 
       render(<RegisterContact />);
-      const phoneInput = screen.getByPlaceholderText("Phone Number");
-      fireEvent.changeText(phoneInput, "8122949840");
+      fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
 
       const createAccountButton = screen.getByText("Create Account");
       await act(async () => {
@@ -626,8 +410,7 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
       mockApiLogin.mockRejectedValueOnce(loginError);
 
       render(<RegisterContact />);
-      const phoneInput = screen.getByPlaceholderText("Phone Number");
-      fireEvent.changeText(phoneInput, "8122949840");
+      fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
 
       const createAccountButton = screen.getByText("Create Account");
       await act(async () => {
@@ -668,8 +451,7 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
       mockParams = {};
 
       render(<RegisterContact />);
-      const phoneInput = screen.getByPlaceholderText("Phone Number");
-      fireEvent.changeText(phoneInput, "8122949840");
+      fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
 
       const createAccountButton = screen.getByText("Create Account");
       fireEvent.press(createAccountButton);
