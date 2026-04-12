@@ -173,9 +173,7 @@ class CdkStack(Stack):
             auth_handler,
             "cognito-idp:AdminInitiateAuth",
             "cognito-idp:AdminGetUser",
-            "cognito-idp:AdminCreateUser",
-            "cognito-idp:AdminSetUserPassword",
-            "cognito-idp:AdminDeleteUser",  # For cleanup on registration failure
+            "cognito-idp:SignUp",
             "cognito-idp:ListUsers",  # For checking duplicate email/phone
             "cognito-idp:ConfirmSignUp",
             "cognito-idp:ResendConfirmationCode",

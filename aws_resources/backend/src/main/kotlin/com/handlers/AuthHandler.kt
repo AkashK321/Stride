@@ -11,12 +11,9 @@ import software.amazon.awssdk.services.cognitoidentityprovider.model.InitiateAut
 import software.amazon.awssdk.services.cognitoidentityprovider.model.AuthFlowType
 import software.amazon.awssdk.services.cognitoidentityprovider.model.AuthenticationResultType
 import software.amazon.awssdk.services.cognitoidentityprovider.model.CognitoIdentityProviderException
-import software.amazon.awssdk.services.cognitoidentityprovider.model.AdminCreateUserRequest
-import software.amazon.awssdk.services.cognitoidentityprovider.model.AdminSetUserPasswordRequest
-import software.amazon.awssdk.services.cognitoidentityprovider.model.AdminDeleteUserRequest
-import software.amazon.awssdk.services.cognitoidentityprovider.model.MessageActionType
 import software.amazon.awssdk.services.cognitoidentityprovider.model.ListUsersRequest
 import software.amazon.awssdk.services.cognitoidentityprovider.model.AttributeType
+import software.amazon.awssdk.services.cognitoidentityprovider.model.SignUpRequest
 import software.amazon.awssdk.services.cognitoidentityprovider.model.ConfirmSignUpRequest
 import software.amazon.awssdk.services.cognitoidentityprovider.model.ResendConfirmationCodeRequest
 import software.amazon.awssdk.regions.Region
@@ -553,47 +550,20 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
                 )
             }
 
-            // Create user in Cognito with normalized values
-            val createUserRequest = AdminCreateUserRequest.builder()
-                .userPoolId(userPoolId)
-                .username(normalizedUsername)  // Trimmed and validated
-                .userAttributes(userAttributes)
-                .messageAction(MessageActionType.SUPPRESS)  // Don't send welcome email
-                .build()
-
-            cognitoClient.adminCreateUser(createUserRequest)
-            
-            // Track if user was created successfully for cleanup on failure
-            var userCreated = true
-
-            try {
-                // Set password with trimmed value
-                val setPasswordRequest = AdminSetUserPasswordRequest.builder()
-                    .userPoolId(userPoolId)
-                    .username(normalizedUsername)
-                    .password(normalizedPassword)
-                    .permanent(true)
-                    .build()
-
-                cognitoClient.adminSetUserPassword(setPasswordRequest)
-            } catch (e: CognitoIdentityProviderException) {
-                // If password setting fails, clean up the orphaned user
-                if (userCreated) {
-                    try {
-                        context.logger.log("Password setting failed, cleaning up orphaned user: ${normalizedUsername}")
-                        val deleteUserRequest = AdminDeleteUserRequest.builder()
-                            .userPoolId(userPoolId)
-                            .username(normalizedUsername)
-                            .build()
-                        cognitoClient.adminDeleteUser(deleteUserRequest)
-                    } catch (deleteError: Exception) {
-                        context.logger.log("ERROR: Failed to cleanup orphaned user: ${deleteError.message}")
-                        // Log but don't fail - the original error is more important
-                    }
-                }
-                // Re-throw to be handled by outer catch block
-                throw e
+            val clientId = System.getenv("USER_POOL_CLIENT_ID")
+            if (clientId.isNullOrBlank()) {
+                context.logger.log("ERROR: Missing USER_POOL_CLIENT_ID environment variable")
+                return createErrorResponse(500, "Server configuration error")
             }
+
+            // Use SignUp so new users stay unconfirmed until they submit a verification code.
+            val signUpRequest = SignUpRequest.builder()
+                .clientId(clientId)
+                .username(normalizedUsername)
+                .password(normalizedPassword)
+                .userAttributes(userAttributes)
+                .build()
+            cognitoClient.signUp(signUpRequest)
 
             // Success - return username for client reference
             val responseBody = mapper.writeValueAsString(
