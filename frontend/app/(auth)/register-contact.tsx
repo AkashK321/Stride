@@ -187,7 +187,6 @@ export default function RegisterContact() {
         router.replace("/home");
       } catch (loginError) {
         // Registration succeeded but login failed - show message and redirect to login
-        console.error("Auto-login failed after registration:", loginError);
         const loginErrorMessage =
           loginError instanceof Error ? loginError.message : "Login failed after registration";
 

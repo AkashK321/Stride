@@ -69,6 +69,8 @@ export interface RegisterRequest {
 export interface RegisterResponse {
   message: string;
   username: string;
+  deliveryMedium?: string | null;
+  deliveryDestination?: string | null;
 }
 
 export interface ConfirmSignUpRequest {
@@ -86,6 +88,8 @@ export interface ResendSignUpCodeRequest {
 
 export interface ResendSignUpCodeResponse {
   message: string;
+  deliveryMedium?: string | null;
+  deliveryDestination?: string | null;
 }
 
 export interface LandmarkResult {

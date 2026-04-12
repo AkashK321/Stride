@@ -563,13 +563,24 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
                 .password(normalizedPassword)
                 .userAttributes(userAttributes)
                 .build()
-            cognitoClient.signUp(signUpRequest)
+            val signUpResponse = cognitoClient.signUp(signUpRequest)
+
+            val signUpCodeDelivery = signUpResponse.codeDeliveryDetails()
+            val signUpDeliveryMedium = signUpCodeDelivery?.deliveryMediumAsString()
+            val signUpDestination = signUpCodeDelivery?.destination()
+            val signUpMessage = if (!signUpDeliveryMedium.isNullOrBlank() && !signUpDestination.isNullOrBlank()) {
+                "User registered successfully. Verification code sent via ${signUpDeliveryMedium} to ${signUpDestination}"
+            } else {
+                "User registered successfully"
+            }
 
             // Success - return username for client reference
             val responseBody = mapper.writeValueAsString(
                 mapOf(
-                    "message" to "User registered successfully",
-                    "username" to normalizedUsername
+                    "message" to signUpMessage,
+                    "username" to normalizedUsername,
+                    "deliveryMedium" to signUpDeliveryMedium,
+                    "deliveryDestination" to signUpDestination
                 )
             )
 
@@ -693,10 +704,22 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
                 .clientId(clientId)
                 .username(normalizedUsername)
                 .build()
-            cognitoClient.resendConfirmationCode(cognitoRequest)
+            val resendResponse = cognitoClient.resendConfirmationCode(cognitoRequest)
+            val codeDeliveryDetails = resendResponse.codeDeliveryDetails()
+            val deliveryMedium = codeDeliveryDetails?.deliveryMediumAsString()
+            val deliveryDestination = codeDeliveryDetails?.destination()
+            val successMessage = if (!deliveryMedium.isNullOrBlank() && !deliveryDestination.isNullOrBlank()) {
+                "Verification code sent via ${deliveryMedium} to ${deliveryDestination}"
+            } else {
+                "Verification code sent successfully"
+            }
 
             val responseBody = mapper.writeValueAsString(
-                mapOf("message" to "Verification code sent successfully")
+                mapOf(
+                    "message" to successMessage,
+                    "deliveryMedium" to deliveryMedium,
+                    "deliveryDestination" to deliveryDestination
+                )
             )
             return APIGatewayProxyResponseEvent()
                 .withStatusCode(200)
