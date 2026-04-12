@@ -60,6 +60,50 @@ def test_register_success(api_base_url, test_user_credentials):
     assert "username" in data
 
 
+def test_register_email_only_success(api_base_url, test_user_credentials):
+    """Test successful user registration with email only."""
+    response = requests.post(
+        f"{api_base_url}/register",
+        json={
+            "username": f"{test_user_credentials['username']}_email_only",
+            "password": test_user_credentials["password"],
+            "passwordConfirm": test_user_credentials["passwordConfirm"],
+            "email": test_user_credentials["email"],
+            "firstName": test_user_credentials["firstName"],
+            "lastName": test_user_credentials["lastName"]
+        },
+        headers={"Content-Type": "application/json"},
+        timeout=10
+    )
+
+    assert response.status_code == 201, f"Expected 201, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert "message" in data
+    assert "username" in data
+
+
+def test_register_phone_only_success(api_base_url, test_user_credentials):
+    """Test successful user registration with phone only."""
+    response = requests.post(
+        f"{api_base_url}/register",
+        json={
+            "username": f"{test_user_credentials['username']}_phone_only",
+            "password": test_user_credentials["password"],
+            "passwordConfirm": test_user_credentials["passwordConfirm"],
+            "phoneNumber": test_user_credentials["phoneNumber"],
+            "firstName": test_user_credentials["firstName"],
+            "lastName": test_user_credentials["lastName"]
+        },
+        headers={"Content-Type": "application/json"},
+        timeout=10
+    )
+
+    assert response.status_code == 201, f"Expected 201, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert "message" in data
+    assert "username" in data
+
+
 def test_register_missing_fields(api_base_url):
     """Test registration with missing required fields."""
     # Missing email
@@ -77,6 +121,27 @@ def test_register_missing_fields(api_base_url):
     data = response.json()
     assert "error" in data
     assert "required" in data["error"].lower()
+
+
+def test_register_missing_email_and_phone(api_base_url):
+    """Test registration fails when both email and phoneNumber are absent."""
+    response = requests.post(
+        f"{api_base_url}/register",
+        json={
+            "username": "testuser_missing_identifiers",
+            "password": "TestPass123!",
+            "passwordConfirm": "TestPass123!",
+            "firstName": "Test",
+            "lastName": "User"
+        },
+        headers={"Content-Type": "application/json"},
+        timeout=10
+    )
+
+    assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert "error" in data
+    assert data["error"] == "At least one of email or phoneNumber is required"
 
 
 def test_register_invalid_json(api_base_url):

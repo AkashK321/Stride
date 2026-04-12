@@ -465,7 +465,7 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
                 mapper.readValue<RegisterRequest>(body)
             } catch (e: Exception) {
                 context.logger.log("ERROR: Failed to parse request body: ${e.message}")
-                return createErrorResponse(400, "Invalid request format. Expected JSON with username, password, passwordConfirm, email, phoneNumber, firstName, and lastName")
+                return createErrorResponse(400, "Invalid request format. Expected JSON with username, password, passwordConfirm, firstName, lastName, and at least one of email or phoneNumber")
             }
 
             // Normalize inputs (trim whitespace, lowercase email)
@@ -478,9 +478,13 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
             val normalizedLastName = registerRequest.lastName?.trim()?.takeIf { it.isNotBlank() }
             
             // Validate required fields
-            if (normalizedUsername == null || normalizedPassword.isNullOrEmpty() || normalizedPasswordConfirm.isNullOrEmpty() || 
-                normalizedEmail == null || normalizedPhone == null || normalizedFirstName == null || normalizedLastName == null) {
-                return createErrorResponse(400, "Username, password, passwordConfirm, email, phoneNumber, firstName, and lastName are required")
+            if (normalizedUsername == null || normalizedPassword.isNullOrEmpty() || normalizedPasswordConfirm.isNullOrEmpty() ||
+                normalizedFirstName == null || normalizedLastName == null) {
+                return createErrorResponse(400, "Username, password, passwordConfirm, firstName, and lastName are required")
+            }
+
+            if (normalizedEmail == null && normalizedPhone == null) {
+                return createErrorResponse(400, "At least one of email or phoneNumber is required")
             }
             
             // Validate password confirmation
@@ -501,28 +505,24 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
                 return createErrorResponse(400, "Last name must be 64 characters or less")
             }
 
-            // Check for duplicate email
-            val emailExists = checkEmailExists(userPoolId, normalizedEmail, context)
-            if (emailExists) {
-                return createErrorResponse(409, "An account with this email already exists")
+            // Check for duplicate email (if provided)
+            if (normalizedEmail != null) {
+                val emailExists = checkEmailExists(userPoolId, normalizedEmail, context)
+                if (emailExists) {
+                    return createErrorResponse(409, "An account with this email already exists")
+                }
             }
 
-            // Check for duplicate phone number
-            val phoneExists = checkPhoneNumberExists(userPoolId, normalizedPhone, context)
-            if (phoneExists) {
-                return createErrorResponse(409, "An account with this phone number already exists")
+            // Check for duplicate phone number (if provided)
+            if (normalizedPhone != null) {
+                val phoneExists = checkPhoneNumberExists(userPoolId, normalizedPhone, context)
+                if (phoneExists) {
+                    return createErrorResponse(409, "An account with this phone number already exists")
+                }
             }
 
-            // Build user attributes list with all required fields
+            // Build user attributes list and include only provided identifiers
             val userAttributes = mutableListOf(
-                software.amazon.awssdk.services.cognitoidentityprovider.model.AttributeType.builder()
-                    .name("email")
-                    .value(normalizedEmail)  // Already lowercase and validated
-                    .build(),
-                software.amazon.awssdk.services.cognitoidentityprovider.model.AttributeType.builder()
-                    .name("phone_number")
-                    .value(normalizedPhone)  // Already in E.164 format
-                    .build(),
                 software.amazon.awssdk.services.cognitoidentityprovider.model.AttributeType.builder()
                     .name("given_name")
                     .value(normalizedFirstName)  // First name
@@ -532,6 +532,22 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
                     .value(normalizedLastName)  // Last name
                     .build()
             )
+            if (normalizedEmail != null) {
+                userAttributes.add(
+                    AttributeType.builder()
+                        .name("email")
+                        .value(normalizedEmail)  // Already lowercase and validated
+                        .build()
+                )
+            }
+            if (normalizedPhone != null) {
+                userAttributes.add(
+                    AttributeType.builder()
+                        .name("phone_number")
+                        .value(normalizedPhone)  // Already normalized
+                        .build()
+                )
+            }
 
             // Create user in Cognito with normalized values
             val createUserRequest = AdminCreateUserRequest.builder()
