@@ -252,6 +252,22 @@ class AuthHandlerTest {
         }
     }
 
+    private fun createConfirmEvent(username: String, code: String): APIGatewayProxyRequestEvent {
+        return APIGatewayProxyRequestEvent().apply {
+            httpMethod = "POST"
+            path = "/register/confirm"
+            body = """{"username":"$username","code":"$code"}"""
+        }
+    }
+
+    private fun createResendEvent(username: String): APIGatewayProxyRequestEvent {
+        return APIGatewayProxyRequestEvent().apply {
+            httpMethod = "POST"
+            path = "/register/resend-code"
+            body = """{"username":"$username"}"""
+        }
+    }
+
     // Registration tests
 
     @Test
@@ -557,6 +573,154 @@ class AuthHandlerTest {
         
         // Then
         assertEquals(404, response.statusCode)
+    }
+
+    @Test
+    @DisplayName("Confirm with missing environment variables returns 500")
+    fun `confirm missing environment returns 500`() {
+        val event = createConfirmEvent("testuser", "123456")
+
+        val response = handler.handleRequest(event, mockContext)
+
+        assertEquals(500, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("Server configuration error"))
+    }
+
+    @Test
+    @DisplayName("Confirm with invalid JSON returns 400")
+    fun `confirm invalid JSON returns 400`(envVars: EnvironmentVariables) {
+        envVars.set("USER_POOL_CLIENT_ID", "test-client-id")
+
+        val event = APIGatewayProxyRequestEvent().apply {
+            httpMethod = "POST"
+            path = "/register/confirm"
+            body = "invalid-json"
+        }
+
+        val response = handler.handleRequest(event, mockContext)
+
+        assertEquals(400, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("Invalid request format"))
+    }
+
+    @Test
+    @DisplayName("Confirm with missing body returns 400")
+    fun `confirm missing body returns 400`(envVars: EnvironmentVariables) {
+        envVars.set("USER_POOL_CLIENT_ID", "test-client-id")
+
+        val event = APIGatewayProxyRequestEvent().apply {
+            httpMethod = "POST"
+            path = "/register/confirm"
+            body = null
+        }
+
+        val response = handler.handleRequest(event, mockContext)
+
+        assertEquals(400, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("Request body is required"))
+    }
+
+    @Test
+    @DisplayName("Confirm with missing required fields returns 400")
+    fun `confirm missing required fields returns 400`(envVars: EnvironmentVariables) {
+        envVars.set("USER_POOL_CLIENT_ID", "test-client-id")
+
+        val event = APIGatewayProxyRequestEvent().apply {
+            httpMethod = "POST"
+            path = "/register/confirm"
+            body = """{"username":" ","code":""}"""
+        }
+
+        val response = handler.handleRequest(event, mockContext)
+
+        assertEquals(400, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("Username and code are required"))
+    }
+
+    @Test
+    @DisplayName("Resend with missing environment variables returns 500")
+    fun `resend missing environment returns 500`() {
+        val event = createResendEvent("testuser")
+
+        val response = handler.handleRequest(event, mockContext)
+
+        assertEquals(500, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("Server configuration error"))
+    }
+
+    @Test
+    @DisplayName("Resend with invalid JSON returns 400")
+    fun `resend invalid JSON returns 400`(envVars: EnvironmentVariables) {
+        envVars.set("USER_POOL_CLIENT_ID", "test-client-id")
+
+        val event = APIGatewayProxyRequestEvent().apply {
+            httpMethod = "POST"
+            path = "/register/resend-code"
+            body = "invalid-json"
+        }
+
+        val response = handler.handleRequest(event, mockContext)
+
+        assertEquals(400, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("Invalid request format"))
+    }
+
+    @Test
+    @DisplayName("Resend with missing body returns 400")
+    fun `resend missing body returns 400`(envVars: EnvironmentVariables) {
+        envVars.set("USER_POOL_CLIENT_ID", "test-client-id")
+
+        val event = APIGatewayProxyRequestEvent().apply {
+            httpMethod = "POST"
+            path = "/register/resend-code"
+            body = null
+        }
+
+        val response = handler.handleRequest(event, mockContext)
+
+        assertEquals(400, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("Request body is required"))
+    }
+
+    @Test
+    @DisplayName("Resend with missing username returns 400")
+    fun `resend missing username returns 400`(envVars: EnvironmentVariables) {
+        envVars.set("USER_POOL_CLIENT_ID", "test-client-id")
+
+        val event = APIGatewayProxyRequestEvent().apply {
+            httpMethod = "POST"
+            path = "/register/resend-code"
+            body = """{"username":"   "}"""
+        }
+
+        val response = handler.handleRequest(event, mockContext)
+
+        assertEquals(400, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("Username is required"))
     }
 
     // Normalization tests (whitespace trimming)

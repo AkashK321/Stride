@@ -17,6 +17,8 @@ import software.amazon.awssdk.services.cognitoidentityprovider.model.AdminDelete
 import software.amazon.awssdk.services.cognitoidentityprovider.model.MessageActionType
 import software.amazon.awssdk.services.cognitoidentityprovider.model.ListUsersRequest
 import software.amazon.awssdk.services.cognitoidentityprovider.model.AttributeType
+import software.amazon.awssdk.services.cognitoidentityprovider.model.ConfirmSignUpRequest
+import software.amazon.awssdk.services.cognitoidentityprovider.model.ResendConfirmationCodeRequest
 import software.amazon.awssdk.regions.Region
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
@@ -45,6 +47,8 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
         val response = when {
             path == "/login" && method == "POST" -> handleLogin(input, context)
             path == "/register" && method == "POST" -> handleRegister(input, context)
+            path == "/register/confirm" && method == "POST" -> handleConfirmRegister(input, context)
+            path == "/register/resend-code" && method == "POST" -> handleResendRegisterCode(input, context)
             else -> createErrorResponse(404, "Not Found")
         }
 
@@ -628,6 +632,126 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
         }
     }
 
+    private fun handleConfirmRegister(
+        input: APIGatewayProxyRequestEvent,
+        context: Context
+    ): APIGatewayProxyResponseEvent {
+        context.logger.log("Handling register confirmation request")
+
+        try {
+            val clientId = System.getenv("USER_POOL_CLIENT_ID")
+            if (clientId.isNullOrBlank()) {
+                context.logger.log("ERROR: Missing USER_POOL_CLIENT_ID environment variable")
+                return createErrorResponse(500, "Server configuration error")
+            }
+
+            val body = input.body ?: return createErrorResponse(400, "Request body is required")
+            val confirmRequest = try {
+                mapper.readValue<ConfirmRegisterRequest>(body)
+            } catch (e: Exception) {
+                context.logger.log("ERROR: Failed to parse confirm request body: ${e.message}")
+                return createErrorResponse(400, "Invalid request format. Expected JSON with username and code")
+            }
+
+            val normalizedUsername = normalizeUsername(confirmRequest.username)
+            val normalizedCode = confirmRequest.code?.trim()?.takeIf { it.isNotBlank() }
+            if (normalizedUsername == null || normalizedCode == null) {
+                return createErrorResponse(400, "Username and code are required")
+            }
+
+            val cognitoRequest = ConfirmSignUpRequest.builder()
+                .clientId(clientId)
+                .username(normalizedUsername)
+                .confirmationCode(normalizedCode)
+                .build()
+            cognitoClient.confirmSignUp(cognitoRequest)
+
+            val responseBody = mapper.writeValueAsString(
+                mapOf("message" to "Account verified successfully")
+            )
+            return APIGatewayProxyResponseEvent()
+                .withStatusCode(200)
+                .withBody(responseBody)
+                .withHeaders(mapOf("Content-Type" to "application/json"))
+        } catch (e: CognitoIdentityProviderException) {
+            context.logger.log("ERROR: Cognito confirmation failed: ${e.message}")
+
+            val errorCode = e.awsErrorDetails()?.errorCode() ?: extractErrorCodeFromMessage(e.message)
+            val userFriendlyMessage = parseCognitoError(e)
+            val statusCode = when (errorCode) {
+                "CodeMismatchException", "ExpiredCodeException", "InvalidParameterException" -> 400
+                "UserNotFoundException" -> 404
+                "TooManyRequestsException", "LimitExceededException" -> 429
+                else -> 500
+            }
+
+            return createErrorResponse(statusCode, userFriendlyMessage)
+        } catch (e: Exception) {
+            context.logger.log("ERROR: Unexpected error during register confirmation: ${e.message}")
+            e.printStackTrace()
+            return createErrorResponse(500, "Internal server error")
+        }
+    }
+
+    private fun handleResendRegisterCode(
+        input: APIGatewayProxyRequestEvent,
+        context: Context
+    ): APIGatewayProxyResponseEvent {
+        context.logger.log("Handling register resend-code request")
+
+        try {
+            val clientId = System.getenv("USER_POOL_CLIENT_ID")
+            if (clientId.isNullOrBlank()) {
+                context.logger.log("ERROR: Missing USER_POOL_CLIENT_ID environment variable")
+                return createErrorResponse(500, "Server configuration error")
+            }
+
+            val body = input.body ?: return createErrorResponse(400, "Request body is required")
+            val resendRequest = try {
+                mapper.readValue<ResendRegisterCodeRequest>(body)
+            } catch (e: Exception) {
+                context.logger.log("ERROR: Failed to parse resend request body: ${e.message}")
+                return createErrorResponse(400, "Invalid request format. Expected JSON with username")
+            }
+
+            val normalizedUsername = normalizeUsername(resendRequest.username)
+            if (normalizedUsername == null) {
+                return createErrorResponse(400, "Username is required")
+            }
+
+            val cognitoRequest = ResendConfirmationCodeRequest.builder()
+                .clientId(clientId)
+                .username(normalizedUsername)
+                .build()
+            cognitoClient.resendConfirmationCode(cognitoRequest)
+
+            val responseBody = mapper.writeValueAsString(
+                mapOf("message" to "Verification code sent successfully")
+            )
+            return APIGatewayProxyResponseEvent()
+                .withStatusCode(200)
+                .withBody(responseBody)
+                .withHeaders(mapOf("Content-Type" to "application/json"))
+        } catch (e: CognitoIdentityProviderException) {
+            context.logger.log("ERROR: Cognito resend failed: ${e.message}")
+
+            val errorCode = e.awsErrorDetails()?.errorCode() ?: extractErrorCodeFromMessage(e.message)
+            val userFriendlyMessage = parseCognitoError(e)
+            val statusCode = when (errorCode) {
+                "InvalidParameterException" -> 400
+                "UserNotFoundException" -> 404
+                "TooManyRequestsException", "LimitExceededException" -> 429
+                else -> 500
+            }
+
+            return createErrorResponse(statusCode, userFriendlyMessage)
+        } catch (e: Exception) {
+            context.logger.log("ERROR: Unexpected error during resend confirmation code: ${e.message}")
+            e.printStackTrace()
+            return createErrorResponse(500, "Internal server error")
+        }
+    }
+
     // Data class for login request
     private data class LoginRequest(
         val username: String?,
@@ -643,5 +767,14 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
         val phoneNumber: String?,
         val firstName: String?,
         val lastName: String?
+    )
+
+    private data class ConfirmRegisterRequest(
+        val username: String?,
+        val code: String?
+    )
+
+    private data class ResendRegisterCodeRequest(
+        val username: String?
     )
 }
