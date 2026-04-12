@@ -364,6 +364,29 @@ class AuthHandlerTest {
     }
 
     @Test
+    @DisplayName("Register with email and phone fields omitted returns 400")
+    fun `register missing both identifiers when fields omitted returns 400`(envVars: EnvironmentVariables) {
+        // Given
+        envVars.set("USER_POOL_ID", "test-pool-id")
+
+        val event = APIGatewayProxyRequestEvent().apply {
+            httpMethod = "POST"
+            path = "/register"
+            body = """{"username":"testuser","password":"TestPass123!","passwordConfirm":"TestPass123!","firstName":"Test","lastName":"User"}"""
+        }
+
+        // When
+        val response = handler.handleRequest(event, mockContext)
+
+        // Then
+        assertEquals(400, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("At least one of email or phoneNumber is required"))
+    }
+
+    @Test
     @DisplayName("Register with empty username returns 400")
     fun `register empty username returns 400`(envVars: EnvironmentVariables) {
         // Given

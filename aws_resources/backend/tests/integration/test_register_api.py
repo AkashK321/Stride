@@ -144,6 +144,29 @@ def test_register_missing_email_and_phone(api_base_url):
     assert data["error"] == "At least one of email or phoneNumber is required"
 
 
+def test_register_blank_email_and_phone(api_base_url):
+    """Test registration fails when email and phoneNumber are blank strings."""
+    response = requests.post(
+        f"{api_base_url}/register",
+        json={
+            "username": "testuser_blank_identifiers",
+            "password": "TestPass123!",
+            "passwordConfirm": "TestPass123!",
+            "email": "   ",
+            "phoneNumber": "  ",
+            "firstName": "Test",
+            "lastName": "User"
+        },
+        headers={"Content-Type": "application/json"},
+        timeout=10
+    )
+
+    assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert "error" in data
+    assert data["error"] == "At least one of email or phoneNumber is required"
+
+
 def test_register_invalid_json(api_base_url):
     """Test registration with invalid JSON."""
     response = requests.post(

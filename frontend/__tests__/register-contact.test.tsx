@@ -367,6 +367,29 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
       });
     });
 
+    it("calls register() API with email-only data in email mode", async () => {
+      render(<RegisterContact />);
+      fireEvent.press(screen.getByText("Use email instead"));
+      fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
+
+      const createAccountButton = screen.getByText("Create Account");
+      await act(async () => {
+        fireEvent.press(createAccountButton);
+        await waitFor(() => {
+          expect(mockApiRegister).toHaveBeenCalled();
+        });
+      });
+
+      expect(mockApiRegister).toHaveBeenCalledWith({
+        username: "testuser",
+        password: "ValidPass123!",
+        passwordConfirm: "ValidPass123!",
+        email: "test@example.com",
+        firstName: "John",
+        lastName: "Doe",
+      });
+    });
+
     it("calls login() API after successful registration", async () => {
       render(<RegisterContact />);
       const phoneInput = screen.getByPlaceholderText("Phone Number");
