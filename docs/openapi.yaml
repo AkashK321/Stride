@@ -153,9 +153,10 @@ paths:
         - Authentication
       summary: User registration
       description: |
-        Registers a new user in AWS Cognito with username, password, email, phone number,
-        first name, and last name. All fields are required. The user is created with a permanent
-        password and can immediately log in.
+        Registers a new user in AWS Cognito with username, password, first name, last name,
+        and at least one contact method (`email` or `phoneNumber`). Supplying both contact
+        fields is also supported. The user is created with a permanent password and can
+        immediately log in.
         
         **Input Normalization:**
         - Username is trimmed of leading/trailing whitespace
@@ -183,8 +184,8 @@ paths:
             schema:
               $ref: '#/components/schemas/RegisterRequest'
             examples:
-              validRegistration:
-                summary: Valid registration with all required fields
+              validRegistrationWithBothContacts:
+                summary: Valid registration with both email and phone number
                 value:
                   username: "johndoe"
                   password: "SecurePass123!"
@@ -192,6 +193,24 @@ paths:
                   email: "john.doe@example.com"
                   phoneNumber: "+1234567890"
                   firstName: "John"
+                  lastName: "Doe"
+              validRegistrationPhoneOnly:
+                summary: Valid registration with phone only
+                value:
+                  username: "janedoe"
+                  password: "SecurePass123!"
+                  passwordConfirm: "SecurePass123!"
+                  phoneNumber: "+1234567890"
+                  firstName: "Jane"
+                  lastName: "Doe"
+              validRegistrationEmailOnly:
+                summary: Valid registration with email only
+                value:
+                  username: "alexdoe"
+                  password: "SecurePass123!"
+                  passwordConfirm: "SecurePass123!"
+                  email: "alex.doe@example.com"
+                  firstName: "Alex"
                   lastName: "Doe"
       responses:
         '201':
@@ -215,11 +234,11 @@ paths:
                 missingFields:
                   summary: Missing required fields
                   value:
-                    error: "Username, password, passwordConfirm, email, phoneNumber, firstName, and lastName are required"
+                    error: "Username, password, passwordConfirm, firstName, and lastName are required, and at least one contact method (email or phoneNumber) must be provided"
                 invalidFormat:
                   summary: Invalid JSON format
                   value:
-                    error: "Invalid request format. Expected JSON with username, password, passwordConfirm, email, phoneNumber, firstName, and lastName"
+                    error: "Invalid request format. Expected JSON with username, password, passwordConfirm, firstName, lastName, and at least one of email or phoneNumber"
                 passwordMismatch:
                   summary: Passwords do not match
                   value:
@@ -1363,14 +1382,21 @@ components:
 
     RegisterRequest:
       type: object
+      description: |
+        Registration payload. `username`, `password`, `passwordConfirm`, `firstName`, and
+        `lastName` are always required. At least one contact method (`email` or `phoneNumber`)
+        must be provided; both are allowed.
       required:
         - username
         - password
         - passwordConfirm
-        - email
-        - phoneNumber
         - firstName
         - lastName
+      anyOf:
+        - required:
+            - email
+        - required:
+            - phoneNumber
       properties:
         username:
           type: string
