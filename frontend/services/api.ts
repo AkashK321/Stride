@@ -71,6 +71,23 @@ export interface RegisterResponse {
   username: string;
 }
 
+export interface ConfirmSignUpRequest {
+  username: string;
+  code: string;
+}
+
+export interface ConfirmSignUpResponse {
+  message: string;
+}
+
+export interface ResendSignUpCodeRequest {
+  username: string;
+}
+
+export interface ResendSignUpCodeResponse {
+  message: string;
+}
+
 export interface LandmarkResult {
   landmark_id: number;
   name: string;
@@ -208,6 +225,56 @@ export async function register(userData: RegisterRequest): Promise<RegisterRespo
     // Otherwise wrap it
     throw new Error(`Registration failed: ${String(error)}`);
   }
+}
+
+/**
+ * Confirms a pending signup with a verification code.
+ */
+export async function confirmSignUp(
+  payload: ConfirmSignUpRequest
+): Promise<ConfirmSignUpResponse> {
+  const base = requireApiUrl();
+  const response = await fetch(`${base}/register/confirm`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    const error: ApiError = data;
+    throw new Error(error.error || `Sign up confirmation failed: ${response.statusText}`);
+  }
+
+  return data as ConfirmSignUpResponse;
+}
+
+/**
+ * Resends a signup verification code for an existing username.
+ */
+export async function resendSignUpCode(
+  payload: ResendSignUpCodeRequest
+): Promise<ResendSignUpCodeResponse> {
+  const base = requireApiUrl();
+  const response = await fetch(`${base}/register/resend-code`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    const error: ApiError = data;
+    throw new Error(error.error || `Resend verification code failed: ${response.statusText}`);
+  }
+
+  return data as ResendSignUpCodeResponse;
 }
 
 /**
