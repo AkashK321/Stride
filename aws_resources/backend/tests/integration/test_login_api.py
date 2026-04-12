@@ -31,7 +31,6 @@ def test_user_credentials():
         "password": "TestPass123!",
         "passwordConfirm": "TestPass123!",
         "email": f"test_{timestamp}_{random_suffix}@example.com",
-        "phoneNumber": f"+1555{timestamp % 10000000:07d}",  # Generate unique phone number
         "firstName": "Test",
         "lastName": "User"
     }
@@ -47,7 +46,6 @@ def test_login_requires_confirmation_after_registration(api_base_url, test_user_
             "password": test_user_credentials["password"],
             "passwordConfirm": test_user_credentials["passwordConfirm"],
             "email": test_user_credentials["email"],
-            "phoneNumber": test_user_credentials["phoneNumber"],
             "firstName": test_user_credentials["firstName"],
             "lastName": test_user_credentials["lastName"]
         },
@@ -134,7 +132,6 @@ def test_login_whitespace_normalization_for_unconfirmed_user(api_base_url, test_
             "password": test_user_credentials["password"],
             "passwordConfirm": test_user_credentials["passwordConfirm"],
             "email": test_user_credentials["email"],
-            "phoneNumber": test_user_credentials["phoneNumber"],
             "firstName": test_user_credentials["firstName"],
             "lastName": test_user_credentials["lastName"]
         },

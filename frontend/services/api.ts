@@ -60,8 +60,7 @@ export interface RegisterRequest {
   username: string;
   password: string;
   passwordConfirm: string;
-  email?: string;
-  phoneNumber?: string;
+  email: string;
   firstName: string;
   lastName: string;
 }
@@ -184,16 +183,14 @@ export async function refreshToken(refreshToken: string): Promise<RefreshTokenRe
 export async function register(userData: RegisterRequest): Promise<RegisterResponse> {
   const base = requireApiUrl();
   const url = `${base}/register`;
-  const trimmedEmail = userData.email?.trim();
-  const trimmedPhoneNumber = userData.phoneNumber?.trim();
+  const trimmedEmail = userData.email.trim();
   const requestPayload: RegisterRequest = {
     username: userData.username,
     password: userData.password,
     passwordConfirm: userData.passwordConfirm,
     firstName: userData.firstName,
     lastName: userData.lastName,
-    ...(trimmedEmail ? { email: trimmedEmail } : {}),
-    ...(trimmedPhoneNumber ? { phoneNumber: trimmedPhoneNumber } : {}),
+    email: trimmedEmail,
   };
   
   try {
