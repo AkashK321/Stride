@@ -260,12 +260,131 @@ describe("register", () => {
       expect.objectContaining({
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(userData),
       })
     );
+    const registerRequest = (global.fetch as jest.Mock).mock.calls[0][1];
+    expect(JSON.parse(registerRequest.body)).toEqual(userData);
 
     // Verify the response
     expect(result).toEqual(mockResponse);
+  });
+
+  it("sends phone-only payload when email is omitted", async () => {
+    const mockResponse: RegisterResponse = {
+      message: "User registered successfully",
+      username: "testuser",
+    };
+
+    const userData: RegisterRequest = {
+      username: "testuser",
+      password: "password123",
+      passwordConfirm: "password123",
+      phoneNumber: "+1234567890",
+      firstName: "Test",
+      lastName: "User",
+    };
+
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockResponse,
+    });
+
+    await apiModule.register(userData);
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://test-api.example.com/register",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    const registerRequest = (global.fetch as jest.Mock).mock.calls[0][1];
+    expect(JSON.parse(registerRequest.body)).toEqual({
+      username: "testuser",
+      password: "password123",
+      passwordConfirm: "password123",
+      firstName: "Test",
+      lastName: "User",
+      phoneNumber: "+1234567890",
+    });
+  });
+
+  it("sends email-only payload when phone number is omitted", async () => {
+    const mockResponse: RegisterResponse = {
+      message: "User registered successfully",
+      username: "testuser",
+    };
+
+    const userData: RegisterRequest = {
+      username: "testuser",
+      password: "password123",
+      passwordConfirm: "password123",
+      email: "test@example.com",
+      firstName: "Test",
+      lastName: "User",
+    };
+
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockResponse,
+    });
+
+    await apiModule.register(userData);
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://test-api.example.com/register",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    const registerRequest = (global.fetch as jest.Mock).mock.calls[0][1];
+    expect(JSON.parse(registerRequest.body)).toEqual({
+      username: "testuser",
+      password: "password123",
+      passwordConfirm: "password123",
+      firstName: "Test",
+      lastName: "User",
+      email: "test@example.com",
+    });
+  });
+
+  it("omits blank optional contact fields from payload", async () => {
+    const mockResponse: RegisterResponse = {
+      message: "User registered successfully",
+      username: "testuser",
+    };
+
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockResponse,
+    });
+
+    await apiModule.register({
+      username: "testuser",
+      password: "password123",
+      passwordConfirm: "password123",
+      email: "   ",
+      phoneNumber: "",
+      firstName: "Test",
+      lastName: "User",
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://test-api.example.com/register",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    const registerRequest = (global.fetch as jest.Mock).mock.calls[0][1];
+    expect(JSON.parse(registerRequest.body)).toEqual({
+      username: "testuser",
+      password: "password123",
+      passwordConfirm: "password123",
+      firstName: "Test",
+      lastName: "User",
+    });
   });
 
   it("throws with API error message on failure", async () => {

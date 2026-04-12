@@ -163,6 +163,17 @@ export async function refreshToken(refreshToken: string): Promise<RefreshTokenRe
 export async function register(userData: RegisterRequest): Promise<RegisterResponse> {
   const base = requireApiUrl();
   const url = `${base}/register`;
+  const trimmedEmail = userData.email?.trim();
+  const trimmedPhoneNumber = userData.phoneNumber?.trim();
+  const requestPayload: RegisterRequest = {
+    username: userData.username,
+    password: userData.password,
+    passwordConfirm: userData.passwordConfirm,
+    firstName: userData.firstName,
+    lastName: userData.lastName,
+    ...(trimmedEmail ? { email: trimmedEmail } : {}),
+    ...(trimmedPhoneNumber ? { phoneNumber: trimmedPhoneNumber } : {}),
+  };
   
   try {
     const response = await fetch(url, {
@@ -170,7 +181,7 @@ export async function register(userData: RegisterRequest): Promise<RegisterRespo
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(userData),
+      body: JSON.stringify(requestPayload),
     });
 
     let data;
