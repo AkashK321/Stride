@@ -146,8 +146,12 @@ class CdkStack(Stack):
             sign_in_aliases=cognito.SignInAliases(
                 username=True,
                 email=True,
+                phone=True,
             ),
-            auto_verify=cognito.AutoVerifiedAttrs(email=True),
+            auto_verify=cognito.AutoVerifiedAttrs(
+                email=True,
+                phone=True,
+            ),
             password_policy=cognito.PasswordPolicy(
                 min_length=8,
                 require_lowercase=True,
