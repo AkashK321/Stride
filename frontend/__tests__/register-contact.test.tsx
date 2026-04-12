@@ -119,9 +119,9 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
       expect(screen.getByText(/Create your.*Stride.*account/)).toBeTruthy();
     });
 
-    it("renders the 'Step 3 of 3: Email & Contact' label", () => {
+    it("renders the 'Step 3 of 3: Contact' label", () => {
       render(<RegisterContact />);
-      expect(screen.getByText("Step 3 of 3: Email & Contact")).toBeTruthy();
+      expect(screen.getByText("Step 3 of 3: Contact")).toBeTruthy();
     });
 
     it("does not render the email text field by default", () => {
