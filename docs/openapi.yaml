@@ -284,17 +284,21 @@ paths:
                   value:
                     error: "Internal server error"
 
-  /register/verify-email:
+  /register/confirm:
     post:
       tags:
         - Authentication
-      summary: Verify email address
+      summary: Confirm user registration
       description: |
-        **⚠️ NOT IMPLEMENTED YET**
-        
-        Verifies a user's email address using a verification code sent during registration.
-        Uses Cognito's `ConfirmSignUp` or `VerifyUserAttribute` API.
-      operationId: verifyEmail
+        Confirms a newly registered account using the sign-up confirmation code sent by Cognito.
+        Uses Cognito's `ConfirmSignUp` API.
+
+        **Error Handling:**
+        - Invalid or expired confirmation codes return 400
+        - Missing required fields return 400
+        - Unknown users return 404
+        - Server errors return 500
+      operationId: confirmRegistration
       requestBody:
         required: true
         content:
@@ -307,35 +311,55 @@ paths:
               properties:
                 username:
                   type: string
-                  description: Username of the user to verify
+                  description: Username for the account being confirmed
                   example: "johndoe"
                 code:
                   type: string
-                  description: Verification code sent to the email
+                  description: 6-digit confirmation code sent during sign-up
                   example: "123456"
       responses:
         '200':
-          description: Email successfully verified
+          description: Account confirmed successfully
           content:
             application/json:
               schema:
                 type: object
+                required:
+                  - message
                 properties:
                   message:
                     type: string
-                    example: "Email verified successfully"
+                    example: "Account verified successfully"
         '400':
-          description: Bad request - invalid code or missing fields
+          description: Bad request - invalid, expired, or missing confirmation code
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingFields:
+                  summary: Missing username or code
+                  value:
+                    error: "Username and code are required"
+                codeMismatch:
+                  summary: Confirmation code does not match
+                  value:
+                    error: "Invalid verification code"
+                expiredCode:
+                  summary: Confirmation code has expired
+                  value:
+                    error: "Verification code has expired"
         '404':
           description: User not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                userNotFound:
+                  summary: Username does not exist
+                  value:
+                    error: "User not found"
         '500':
           description: Internal server error
           content:
@@ -349,10 +373,14 @@ paths:
         - Authentication
       summary: Resend verification code
       description: |
-        **⚠️ NOT IMPLEMENTED YET**
-        
-        Resends a verification code to the user's email.
+        Resends the sign-up confirmation code for an unconfirmed account.
         Uses Cognito's `ResendConfirmationCode` API.
+
+        **Error Handling:**
+        - Missing required fields return 400
+        - Unknown users return 404
+        - Rate limiting returns 429
+        - Server errors return 500
       operationId: resendVerificationCode
       requestBody:
         required: true
@@ -369,11 +397,13 @@ paths:
                   example: "johndoe"
       responses:
         '200':
-          description: Verification code resent successfully
+          description: Verification code sent successfully
           content:
             application/json:
               schema:
                 type: object
+                required:
+                  - message
                 properties:
                   message:
                     type: string
@@ -384,18 +414,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingFields:
+                  summary: Missing username
+                  value:
+                    error: "Username is required"
         '404':
           description: User not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                userNotFound:
+                  summary: Username does not exist
+                  value:
+                    error: "User not found"
         '429':
           description: Too many requests - rate limit exceeded
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                tooManyRequests:
+                  summary: Resend code rate limit exceeded
+                  value:
+                    error: "Too many requests. Please try again later"
         '500':
           description: Internal server error
           content:
