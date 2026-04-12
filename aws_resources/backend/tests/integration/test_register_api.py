@@ -9,6 +9,10 @@ import time
 import random
 import string
 
+REGISTER_TIMEOUT_SECONDS = 10
+REGISTER_RETRY_ATTEMPTS = 3
+REGISTER_INITIAL_BACKOFF_SECONDS = 1.0
+
 
 @pytest.fixture
 def api_base_url():
@@ -35,20 +39,48 @@ def test_user_credentials():
     }
 
 
+def register_user_with_retry(api_base_url, payload):
+    """
+    Register a user with retry logic for transient Cognito throttling (429).
+    Skips the test if all retry attempts are rate-limited.
+    """
+    delay_seconds = REGISTER_INITIAL_BACKOFF_SECONDS
+    last_response = None
+
+    for attempt in range(REGISTER_RETRY_ATTEMPTS):
+        response = requests.post(
+            f"{api_base_url}/register",
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=REGISTER_TIMEOUT_SECONDS
+        )
+        last_response = response
+
+        if response.status_code != 429:
+            return response
+
+        if attempt < REGISTER_RETRY_ATTEMPTS - 1:
+            time.sleep(delay_seconds)
+            delay_seconds *= 2
+
+    pytest.skip(
+        "Registration endpoint remained rate-limited "
+        f"after {REGISTER_RETRY_ATTEMPTS} attempts: {last_response.text}"
+    )
+
+
 def test_register_success(api_base_url, test_user_credentials):
     """Test successful user registration."""
-    response = requests.post(
-        f"{api_base_url}/register",
-        json={
+    response = register_user_with_retry(
+        api_base_url,
+        {
             "username": test_user_credentials["username"],
             "password": test_user_credentials["password"],
             "passwordConfirm": test_user_credentials["passwordConfirm"],
             "email": test_user_credentials["email"],
             "firstName": test_user_credentials["firstName"],
             "lastName": test_user_credentials["lastName"]
-        },
-        headers={"Content-Type": "application/json"},
-        timeout=10
+        }
     )
 
     assert response.status_code == 201, f"Expected 201, got {response.status_code}: {response.text}"
@@ -60,18 +92,16 @@ def test_register_success(api_base_url, test_user_credentials):
 
 def test_register_email_only_success(api_base_url, test_user_credentials):
     """Test successful user registration with email only."""
-    response = requests.post(
-        f"{api_base_url}/register",
-        json={
+    response = register_user_with_retry(
+        api_base_url,
+        {
             "username": f"{test_user_credentials['username']}_email_only",
             "password": test_user_credentials["password"],
             "passwordConfirm": test_user_credentials["passwordConfirm"],
             "email": test_user_credentials["email"],
             "firstName": test_user_credentials["firstName"],
             "lastName": test_user_credentials["lastName"]
-        },
-        headers={"Content-Type": "application/json"},
-        timeout=10
+        }
     )
 
     assert response.status_code == 201, f"Expected 201, got {response.status_code}: {response.text}"
@@ -159,18 +189,16 @@ def test_register_invalid_json(api_base_url):
 def test_register_duplicate_username(api_base_url, test_user_credentials):
     """Test registration with existing username."""
     # Register first time
-    response1 = requests.post(
-        f"{api_base_url}/register",
-        json={
+    response1 = register_user_with_retry(
+        api_base_url,
+        {
             "username": test_user_credentials["username"],
             "password": test_user_credentials["password"],
             "passwordConfirm": test_user_credentials["passwordConfirm"],
             "email": test_user_credentials["email"],
             "firstName": test_user_credentials["firstName"],
             "lastName": test_user_credentials["lastName"]
-        },
-        headers={"Content-Type": "application/json"},
-        timeout=10
+        }
     )
     assert response1.status_code == 201
 
@@ -202,18 +230,16 @@ def test_register_email_lowercase_normalization(api_base_url, test_user_credenti
     random_suffix = ''.join(random.choices(string.ascii_lowercase, k=4))
     uppercase_email = f"TEST_{timestamp}_{random_suffix}@EXAMPLE.COM"
 
-    response = requests.post(
-        f"{api_base_url}/register",
-        json={
+    response = register_user_with_retry(
+        api_base_url,
+        {
             "username": f"{test_user_credentials['username']}_email",
             "password": test_user_credentials["password"],
             "passwordConfirm": test_user_credentials["passwordConfirm"],
             "email": uppercase_email,
             "firstName": test_user_credentials["firstName"],
             "lastName": test_user_credentials["lastName"]
-        },
-        headers={"Content-Type": "application/json"},
-        timeout=10
+        }
     )
 
     # Should succeed (email normalized to lowercase)
@@ -225,18 +251,16 @@ def test_register_whitespace_normalization(api_base_url, test_user_credentials):
     timestamp = int(time.time())
     random_suffix = ''.join(random.choices(string.ascii_lowercase, k=4))
 
-    response = requests.post(
-        f"{api_base_url}/register",
-        json={
+    response = register_user_with_retry(
+        api_base_url,
+        {
             "username": f"  {test_user_credentials['username']}_ws  ",
             "password": f"  {test_user_credentials['password']}  ",
             "passwordConfirm": f"  {test_user_credentials['password']}  ",
             "email": f"  {test_user_credentials['email']}  ",
             "firstName": f"  {test_user_credentials['firstName']}  ",
             "lastName": f"  {test_user_credentials['lastName']}  "
-        },
-        headers={"Content-Type": "application/json"},
-        timeout=10
+        }
     )
 
     # Should succeed (whitespace trimmed)
@@ -246,18 +270,16 @@ def test_register_whitespace_normalization(api_base_url, test_user_credentials):
 def test_register_duplicate_email(api_base_url, test_user_credentials):
     """Test registration with existing email address."""
     # Register first time
-    response1 = requests.post(
-        f"{api_base_url}/register",
-        json={
+    response1 = register_user_with_retry(
+        api_base_url,
+        {
             "username": test_user_credentials["username"],
             "password": test_user_credentials["password"],
             "passwordConfirm": test_user_credentials["passwordConfirm"],
             "email": test_user_credentials["email"],
             "firstName": test_user_credentials["firstName"],
             "lastName": test_user_credentials["lastName"]
-        },
-        headers={"Content-Type": "application/json"},
-        timeout=10
+        }
     )
     assert response1.status_code == 201, f"First registration failed: {response1.text}"
 
@@ -290,18 +312,16 @@ def test_register_duplicate_email(api_base_url, test_user_credentials):
 def test_register_duplicate_email_case_insensitive(api_base_url, test_user_credentials):
     """Test that duplicate email check is case-insensitive (email is normalized to lowercase)."""
     # Register first time with lowercase email
-    response1 = requests.post(
-        f"{api_base_url}/register",
-        json={
+    response1 = register_user_with_retry(
+        api_base_url,
+        {
             "username": test_user_credentials["username"],
             "password": test_user_credentials["password"],
             "passwordConfirm": test_user_credentials["passwordConfirm"],
             "email": test_user_credentials["email"],
             "firstName": test_user_credentials["firstName"],
             "lastName": test_user_credentials["lastName"]
-        },
-        headers={"Content-Type": "application/json"},
-        timeout=10
+        }
     )
     assert response1.status_code == 201, f"First registration failed: {response1.text}"
 
@@ -505,18 +525,16 @@ def test_register_wrong_http_method_delete(api_base_url):
 
 def test_register_response_structure_success(api_base_url, test_user_credentials):
     """Test that successful registration returns correct response structure."""
-    response = requests.post(
-        f"{api_base_url}/register",
-        json={
+    response = register_user_with_retry(
+        api_base_url,
+        {
             "username": test_user_credentials["username"],
             "password": test_user_credentials["password"],
             "passwordConfirm": test_user_credentials["passwordConfirm"],
             "email": test_user_credentials["email"],
             "firstName": test_user_credentials["firstName"],
             "lastName": test_user_credentials["lastName"]
-        },
-        headers={"Content-Type": "application/json"},
-        timeout=10
+        }
     )
     
     assert response.status_code == 201, f"Expected 201, got {response.status_code}: {response.text}"
@@ -596,18 +614,16 @@ def test_register_response_structure_error(api_base_url):
 def test_register_response_structure_duplicate(api_base_url, test_user_credentials):
     """Test that duplicate error responses have correct structure."""
     # Register first time
-    response1 = requests.post(
-        f"{api_base_url}/register",
-        json={
+    response1 = register_user_with_retry(
+        api_base_url,
+        {
             "username": test_user_credentials["username"],
             "password": test_user_credentials["password"],
             "passwordConfirm": test_user_credentials["passwordConfirm"],
             "email": test_user_credentials["email"],
             "firstName": test_user_credentials["firstName"],
             "lastName": test_user_credentials["lastName"]
-        },
-        headers={"Content-Type": "application/json"},
-        timeout=10
+        }
     )
     assert response1.status_code == 201, f"First registration failed: {response1.text}"
     
