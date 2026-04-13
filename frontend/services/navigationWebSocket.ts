@@ -197,7 +197,8 @@ export class NavigationWebSocket {
             
             // Calculate latency if request_id is present
             if (data.request_id !== undefined) {
-              const sentTime = this._pendingRequests.get(data.request_id);
+              const pendingId = Number(data.request_id);
+              const sentTime = this._pendingRequests.get(pendingId);
               if (sentTime !== undefined) {
                 const latency = Date.now() - sentTime;
                 data.latency_ms = latency;
