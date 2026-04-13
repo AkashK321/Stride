@@ -133,15 +133,19 @@ jobs:
               print("StrideStack")
               sys.exit(0)
 
-          # Enforce branch naming convention: <tag>/<issue-number>-<description>
-          convention_pattern = r"^([a-z0-9-]+)/([0-9]+)-(.+)$"
-          match = re.match(convention_pattern, branch_name)
-
-          if not match:
-              print(f"ERROR: Branch name does not match convention: {branch_name}", file=sys.stderr)
-              sys.exit(1)
-
-          tag, issue_num, description = match.groups()
+          # Same conventions as aws_resources/app.py sanitize_branch_name
+          slash_pattern = r"^([a-z0-9-]+)/([0-9]+)-(.+)$"
+          m = re.match(slash_pattern, branch_name)
+          if m:
+              tag, issue_num, description = m.groups()
+          else:
+              m = re.match(r"^([0-9]+)-feature-(.+)$", branch_name)
+              if m:
+                  issue_num, description = m.groups()
+                  tag = "feature"
+              else:
+                  print(f"ERROR: Branch name does not match convention: {branch_name}", file=sys.stderr)
+                  sys.exit(1)
 
           # Sanitize description: alphanumeric and hyphens only, truncate to 20 chars
           description = re.sub(r"[^a-z0-9-]", "-", description)

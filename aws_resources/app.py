@@ -77,8 +77,10 @@ def sanitize_branch_name(branch_name):
     Sanitize branch name for CloudFormation stack naming.
     This is the single source of truth for stack naming logic.
 
-    Enforces branch naming convention: <tag>/<issue-number>-<description>
-    Fails if branch name doesn't match the convention (except for main branch).
+    Enforces branch naming convention:
+      - <tag>/<issue-number>-<description>  (e.g. feature/123-add-login)
+      - <issue-number>-feature-<description> (e.g. 190-feature-blah)
+    Fails if branch name doesn't match either convention (except for main branch).
     """
     branch_lower = branch_name.lower()
 
@@ -86,33 +88,38 @@ def sanitize_branch_name(branch_name):
     if branch_lower in ("main", "master"):
         return "StrideStack"
 
-    # Enforce branch naming convention: <tag>/<issue-number>-<description>
-    # Pattern: tag (alphanumeric/hyphens), slash, issue number, hyphen, description
-    convention_pattern = r"^([a-z0-9-]+)/([0-9]+)-(.+)$"
-    match = re.match(convention_pattern, branch_lower)
-
-    if not match:
-        print("ERROR: Branch name does not match required convention")
-        print()
-        print(f"Branch name: {branch_name}")
-        print()
-        print("Required format: <tag>/<issue-number>-<description>")
-        print("Examples:")
-        print("  - feature/123-add-login")
-        print("  - bugfix/456-fix-crash")
-        print("  - ci/60-centralize-stack-deploy-name")
-        print()
-        print("The branch name must:")
-        print("  1. Start with a tag (alphanumeric, hyphens allowed)")
-        print("  2. Have a forward slash '/'")
-        print("  3. Have an issue number (digits)")
-        print("  4. Have a hyphen '-'")
-        print("  5. Have a description (at least one character)")
-        print()
-        print("Exception: 'main' or 'master' branch is allowed for production deployments.")
-        sys.exit(1)
-
-    tag, issue_num, description = match.groups()
+    # Convention A: <tag>/<issue-number>-<description>
+    slash_pattern = r"^([a-z0-9-]+)/([0-9]+)-(.+)$"
+    m = re.match(slash_pattern, branch_lower)
+    if m:
+        tag, issue_num, description = m.groups()
+    else:
+        # Convention B: <issue-number>-feature-<description> (e.g. 190-feature-blah)
+        issue_feature_pattern = r"^([0-9]+)-feature-(.+)$"
+        m = re.match(issue_feature_pattern, branch_lower)
+        if m:
+            issue_num, description = m.groups()
+            tag = "feature"
+        else:
+            print("ERROR: Branch name does not match required convention")
+            print()
+            print(f"Branch name: {branch_name}")
+            print()
+            print("Required format (one of):")
+            print("  - <tag>/<issue-number>-<description>")
+            print("  - <issue-number>-feature-<description>")
+            print("Examples:")
+            print("  - feature/123-add-login")
+            print("  - bugfix/456-fix-crash")
+            print("  - ci/60-centralize-stack-deploy-name")
+            print("  - 190-feature-blahblahblah")
+            print()
+            print("The branch name must either:")
+            print("  1. Use tag/issue-description: tag, '/', digits, '-', description; or")
+            print("  2. Use issue-feature-description: digits, '-feature-', description.")
+            print()
+            print("Exception: 'main' or 'master' branch is allowed for production deployments.")
+            sys.exit(1)
 
     # Sanitize description: alphanumeric and hyphens only, truncate to 20 chars
     description = re.sub(r"[^a-z0-9-]", "-", description)
