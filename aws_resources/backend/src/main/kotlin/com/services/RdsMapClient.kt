@@ -11,6 +11,7 @@ import java.util.PriorityQueue
 import com.models.LandmarkDetails
 import com.models.NavigationInstruction
 import com.models.MapNode
+import kotlin.math.round
 
 class RdsMapClient {
     private val mapper = jacksonObjectMapper()
@@ -456,5 +457,9 @@ class RdsMapClient {
             bearing >= 292.5 && bearing < 337.5 -> "Head Northwest"
             else -> "continue"
         }
+    }
+
+    fun snapBearingToMap(bearing: Double, offset: Double): Double {
+        return round(bearing / 90.0) * 90.0 + offset
     }
 }
