@@ -266,9 +266,8 @@ describe("NavigationWebSocket", () => {
         image_base64: "test",
         focal_length_pixels: 1000,
         heading_degrees: 0,
+        distance_traveled: 0,
         gps: null,
-        accelerometer: null,
-        gyroscope: null,
         timestamp_ms: Date.now(),
         request_id: requestId,
       };
@@ -341,8 +340,7 @@ describe("NavigationWebSocket", () => {
         altitude_accuracy: null,
         speed: null,
       },
-      accelerometer: { x: 0, y: 0, z: 0 },
-      gyroscope: { x: 0, y: 0, z: 0 },
+      distance_traveled: 0,
       timestamp_ms: Date.now(),
       request_id: ws.generateRequestId(),
     });

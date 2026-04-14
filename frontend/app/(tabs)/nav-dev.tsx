@@ -378,8 +378,7 @@ export default function Navigation() {
         focal_length_pixels: focalLengthPixels,
         heading_degrees: sensors.heading,
         gps: sensors.gps,
-        accelerometer: sensors.accelerometer,
-        gyroscope: sensors.gyroscope,
+        distance_traveled: sensors.distanceDeltaFeet,
         timestamp_ms: Date.now(),
         request_id: requestId,
       };
