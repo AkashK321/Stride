@@ -1,11 +1,14 @@
 {
   "dependencies": {
     "@expo-google-fonts/roboto": "^0.4.2",
+    "expo": "^55.0.15",
     "expo-av": "~16.0.8",
+    "expo-dev-client": "^55.0.27",
     "expo-file-system": "~18.1.11",
     "expo-sensors": "~14.1.4"
   },
   "devDependencies": {
+    "@types/react": "~19.2.10",
     "typescript": "~5.9.2"
   }
 }
