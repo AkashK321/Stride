@@ -249,7 +249,7 @@ export default function NavigationSession() {
           
           if (currentInterval === 3) {
             // [0-5) ft: High danger - 3 rapid buzzes
-            // Duration: 50+50+50+50+50+50 = 300ms (Leaves 200ms of silence before next frame)
+            // Duration: 100+40+100+40+100 = 380ms (Leaves 120ms of silence before next frame)
             Vibration.vibrate([0, 100, 40, 100, 40, 100]);
           } else if (currentInterval === 2) {
             // [5-10) ft: Medium warning - 2 moderate buzzes
