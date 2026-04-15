@@ -7,6 +7,7 @@ import {
   Pressable,
   PanResponder,
   Image,
+  Vibration
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -62,7 +63,9 @@ export default function NavigationSession() {
   const wsRef = React.useRef<NavigationWebSocket | null>(null);
   const navLoopRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const collisionLoopRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
-  const frameInFlightRef = React.useRef(false);
+  // const frameInFlightRef = React.useRef(false);
+  const navFrameInFlightRef = React.useRef(false);
+  const collisionFrameInFlightRef = React.useRef(false);
   const requestCounterRef = React.useRef(0);
   const [speakerMode, setSpeakerMode] = React.useState(false);
   const [currentStepIndex, setCurrentStepIndex] = React.useState(0);
@@ -141,10 +144,10 @@ export default function NavigationSession() {
 
   const sendNavigationFrame = React.useCallback(async () => {
     const ws = wsRef.current;
-    if (!ws || !ws.isConnected() || !navigationSessionId || frameInFlightRef.current) {
+    if (!ws || !ws.isConnected() || !navigationSessionId || navFrameInFlightRef.current) {
       return;
     }
-    frameInFlightRef.current = true;
+    navFrameInFlightRef.current = true;
     try {
       const imageBase64 = await captureBase64Frame();
       if (!imageBase64) return;
@@ -164,7 +167,7 @@ export default function NavigationSession() {
     } catch (e) {
       setNavigationError(e instanceof Error ? e.message : "Failed to send navigation frame");
     } finally {
-      frameInFlightRef.current = false;
+      navFrameInFlightRef.current = false;
     }
   }, [
     captureBase64Frame,
@@ -176,10 +179,10 @@ export default function NavigationSession() {
 
   const sendCollisionFrame = React.useCallback(async () => {
     const ws = wsRef.current;
-    if (!ws || !ws.isConnected() || !navigationSessionId || frameInFlightRef.current) {
+    if (!ws || !ws.isConnected() || !navigationSessionId || collisionFrameInFlightRef.current) {
       return;
     }
-    frameInFlightRef.current = true;
+    collisionFrameInFlightRef.current = true;
     try {
       const imageBase64 = await captureBase64Frame();
       if (!imageBase64) return;
@@ -199,7 +202,7 @@ export default function NavigationSession() {
     } catch (e) {
       setNavigationError(e instanceof Error ? e.message : "Failed to send collision frame");
     } finally {
-      frameInFlightRef.current = false;
+      collisionFrameInFlightRef.current = false;
     }
   }, [
     captureBase64Frame,
@@ -227,16 +230,29 @@ export default function NavigationSession() {
       return;
     }
 
-    if (Array.isArray(response.estimatedDistances)) {
-      const hasPerson = response.estimatedDistances.some(
-        (entry) => entry.className?.toLowerCase() === "person",
-      );
-      if (hasPerson !== collisionPersonDetectedRef.current) {
-        collisionPersonDetectedRef.current = hasPerson;
-        if (hasPerson) {
-          console.log("[NavigationSession] collision signal emitted: person detected");
+    if (Array.isArray(response.estimatedDistances) && response.estimatedDistances.length > 0) {
+      let minDistanceFeet = Infinity;
+      
+      // The backend returns distances in meters, convert to feet and find the closest object
+      response.estimatedDistances.forEach((entry) => {
+        const distFeet = parseFloat(entry.distance) * 3.28084;
+        if (distFeet < minDistanceFeet) {
+          minDistanceFeet = distFeet;
         }
+      });
+
+      // Trigger interval-based haptic feedback
+      if (minDistanceFeet < 5) {
+        // [0-5) ft: High frequency danger
+        Vibration.vibrate([0, 100, 50, 100, 50, 100]); 
+      } else if (minDistanceFeet >= 5 && minDistanceFeet < 10) {
+        // [5-10) ft: Medium frequency warning
+        Vibration.vibrate([0, 300, 200, 300]); 
+      } else if (minDistanceFeet >= 10 && minDistanceFeet <= 20) {
+        // [10-20] ft: Low frequency alert
+        Vibration.vibrate(500); 
       }
+      // Detections > 20ft are safely ignored
     }
   }, []);
 
