@@ -63,13 +63,15 @@ export default function NavigationSession() {
   const wsRef = React.useRef<NavigationWebSocket | null>(null);
   const navLoopRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const collisionLoopRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastVibrationTimeRef = React.useRef(0);
+  const lastIntervalRef = React.useRef(0); // 0 = Safe, 1 = Low, 2 = Med, 3 = High
   // const frameInFlightRef = React.useRef(false);
   const navFrameInFlightRef = React.useRef(false);
   const collisionFrameInFlightRef = React.useRef(false);
   const requestCounterRef = React.useRef(0);
   const [speakerMode, setSpeakerMode] = React.useState(false);
   const [currentStepIndex, setCurrentStepIndex] = React.useState(0);
-  const focalLengthPixels = React.useMemo(() => getFocalLengthPixels(), []);
+  const focalLengthPixels = React.useMemo(() => getFocalLengthPixels(LIVE_NAV_FRAME_WIDTH), []);
   const { getSnapshot, start: startSensors, stop: stopSensors } = useSensorData();
 
   const { getAlignment } = useHeading();
@@ -106,8 +108,10 @@ export default function NavigationSession() {
       return null;
     }
     const photo = await cameraRef.current.takePictureAsync({
-      quality: 0.7,
+      quality: 0.5,
       base64: false,
+      skipProcessing: true,
+      shutterSound: false,
     });
     if (!photo?.uri) return null;
 
@@ -118,27 +122,16 @@ export default function NavigationSession() {
     };
 
     try {
-      const { width, height } = await getImageSize(photo.uri);
-      const side = Math.min(width, height);
-      const originX = Math.floor((width - side) / 2);
-      const originY = Math.floor((height - side) / 2);
-
+      // By supplying only width, Expo automatically scales the height to preserve the full frame's aspect ratio.
       const resized = await manipulateAsync(
         photo.uri,
-        [
-          { crop: { originX, originY, width: side, height: side } },
-          { resize: { width: LIVE_NAV_FRAME_WIDTH } },
-        ],
+        [{ resize: { width: LIVE_NAV_FRAME_WIDTH } }], 
         encodeOptions,
       );
       return resized.base64 ?? null;
-    } catch {
-      const resized = await manipulateAsync(
-        photo.uri,
-        [{ resize: { width: LIVE_NAV_FRAME_WIDTH } }],
-        encodeOptions,
-      );
-      return resized.base64 ?? null;
+    } catch (e) {
+      console.error("Frame manipulation failed:", e);
+      return null;
     }
   }, []);
 
@@ -231,28 +224,51 @@ export default function NavigationSession() {
     }
 
     if (Array.isArray(response.estimatedDistances) && response.estimatedDistances.length > 0) {
-      let minDistanceFeet = Infinity;
       
+      console.log("Received collision update with distances (meters):", response.estimatedDistances);
       // The backend returns distances in meters, convert to feet and find the closest object
-      response.estimatedDistances.forEach((entry) => {
-        const distFeet = parseFloat(entry.distance) * 3.28084;
-        if (distFeet < minDistanceFeet) {
-          minDistanceFeet = distFeet;
-        }
-      });
+      const distancesInMeters = response.estimatedDistances.map((entry) => parseFloat(entry.distance));
+      const minDistanceMeters = Math.min(...distancesInMeters);
 
-      // Trigger interval-based haptic feedback
-      if (minDistanceFeet < 5) {
-        // [0-5) ft: High frequency danger
-        Vibration.vibrate([0, 100, 50, 100, 50, 100]); 
-      } else if (minDistanceFeet >= 5 && minDistanceFeet < 10) {
-        // [5-10) ft: Medium frequency warning
-        Vibration.vibrate([0, 300, 200, 300]); 
-      } else if (minDistanceFeet >= 10 && minDistanceFeet <= 20) {
-        // [10-20] ft: Low frequency alert
-        Vibration.vibrate(500); 
+      const minDistanceFeet = minDistanceMeters * 3.28084;
+
+      let currentInterval = 0; 
+      if (minDistanceFeet < 5) currentInterval = 3;
+      else if (minDistanceFeet < 10) currentInterval = 2;
+      else if (minDistanceFeet <= 20) currentInterval = 1;
+
+      const now = Date.now();
+      const timeSinceLast = now - lastVibrationTimeRef.current;
+      
+      console.log(`Closest object at ${minDistanceFeet.toFixed(1)} ft, interval ${currentInterval}, time since last vibration ${timeSinceLast} ms`);
+      if (currentInterval > 0) {
+        // TRIGGER RULE:
+        // 1. If danger escalated (e.g. Low -> High), vibrate immediately to warn the user.
+        // 2. If danger is the same/lower, wait for the previous pattern to fully finish (500ms frame cycle).
+        if (currentInterval > lastIntervalRef.current || timeSinceLast >= 500) {
+          
+          if (currentInterval === 3) {
+            // [0-5) ft: High danger - 3 rapid buzzes
+            // Duration: 50+50+50+50+50+50 = 300ms (Leaves 200ms of silence before next frame)
+            Vibration.vibrate([0, 100, 40, 100, 40, 100]);
+          } else if (currentInterval === 2) {
+            // [5-10) ft: Medium warning - 2 moderate buzzes
+            // Duration: 150+100+150 = 400ms (Leaves 100ms of silence before next frame)
+            Vibration.vibrate([0, 150, 100, 150]);
+          } else if (currentInterval === 1) {
+            // [10-20] ft: Low alert - 1 long pulse
+            // Duration: 400ms (Leaves 100ms of silence before next frame)
+            Vibration.vibrate(400);
+          }
+
+          lastVibrationTimeRef.current = now;
+          lastIntervalRef.current = currentInterval;
+        }
+      } else {
+        lastIntervalRef.current = 0; // Reset to safe
       }
-      // Detections > 20ft are safely ignored
+    } else {
+      lastIntervalRef.current = 0; // Reset if no objects detected in frame
     }
   }, []);
 

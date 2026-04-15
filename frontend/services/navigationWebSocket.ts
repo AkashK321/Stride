@@ -320,7 +320,7 @@ export class NavigationWebSocket {
       // - Base64 encoding overhead (already included in image_base64)
       // - JSON metadata (session_id, sensors, etc.)
       // - Any WebSocket frame overhead
-      const MAX_PAYLOAD_SIZE_BYTES = 25 * 1024;
+      const MAX_PAYLOAD_SIZE_BYTES = 30 * 1024;
       
       if (payloadSizeBytes > MAX_PAYLOAD_SIZE_BYTES) {
         console.warn(
