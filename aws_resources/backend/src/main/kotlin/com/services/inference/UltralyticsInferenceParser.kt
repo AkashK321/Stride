@@ -23,6 +23,7 @@ internal data class UltralyticsPrediction(
     @JsonProperty("class") val className: String,
     val confidence: Float,
     val box: UltralyticsBox,
+    val text: String? = null,
 )
 
 internal data class UltralyticsBox(
@@ -64,6 +65,7 @@ object UltralyticsInferenceParser {
                 height = height,
                 className = pred.className,
                 confidence = pred.confidence,
+                text = pred.text,
             )
         }
 
