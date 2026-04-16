@@ -270,6 +270,181 @@ class AuthHandlerTest {
         }
     }
 
+    private fun createChangePasswordEvent(
+        currentPassword: String = "CurrentPass123!",
+        newPassword: String = "NewPass123!",
+        newPasswordConfirm: String = "NewPass123!",
+        authorizationHeader: String? = "Bearer test-access-token",
+    ): APIGatewayProxyRequestEvent {
+        return APIGatewayProxyRequestEvent().apply {
+            httpMethod = "POST"
+            path = "/password/change"
+            body = """{"currentPassword":"$currentPassword","newPassword":"$newPassword","newPasswordConfirm":"$newPasswordConfirm"}"""
+            headers = if (authorizationHeader == null) {
+                null
+            } else {
+                mapOf("Authorization" to authorizationHeader)
+            }
+        }
+    }
+
+    // Change password validation tests
+
+    @Test
+    @DisplayName("Change password with missing body returns 400")
+    fun `change password missing body returns 400`() {
+        // Given
+        val event = APIGatewayProxyRequestEvent().apply {
+            httpMethod = "POST"
+            path = "/password/change"
+            body = null
+            headers = mapOf("Authorization" to "Bearer test-access-token")
+        }
+
+        // When
+        val response = handler.handleRequest(event, mockContext)
+
+        // Then
+        assertEquals(400, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("Request body is required"))
+    }
+
+    @Test
+    @DisplayName("Change password with invalid JSON returns 400")
+    fun `change password invalid JSON returns 400`() {
+        // Given
+        val event = APIGatewayProxyRequestEvent().apply {
+            httpMethod = "POST"
+            path = "/password/change"
+            body = "invalid-json"
+            headers = mapOf("Authorization" to "Bearer test-access-token")
+        }
+
+        // When
+        val response = handler.handleRequest(event, mockContext)
+
+        // Then
+        assertEquals(400, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("Invalid request format"))
+    }
+
+    @Test
+    @DisplayName("Change password with missing authorization header returns 401")
+    fun `change password missing authorization header returns 401`() {
+        // Given
+        val event = createChangePasswordEvent(authorizationHeader = null)
+
+        // When
+        val response = handler.handleRequest(event, mockContext)
+
+        // Then
+        assertEquals(401, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("Authorization header is required"))
+    }
+
+    @Test
+    @DisplayName("Change password with invalid authorization format returns 401")
+    fun `change password invalid authorization format returns 401`() {
+        // Given
+        val event = createChangePasswordEvent(authorizationHeader = "Basic abc123")
+
+        // When
+        val response = handler.handleRequest(event, mockContext)
+
+        // Then
+        assertEquals(401, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("Authorization header must use Bearer token"))
+    }
+
+    @Test
+    @DisplayName("Change password with missing bearer token returns 401")
+    fun `change password missing bearer token returns 401`() {
+        // Given
+        val event = createChangePasswordEvent(authorizationHeader = "Bearer   ")
+
+        // When
+        val response = handler.handleRequest(event, mockContext)
+
+        // Then
+        assertEquals(401, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("Authorization header must use Bearer token"))
+    }
+
+    @Test
+    @DisplayName("Change password with missing required fields returns 400")
+    fun `change password missing required fields returns 400`() {
+        // Given
+        val event = APIGatewayProxyRequestEvent().apply {
+            httpMethod = "POST"
+            path = "/password/change"
+            body = """{"currentPassword":"CurrentPass123!","newPassword":"NewPass123!"}"""
+            headers = mapOf("Authorization" to "Bearer test-access-token")
+        }
+
+        // When
+        val response = handler.handleRequest(event, mockContext)
+
+        // Then
+        assertEquals(400, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("required"))
+    }
+
+    @Test
+    @DisplayName("Change password with mismatched passwords returns 400")
+    fun `change password mismatched passwords returns 400`() {
+        // Given
+        val event = createChangePasswordEvent(newPasswordConfirm = "DifferentPass123!")
+
+        // When
+        val response = handler.handleRequest(event, mockContext)
+
+        // Then
+        assertEquals(400, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("Passwords do not match"))
+    }
+
+    @Test
+    @DisplayName("Change password with same current and new password returns 400")
+    fun `change password same current and new password returns 400`() {
+        // Given
+        val event = createChangePasswordEvent(
+            currentPassword = "SamePass123!",
+            newPassword = "SamePass123!",
+            newPasswordConfirm = "SamePass123!",
+        )
+
+        // When
+        val response = handler.handleRequest(event, mockContext)
+
+        // Then
+        assertEquals(400, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("New password must be different from current password"))
+    }
+
     // Registration tests
 
     @Test

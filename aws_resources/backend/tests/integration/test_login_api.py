@@ -178,3 +178,83 @@ def test_invalid_endpoint(api_base_url):
         data = response.json()
         assert "error" in data
         assert "not found" in data["error"].lower()
+
+
+def test_change_password_flow(api_base_url, test_user_credentials):
+    """Test register -> login -> change password -> login with new password."""
+    # Register a user
+    register_response = requests.post(
+        f"{api_base_url}/register",
+        json={
+            "username": test_user_credentials["username"],
+            "password": test_user_credentials["password"],
+            "passwordConfirm": test_user_credentials["passwordConfirm"],
+            "email": test_user_credentials["email"],
+            "firstName": test_user_credentials["firstName"],
+            "lastName": test_user_credentials["lastName"],
+        },
+        headers={"Content-Type": "application/json"},
+        timeout=10,
+    )
+    assert register_response.status_code == 201, (
+        f"Expected 201, got {register_response.status_code}: {register_response.text}"
+    )
+
+    # Login with original password to get access token
+    login_response = requests.post(
+        f"{api_base_url}/login",
+        json={
+            "username": test_user_credentials["username"],
+            "password": test_user_credentials["password"],
+        },
+        headers={"Content-Type": "application/json"},
+        timeout=10,
+    )
+    assert login_response.status_code == 200, (
+        f"Expected 200, got {login_response.status_code}: {login_response.text}"
+    )
+    access_token = login_response.json().get("accessToken")
+    assert access_token, "Expected accessToken in login response"
+
+    # Change password using access token
+    new_password = "NewPass123!"
+    change_password_response = requests.post(
+        f"{api_base_url}/password/change",
+        json={
+            "currentPassword": test_user_credentials["password"],
+            "newPassword": new_password,
+            "newPasswordConfirm": new_password,
+        },
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {access_token}",
+        },
+        timeout=10,
+    )
+    assert change_password_response.status_code == 200, (
+        f"Expected 200, got {change_password_response.status_code}: {change_password_response.text}"
+    )
+    change_data = change_password_response.json()
+    assert "message" in change_data
+    assert change_data["message"] == "Password changed successfully"
+
+    # Login with the new password
+    login_new_password_response = requests.post(
+        f"{api_base_url}/login",
+        json={
+            "username": test_user_credentials["username"],
+            "password": new_password,
+        },
+        headers={"Content-Type": "application/json"},
+        timeout=10,
+    )
+    assert login_new_password_response.status_code == 200, (
+        "Expected 200 login with new password, got "
+        f"{login_new_password_response.status_code}: {login_new_password_response.text}"
+    )
+    login_new_data = login_new_password_response.json()
+    assert "accessToken" in login_new_data
+    assert "idToken" in login_new_data
+    assert "refreshToken" in login_new_data
+    assert "expiresIn" in login_new_data
+    assert "tokenType" in login_new_data
