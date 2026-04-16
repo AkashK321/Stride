@@ -80,6 +80,10 @@ export default function RegisterCredentials() {
   const isFormValid = React.useMemo(() => {
     return isUsernameValid && isPasswordValid && passwordsMatch;
   }, [isUsernameValid, isPasswordValid, passwordsMatch]);
+  const isUsernameAvailabilityBlocking = React.useMemo(
+    () => usernameAvailabilityStatus === "loading" || usernameAvailabilityStatus === "taken",
+    [usernameAvailabilityStatus]
+  );
 
   // Listen to keyboard events to get keyboard height
   React.useEffect(() => {
@@ -273,6 +277,18 @@ export default function RegisterCredentials() {
 
     if (hasErrors) {
       return;
+    }
+
+    if (trimmedUsername.length >= 3) {
+      if (usernameAvailabilityStatus === "loading") {
+        setUsernameError("Please wait while we verify username availability");
+        return;
+      }
+
+      if (usernameAvailabilityStatus === "taken") {
+        setUsernameError("This username is already taken");
+        return;
+      }
     }
 
     // Validate that we have all required data from step 1
@@ -710,6 +726,7 @@ export default function RegisterCredentials() {
         React.createElement(Button, {
           onPress: handleNext,
           title: "Continue",
+          disabled: isUsernameAvailabilityBlocking,
           style: {
             marginTop: spacing.xl,
           },

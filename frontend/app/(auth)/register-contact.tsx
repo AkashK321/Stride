@@ -41,6 +41,10 @@ export default function RegisterContact() {
     React.useState<ValidationStatus>("idle");
   const [isLoading, setIsLoading] = React.useState(false);
   const trimmedEmail = React.useMemo(() => email.trim(), [email]);
+  const isEmailAvailabilityBlocking = React.useMemo(
+    () => emailAvailabilityStatus === "loading" || emailAvailabilityStatus === "taken",
+    [emailAvailabilityStatus]
+  );
 
   const handleEmailChange = (text: string) => {
     setEmail(text);
@@ -98,6 +102,16 @@ export default function RegisterContact() {
 
     if (!EMAIL_REGEX.test(trimmedEmail)) {
       setEmailError("Please enter a valid email address");
+      return;
+    }
+
+    if (emailAvailabilityStatus === "loading") {
+      setEmailError("Please wait while we verify email availability");
+      return;
+    }
+
+    if (emailAvailabilityStatus === "taken") {
+      setEmailError("An account with this email already exists");
       return;
     }
 
@@ -312,7 +326,7 @@ export default function RegisterContact() {
           onPress: handleRegister,
           title: "Create Account",
           loading: isLoading,
-          disabled: isLoading,
+          disabled: isLoading || isEmailAvailabilityBlocking,
           style: {
             marginTop: spacing.xl,
           },
