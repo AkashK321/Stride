@@ -14,8 +14,10 @@ import software.amazon.awssdk.services.cognitoidentityprovider.model.CognitoIden
 import software.amazon.awssdk.services.cognitoidentityprovider.model.AdminCreateUserRequest
 import software.amazon.awssdk.services.cognitoidentityprovider.model.AdminSetUserPasswordRequest
 import software.amazon.awssdk.services.cognitoidentityprovider.model.AdminDeleteUserRequest
+import software.amazon.awssdk.services.cognitoidentityprovider.model.AdminGetUserRequest
 import software.amazon.awssdk.services.cognitoidentityprovider.model.MessageActionType
 import software.amazon.awssdk.services.cognitoidentityprovider.model.ListUsersRequest
+import software.amazon.awssdk.services.cognitoidentityprovider.model.UserNotFoundException
 import software.amazon.awssdk.services.cognitoidentityprovider.model.AttributeType
 import software.amazon.awssdk.regions.Region
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -45,6 +47,8 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
         val response = when {
             path == "/login" && method == "POST" -> handleLogin(input, context)
             path == "/register" && method == "POST" -> handleRegister(input, context)
+            path == "/register/check-username" && method == "GET" -> handleCheckUsername(input, context)
+            path == "/register/check-email" && method == "GET" -> handleCheckEmail(input, context)
             else -> createErrorResponse(404, "Not Found")
         }
 
@@ -201,6 +205,16 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
         return APIGatewayProxyResponseEvent()
             .withStatusCode(statusCode)
             .withBody(errorBody)
+            .withHeaders(mapOf("Content-Type" to "application/json"))
+    }
+
+    private fun createJsonResponse(
+        statusCode: Int,
+        body: Map<String, Any>
+    ): APIGatewayProxyResponseEvent {
+        return APIGatewayProxyResponseEvent()
+            .withStatusCode(statusCode)
+            .withBody(mapper.writeValueAsString(body))
             .withHeaders(mapOf("Content-Type" to "application/json"))
     }
 
@@ -371,6 +385,11 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
         return username?.trim()?.takeIf { it.isNotBlank() }
     }
 
+    private fun isEmailFormatValid(email: String): Boolean {
+        val emailRegex = Regex("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+$")
+        return emailRegex.matches(email)
+    }
+
     /**
      * Checks if an email address already exists in the Cognito user pool.
      * Uses ListUsers API with email filter to check for existing users.
@@ -380,7 +399,12 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
      * @param context Lambda context for logging
      * @return true if email exists, false otherwise
      */
-    private fun checkEmailExists(userPoolId: String, email: String, context: Context): Boolean {
+    private fun checkEmailExists(
+        userPoolId: String,
+        email: String,
+        context: Context,
+        suppressErrors: Boolean = true
+    ): Boolean {
         return try {
             val listUsersRequest = ListUsersRequest.builder()
                 .userPoolId(userPoolId)
@@ -397,10 +421,110 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
             
             exists
         } catch (e: Exception) {
+            if (!suppressErrors) {
+                throw e
+            }
             // Log error but don't fail registration - let Cognito handle it
             // This prevents the check from blocking registration if there's an API issue
             context.logger.log("WARNING: Failed to check email existence: ${e.message}")
             false
+        }
+    }
+
+    private fun handleCheckUsername(
+        input: APIGatewayProxyRequestEvent,
+        context: Context
+    ): APIGatewayProxyResponseEvent {
+        context.logger.log("Handling username availability check request")
+
+        try {
+            val userPoolId = System.getenv("USER_POOL_ID")
+            if (userPoolId.isNullOrEmpty()) {
+                context.logger.log("ERROR: Missing USER_POOL_ID environment variable")
+                return createErrorResponse(500, "Server configuration error")
+            }
+
+            val usernameParam = input.queryStringParameters?.get("username")
+            val normalizedUsername = normalizeUsername(usernameParam)
+                ?: return createErrorResponse(400, "username query parameter is required")
+
+            if (normalizedUsername.length > 64) {
+                return createErrorResponse(400, "username must be 64 characters or less")
+            }
+
+            return try {
+                val getUserRequest = AdminGetUserRequest.builder()
+                    .userPoolId(userPoolId)
+                    .username(normalizedUsername)
+                    .build()
+                cognitoClient.adminGetUser(getUserRequest)
+
+                createJsonResponse(
+                    200,
+                    mapOf(
+                        "available" to false,
+                        "username" to normalizedUsername
+                    )
+                )
+            } catch (_: UserNotFoundException) {
+                createJsonResponse(
+                    200,
+                    mapOf(
+                        "available" to true,
+                        "username" to normalizedUsername
+                    )
+                )
+            }
+        } catch (e: CognitoIdentityProviderException) {
+            context.logger.log("ERROR: Username availability check failed: ${e.message}")
+            return createErrorResponse(500, "Unable to check username availability")
+        } catch (e: Exception) {
+            context.logger.log("ERROR: Unexpected error during username availability check: ${e.message}")
+            return createErrorResponse(500, "Internal server error")
+        }
+    }
+
+    private fun handleCheckEmail(
+        input: APIGatewayProxyRequestEvent,
+        context: Context
+    ): APIGatewayProxyResponseEvent {
+        context.logger.log("Handling email availability check request")
+
+        try {
+            val userPoolId = System.getenv("USER_POOL_ID")
+            if (userPoolId.isNullOrEmpty()) {
+                context.logger.log("ERROR: Missing USER_POOL_ID environment variable")
+                return createErrorResponse(500, "Server configuration error")
+            }
+
+            val emailParam = input.queryStringParameters?.get("email")
+            val normalizedEmail = normalizeEmail(emailParam)
+                ?: return createErrorResponse(400, "email query parameter is required")
+
+            if (!isEmailFormatValid(normalizedEmail)) {
+                return createErrorResponse(400, "Invalid email format")
+            }
+
+            val exists = checkEmailExists(
+                userPoolId = userPoolId,
+                email = normalizedEmail,
+                context = context,
+                suppressErrors = false
+            )
+
+            return createJsonResponse(
+                200,
+                mapOf(
+                    "available" to !exists,
+                    "email" to normalizedEmail
+                )
+            )
+        } catch (e: CognitoIdentityProviderException) {
+            context.logger.log("ERROR: Email availability check failed: ${e.message}")
+            return createErrorResponse(500, "Unable to check email availability")
+        } catch (e: Exception) {
+            context.logger.log("ERROR: Unexpected error during email availability check: ${e.message}")
+            return createErrorResponse(500, "Internal server error")
         }
     }
 
