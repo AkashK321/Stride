@@ -12,11 +12,14 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import Button from "../../components/Button";
 import TextField from "../../components/TextField";
 import Label from "../../components/Label";
+import ValidationIndicator, { ValidationStatus } from "../../components/ValidationIndicator";
 import { spacing } from "../../theme/spacing";
 import { typography } from "../../theme/typography";
 import { colors } from "../../theme/colors";
-import { register, login } from "../../services/api";
+import { register, login, checkEmailAvailability } from "../../services/api";
 import { useAuth } from "../../contexts/AuthContext";
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function RegisterContact() {
   const router = useRouter();
@@ -29,15 +32,58 @@ export default function RegisterContact() {
   }>();
 
   const emailRef = React.useRef<TextInput>(null);
+  const emailAvailabilityTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const emailAvailabilityRequestIdRef = React.useRef(0);
 
   const [email, setEmail] = React.useState("");
   const [emailError, setEmailError] = React.useState("");
+  const [emailAvailabilityStatus, setEmailAvailabilityStatus] =
+    React.useState<ValidationStatus>("idle");
   const [isLoading, setIsLoading] = React.useState(false);
+  const trimmedEmail = React.useMemo(() => email.trim(), [email]);
 
   const handleEmailChange = (text: string) => {
     setEmail(text);
     setEmailError("");
   };
+
+  React.useEffect(() => {
+    if (emailAvailabilityTimeoutRef.current) {
+      clearTimeout(emailAvailabilityTimeoutRef.current);
+      emailAvailabilityTimeoutRef.current = null;
+    }
+
+    if (!trimmedEmail || !EMAIL_REGEX.test(trimmedEmail)) {
+      setEmailAvailabilityStatus("idle");
+      return;
+    }
+
+    const requestId = emailAvailabilityRequestIdRef.current + 1;
+    emailAvailabilityRequestIdRef.current = requestId;
+
+    emailAvailabilityTimeoutRef.current = setTimeout(async () => {
+      setEmailAvailabilityStatus("loading");
+      const result = await checkEmailAvailability(trimmedEmail);
+
+      if (requestId !== emailAvailabilityRequestIdRef.current) {
+        return;
+      }
+
+      if (result.error) {
+        setEmailAvailabilityStatus("error");
+        return;
+      }
+
+      setEmailAvailabilityStatus(result.available ? "available" : "taken");
+    }, 500);
+
+    return () => {
+      if (emailAvailabilityTimeoutRef.current) {
+        clearTimeout(emailAvailabilityTimeoutRef.current);
+        emailAvailabilityTimeoutRef.current = null;
+      }
+    };
+  }, [trimmedEmail]);
 
   const handleRegister = async () => {
     // Clear previous errors
@@ -50,7 +96,7 @@ export default function RegisterContact() {
       return;
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+    if (!EMAIL_REGEX.test(trimmedEmail)) {
       setEmailError("Please enter a valid email address");
       return;
     }
@@ -216,23 +262,43 @@ export default function RegisterContact() {
           },
           "Step 3 of 3: Email"
         ),
-        React.createElement(TextField, {
-          ref: emailRef,
-          value: email,
-          onChangeText: handleEmailChange,
-          error: emailError,
-          autoCapitalize: "none",
-          autoComplete: "email",
-          keyboardType: "email-address",
-          returnKeyType: "done",
-          onSubmitEditing: handleRegister,
-          placeholder: "Email",
-          accessibilityLabel: "Email",
-          accessibilityHint: "Enter your email address.",
-          style: {
-            width: "100%",
-            marginBottom: spacing.xs,
+        React.createElement(
+          TextField,
+          {
+            ref: emailRef,
+            value: email,
+            onChangeText: handleEmailChange,
+            error: emailError,
+            autoCapitalize: "none",
+            autoComplete: "email",
+            keyboardType: "email-address",
+            returnKeyType: "done",
+            onSubmitEditing: handleRegister,
+            placeholder: "Email",
+            accessibilityLabel: "Email",
+            accessibilityHint: "Enter your email address.",
+            style: {
+              width: "100%",
+            },
+            rightIcon:
+              emailAvailabilityStatus === "idle"
+                ? undefined
+                : React.createElement(ValidationIndicator, {
+                    status: emailAvailabilityStatus,
+                    variant: "icon",
+                    loadingText: "Checking email availability",
+                    availableText: "Email is available",
+                    takenText: "Email is already in use",
+                    errorText: "Unable to verify email availability",
+                  }),
           },
+        ),
+        React.createElement(ValidationIndicator, {
+          status: emailAvailabilityStatus,
+          loadingText: "Checking email availability...",
+          availableText: "Email is available",
+          takenText: "Email is already in use",
+          errorText: "Unable to verify email availability right now",
         }),
         React.createElement(Button, {
           onPress: handleRegister,
