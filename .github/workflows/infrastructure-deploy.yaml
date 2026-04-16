@@ -275,9 +275,9 @@ jobs:
           fi
 
           if ! jq -e ".\"$SHARED_STACK_KEY\"" cdk-outputs.json >/dev/null 2>&1; then
-            echo "Error: Shared stack outputs missing for key \"$SHARED_STACK_KEY\""
+            echo "Warning: Shared stack outputs missing for key \"$SHARED_STACK_KEY\" in cdk-outputs.json"
             jq -r 'keys[]' cdk-outputs.json
-            exit 1
+            echo "Debug: will fall back to CloudFormation for RdsSecretArn"
           fi
 
           # Branch stack: API, WebSocket, DynamoDB (per-environment)
@@ -305,7 +305,14 @@ jobs:
           # Shared RDS: single secret for schema + map seed (not emitted on branch stack)
           STRIDE_DB_ARN=$(jq -r ".\"$SHARED_STACK_KEY\".RdsSecretArn // empty" cdk-outputs.json 2>/dev/null || echo "")
           if [ -z "$STRIDE_DB_ARN" ] || [ "$STRIDE_DB_ARN" == "null" ]; then
-            echo "Error: Could not extract RdsSecretArn from $SHARED_STACK_KEY outputs"
+            echo "Warning: Could not extract RdsSecretArn from cdk-outputs.json for $SHARED_STACK_KEY"
+            STRIDE_DB_ARN=$(aws cloudformation describe-stacks \
+              --stack-name "$SHARED_STACK_KEY" \
+              --query "Stacks[0].Outputs[?OutputKey=='RdsSecretArn'].OutputValue | [0]" \
+              --output text 2>/dev/null || echo "")
+          fi
+          if [ -z "$STRIDE_DB_ARN" ] || [ "$STRIDE_DB_ARN" == "null" ] || [ "$STRIDE_DB_ARN" == "None" ]; then
+            echo "Error: Could not extract RdsSecretArn from cdk-outputs.json or CloudFormation"
             exit 1
           fi
 
