@@ -401,8 +401,6 @@ paths:
         - Authentication
       summary: Check username availability
       description: |
-        **⚠️ NOT IMPLEMENTED YET**
-        
         Checks if a username is available for registration.
         Uses Cognito's `AdminGetUser` API to check if the username exists.
       operationId: checkUsernameAvailability
@@ -420,18 +418,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required:
-                  - available
-                properties:
-                  available:
-                    type: boolean
-                    description: Whether the username is available
-                    example: true
-                  username:
-                    type: string
-                    description: The username that was checked
-                    example: "johndoe"
+                $ref: '#/components/schemas/UsernameAvailabilityResponse'
         '400':
           description: Bad request - missing username parameter
           content:
@@ -449,13 +436,11 @@ paths:
     get:
       tags:
         - Authentication
-      summary: Check email uniqueness
+      summary: Check email availability
       description: |
-        **⚠️ NOT IMPLEMENTED YET**
-        
-        Checks if an email address is already registered.
+        Checks if an email address is available for registration.
         Uses Cognito's `ListUsers` API with email filter to check for existing users.
-      operationId: checkEmailUniqueness
+      operationId: checkEmailAvailability
       parameters:
         - name: email
           in: query
@@ -467,22 +452,11 @@ paths:
             example: "john.doe@example.com"
       responses:
         '200':
-          description: Email uniqueness check result
+          description: Email availability check result
           content:
             application/json:
               schema:
-                type: object
-                required:
-                  - available
-                properties:
-                  available:
-                    type: boolean
-                    description: Whether the email is available (not already registered)
-                    example: true
-                  email:
-                    type: string
-                    description: The email address that was checked
-                    example: "john.doe@example.com"
+                $ref: '#/components/schemas/EmailAvailabilityResponse'
         '400':
           description: Bad request - missing email parameter or invalid format
           content:
@@ -1297,6 +1271,37 @@ components:
           type: string
           description: Success message
           example: "User registered successfully"
+
+    UsernameAvailabilityResponse:
+      type: object
+      required:
+        - available
+        - username
+      properties:
+        available:
+          type: boolean
+          description: Whether the username is available
+          example: true
+        username:
+          type: string
+          description: The username that was checked
+          example: "johndoe"
+
+    EmailAvailabilityResponse:
+      type: object
+      required:
+        - available
+        - email
+      properties:
+        available:
+          type: boolean
+          description: Whether the email is available (not already registered)
+          example: true
+        email:
+          type: string
+          format: email
+          description: The email address that was checked
+          example: "john.doe@example.com"
 
     ErrorResponse:
       type: object
