@@ -38,6 +38,30 @@ class CdkStack(Stack):
         super().__init__(scope, construct_id, **kwargs)
         shared_db = shared_persistent_stack.shared_db
 
+        cognito_email_from_address = os.getenv("COGNITO_EMAIL_FROM_ADDRESS") or self.node.try_get_context(
+            "cognitoEmailFromAddress"
+        )
+        cognito_email_source_arn = os.getenv("COGNITO_EMAIL_SOURCE_ARN") or self.node.try_get_context(
+            "cognitoEmailSourceArn"
+        )
+        cognito_email_reply_to = os.getenv("COGNITO_EMAIL_REPLY_TO_ADDRESS") or self.node.try_get_context(
+            "cognitoEmailReplyToAddress"
+        )
+        cognito_email_ses_region = os.getenv("COGNITO_EMAIL_SES_REGION") or self.node.try_get_context(
+            "cognitoEmailSesRegion"
+        ) or "us-east-1"
+
+        has_cognito_email_from_address = bool(cognito_email_from_address)
+        has_cognito_email_source_arn = bool(cognito_email_source_arn)
+        if has_cognito_email_from_address != has_cognito_email_source_arn:
+            raise ValueError(
+                "Set both COGNITO_EMAIL_FROM_ADDRESS and COGNITO_EMAIL_SOURCE_ARN (or neither)."
+            )
+        if cognito_email_source_arn and f":{cognito_email_ses_region}:" not in cognito_email_source_arn:
+            raise ValueError(
+                "COGNITO_EMAIL_SOURCE_ARN region does not match COGNITO_EMAIL_SES_REGION."
+            )
+
         # Path to the Kotlin backend project
         this_dir = os.path.dirname(__file__)
         backend_dir = os.path.join(this_dir, "..", "backend")
@@ -160,6 +184,17 @@ class CdkStack(Stack):
             ),
             removal_policy=RemovalPolicy.DESTROY,  # For dev/testing only
         )
+
+        if cognito_email_from_address and cognito_email_source_arn:
+            cfn_user_pool = user_pool.node.default_child
+            if not isinstance(cfn_user_pool, cognito.CfnUserPool):
+                raise TypeError("Expected Cognito user pool default child to be CfnUserPool.")
+            cfn_user_pool.email_configuration = cognito.CfnUserPool.EmailConfigurationProperty(
+                email_sending_account="DEVELOPER",
+                from_=cognito_email_from_address,
+                source_arn=cognito_email_source_arn,
+                reply_to_email_address=cognito_email_reply_to,
+            )
 
         # Define Cognito User Pool Client (for app authentication)
         user_pool_client = user_pool.add_client(

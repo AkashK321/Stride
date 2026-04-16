@@ -243,6 +243,10 @@ jobs:
         env:
           CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
           BRANCH_NAME: ${{ steps.get-stack-name.outputs.branch_name }}
+          COGNITO_EMAIL_FROM_ADDRESS: ${{ secrets.COGNITO_EMAIL_FROM_ADDRESS }}
+          COGNITO_EMAIL_SOURCE_ARN: ${{ secrets.COGNITO_EMAIL_SOURCE_ARN }}
+          COGNITO_EMAIL_REPLY_TO_ADDRESS: ${{ secrets.COGNITO_EMAIL_REPLY_TO_ADDRESS }}
+          COGNITO_EMAIL_SES_REGION: ${{ vars.COGNITO_EMAIL_SES_REGION || 'us-east-1' }}
         run: |
           BRANCH_STACK="${{ steps.get-stack-name.outputs.stack_name }}"
           if cdk deploy StrideSharedStack "$BRANCH_STACK" --require-approval never --outputs-file cdk-outputs.json; then
