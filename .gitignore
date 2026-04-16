@@ -99,3 +99,15 @@ model_training/bhee_clean_dataset/*
 model_training/logs/*
 !model_training/logs/.gitkeep
 model_training/.venv/
+
+# Model training images (all common formats)
+model_training/**/*.jpg
+model_training/**/*.jpeg
+model_training/**/*.png
+model_training/**/*.gif
+model_training/**/*.bmp
+model_training/**/*.tiff
+model_training/**/*.webp
+
+# Model training label files
+model_training/**/*.txt

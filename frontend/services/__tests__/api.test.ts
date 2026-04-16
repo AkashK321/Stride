@@ -3,14 +3,10 @@
  */
 
 import type {
-  ConfirmSignUpRequest,
-  ConfirmSignUpResponse,
   LoginResponse,
   RefreshTokenResponse,
   RegisterRequest,
   RegisterResponse,
-  ResendSignUpCodeRequest,
-  ResendSignUpCodeResponse,
 } from "../api";
 
 // We need to re-import the module per test group to test different env states
@@ -272,47 +268,7 @@ describe("register", () => {
     expect(result).toEqual(mockResponse);
   });
 
-  it("sends email-only payload", async () => {
-    const mockResponse: RegisterResponse = {
-      message: "User registered successfully",
-      username: "testuser",
-    };
-
-    const userData: RegisterRequest = {
-      username: "testuser",
-      password: "password123",
-      passwordConfirm: "password123",
-      email: "test@example.com",
-      firstName: "Test",
-      lastName: "User",
-    };
-
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
-      ok: true,
-      json: async () => mockResponse,
-    });
-
-    await apiModule.register(userData);
-
-    expect(global.fetch).toHaveBeenCalledWith(
-      "https://test-api.example.com/register",
-      expect.objectContaining({
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      })
-    );
-    const registerRequest = (global.fetch as jest.Mock).mock.calls[0][1];
-    expect(JSON.parse(registerRequest.body)).toEqual({
-      username: "testuser",
-      password: "password123",
-      passwordConfirm: "password123",
-      firstName: "Test",
-      lastName: "User",
-      email: "test@example.com",
-    });
-  });
-
-  it("trims email in payload", async () => {
+  it("trims email before sending payload", async () => {
     const mockResponse: RegisterResponse = {
       message: "User registered successfully",
       username: "testuser",
@@ -327,7 +283,7 @@ describe("register", () => {
       username: "testuser",
       password: "password123",
       passwordConfirm: "password123",
-      email: "   ",
+      email: "  test@example.com  ",
       firstName: "Test",
       lastName: "User",
     });
@@ -346,8 +302,8 @@ describe("register", () => {
       passwordConfirm: "password123",
       firstName: "Test",
       lastName: "User",
-      email: "",
-    });
+      email: "test@example.com",
+    }); 
   });
 
   it("throws with API error message on failure", async () => {
@@ -485,145 +441,6 @@ describe("register", () => {
         firstName: "Test",
         lastName: "User",
       })
-    ).rejects.toThrow("No backend URL configured");
-  });
-});
-
-describe("confirmSignUp", () => {
-  beforeEach(() => {
-    apiModule = require("../api");
-  });
-
-  it("sends correct POST request and returns ConfirmSignUpResponse", async () => {
-    const request: ConfirmSignUpRequest = {
-      username: "testuser",
-      code: "123456",
-    };
-    const mockResponse: ConfirmSignUpResponse = {
-      message: "Account verified successfully",
-    };
-
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
-      ok: true,
-      json: async () => mockResponse,
-    });
-
-    const result = await apiModule.confirmSignUp(request);
-
-    expect(global.fetch).toHaveBeenCalledWith(
-      "https://test-api.example.com/register/confirm",
-      expect.objectContaining({
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(request),
-      })
-    );
-    expect(result).toEqual(mockResponse);
-  });
-
-  it("throws with API error message on failure", async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
-      ok: false,
-      status: 400,
-      statusText: "Bad Request",
-      json: async () => ({ error: "Verification code is invalid" }),
-    });
-
-    await expect(
-      apiModule.confirmSignUp({ username: "testuser", code: "000000" })
-    ).rejects.toThrow("Verification code is invalid");
-  });
-
-  it("falls back to statusText when error field is missing", async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
-      ok: false,
-      status: 500,
-      statusText: "Internal Server Error",
-      json: async () => ({}),
-    });
-
-    await expect(
-      apiModule.confirmSignUp({ username: "testuser", code: "123456" })
-    ).rejects.toThrow("Sign up confirmation failed: Internal Server Error");
-  });
-
-  it("throws when API URL is not configured", async () => {
-    delete process.env.EXPO_PUBLIC_API_BASE_URL;
-    jest.resetModules();
-
-    apiModule = require("../api");
-
-    await expect(
-      apiModule.confirmSignUp({ username: "testuser", code: "123456" })
-    ).rejects.toThrow("No backend URL configured");
-  });
-});
-
-describe("resendSignUpCode", () => {
-  beforeEach(() => {
-    apiModule = require("../api");
-  });
-
-  it("sends correct POST request and returns ResendSignUpCodeResponse", async () => {
-    const request: ResendSignUpCodeRequest = {
-      username: "testuser",
-    };
-    const mockResponse: ResendSignUpCodeResponse = {
-      message: "Verification code sent successfully",
-    };
-
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
-      ok: true,
-      json: async () => mockResponse,
-    });
-
-    const result = await apiModule.resendSignUpCode(request);
-
-    expect(global.fetch).toHaveBeenCalledWith(
-      "https://test-api.example.com/register/resend-code",
-      expect.objectContaining({
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(request),
-      })
-    );
-    expect(result).toEqual(mockResponse);
-  });
-
-  it("throws with API error message on failure", async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
-      ok: false,
-      status: 429,
-      statusText: "Too Many Requests",
-      json: async () => ({ error: "Too many resend attempts" }),
-    });
-
-    await expect(
-      apiModule.resendSignUpCode({ username: "testuser" })
-    ).rejects.toThrow("Too many resend attempts");
-  });
-
-  it("falls back to statusText when error field is missing", async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
-      ok: false,
-      status: 500,
-      statusText: "Internal Server Error",
-      json: async () => ({}),
-    });
-
-    await expect(
-      apiModule.resendSignUpCode({ username: "testuser" })
-    ).rejects.toThrow("Resend verification code failed: Internal Server Error");
-  });
-
-  it("throws when API URL is not configured", async () => {
-    delete process.env.EXPO_PUBLIC_API_BASE_URL;
-    jest.resetModules();
-
-    apiModule = require("../api");
-
-    await expect(
-      apiModule.resendSignUpCode({ username: "testuser" })
     ).rejects.toThrow("No backend URL configured");
   });
 });

@@ -156,8 +156,7 @@ export default function NavigationSession() {
         focal_length_pixels: focalLengthPixels,
         heading_degrees: snapshot.heading ?? 0,
         gps: snapshot.gps,
-        accelerometer: snapshot.accelerometer ?? { x: 0, y: 0, z: 0 },
-        gyroscope: snapshot.gyroscope ?? { x: 0, y: 0, z: 0 },
+        distance_traveled: snapshot.distanceDeltaFeet,
         timestamp_ms: Date.now(),
         request_id: nextRequestId(),
       };
@@ -191,9 +190,8 @@ export default function NavigationSession() {
         image_base64: imageBase64,
         focal_length_pixels: focalLengthPixels,
         heading_degrees: snapshot.heading,
+        distance_traveled: 0,
         gps: snapshot.gps,
-        accelerometer: snapshot.accelerometer,
-        gyroscope: snapshot.gyroscope,
         timestamp_ms: Date.now(),
         request_id: nextRequestId(),
       };

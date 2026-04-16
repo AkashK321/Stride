@@ -18,11 +18,6 @@ import { colors } from "../../theme/colors";
 import { register, login } from "../../services/api";
 import { useAuth } from "../../contexts/AuthContext";
 
-function isUnconfirmedAccountError(message: string): boolean {
-  const normalized = message.toLowerCase();
-  return normalized.includes("not confirmed") || normalized.includes("not verified");
-}
-
 export default function RegisterContact() {
   const router = useRouter();
   const { login: authLogin } = useAuth();
@@ -48,8 +43,8 @@ export default function RegisterContact() {
     // Clear previous errors
     setEmailError("");
 
+    // Validate inputs
     const trimmedEmail = email.trim();
-
     if (!trimmedEmail) {
       setEmailError("Email is required");
       return;
@@ -101,14 +96,7 @@ export default function RegisterContact() {
         router.replace("/home");
       } catch (loginError) {
         // Registration succeeded but login failed - show message and redirect to login
-        const loginErrorMessage =
-          loginError instanceof Error ? loginError.message : "Login failed after registration";
-
-        if (isUnconfirmedAccountError(loginErrorMessage)) {
-          router.replace(`/verify?username=${encodeURIComponent(params.username)}`);
-          return;
-        }
-
+        console.error("Auto-login failed after registration:", loginError);
         Alert.alert(
           "Registration Successful",
           "Your account has been created successfully. Please sign in to continue.",
