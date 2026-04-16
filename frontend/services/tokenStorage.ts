@@ -185,7 +185,8 @@ export async function autoRefreshTokens(): Promise<boolean> {
     // Attempt to refresh the token
     // If the endpoint doesn't exist (404), this will throw an error
     // which we catch and handle gracefully
-    const { refreshToken } = await import("./api");
+    // Use runtime require to avoid top-level circular imports while keeping Jest mocks compatible.
+    const { refreshToken } = require("./api");
     const newTokens = await refreshToken(tokens.refreshToken);
     
     // Store new tokens
