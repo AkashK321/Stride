@@ -241,14 +241,16 @@ class AuthHandlerTest {
         password: String,
         passwordConfirm: String,
         email: String,
-        phoneNumber: String,
+        _phoneNumber: String,
         firstName: String,
         lastName: String
     ): APIGatewayProxyRequestEvent {
+        // Kept for backwards-compatible test call sites while register is now email-only.
+        _phoneNumber.length
         return APIGatewayProxyRequestEvent().apply {
             httpMethod = "POST"
             path = "/register"
-            body = """{"username":"$username","password":"$password","passwordConfirm":"$passwordConfirm","email":"$email","phoneNumber":"$phoneNumber","firstName":"$firstName","lastName":"$lastName"}"""
+            body = """{"username":"$username","password":"$password","passwordConfirm":"$passwordConfirm","email":"$email","firstName":"$firstName","lastName":"$lastName"}"""
         }
     }
 
@@ -338,6 +340,52 @@ class AuthHandlerTest {
         assertNotNull(responseBody)
         assertTrue(responseBody!!.contains("error"))
         assertTrue(responseBody.contains("required"))
+    }
+
+    @Test
+    @DisplayName("Register with email missing returns 400")
+    fun `register missing email returns 400`(envVars: EnvironmentVariables) {
+        // Given
+        envVars.set("USER_POOL_ID", "test-pool-id")
+
+        val event = APIGatewayProxyRequestEvent().apply {
+            httpMethod = "POST"
+            path = "/register"
+            body = """{"username":"testuser","password":"TestPass123!","passwordConfirm":"TestPass123!","firstName":"Test","lastName":"User","email":""}"""
+        }
+
+        // When
+        val response = handler.handleRequest(event, mockContext)
+
+        // Then
+        assertEquals(400, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("Email is required"))
+    }
+
+    @Test
+    @DisplayName("Register with email omitted returns 400")
+    fun `register missing email when field omitted returns 400`(envVars: EnvironmentVariables) {
+        // Given
+        envVars.set("USER_POOL_ID", "test-pool-id")
+
+        val event = APIGatewayProxyRequestEvent().apply {
+            httpMethod = "POST"
+            path = "/register"
+            body = """{"username":"testuser","password":"TestPass123!","passwordConfirm":"TestPass123!","firstName":"Test","lastName":"User"}"""
+        }
+
+        // When
+        val response = handler.handleRequest(event, mockContext)
+
+        // Then
+        assertEquals(400, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("Email is required"))
     }
 
     @Test
@@ -581,6 +629,25 @@ class AuthHandlerTest {
         // If not 400, that's fine - normalization passed
     }
 
+    @Test
+    @DisplayName("Register with only email does not fail identifier requirement")
+    fun `register with only email passes identifier validation`(envVars: EnvironmentVariables) {
+        // Given
+        envVars.set("USER_POOL_ID", "test-pool-id")
+
+        val event = createRegisterEvent("testuser", "TestPass123!", "TestPass123!", "test@example.com", "", "Test", "User")
+
+        // When
+        val response = handler.handleRequest(event, mockContext)
+
+        // Then - should not fail the at-least-one-identifier validation
+        val responseBody = response.body
+        if (response.statusCode == 400) {
+            assertNotNull(responseBody)
+            assertFalse(responseBody!!.contains("At least one of email or phoneNumber is required"))
+        }
+    }
+
     // Normalization tests (whitespace trimming)
 
     @Test
@@ -603,6 +670,24 @@ class AuthHandlerTest {
                 "Should not fail with phone/required field validation error")
         }
         // If not 400, that's fine - normalization passed
+    }
+
+    @Test
+    @DisplayName("Register with only phone fails because email is required")
+    fun `register with only phone fails email requirement`(envVars: EnvironmentVariables) {
+        // Given
+        envVars.set("USER_POOL_ID", "test-pool-id")
+
+        val event = createRegisterEvent("testuser", "TestPass123!", "TestPass123!", "", "+1234567890", "Test", "User")
+
+        // When
+        val response = handler.handleRequest(event, mockContext)
+
+        // Then
+        assertEquals(400, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("Email is required"))
     }
 
     @Test
@@ -715,7 +800,7 @@ class AuthHandlerTest {
         val event = APIGatewayProxyRequestEvent().apply {
             httpMethod = "POST"
             path = "/register"
-            body = """{"username":"testuser","password":"TestPass123!","email":"test@example.com","phoneNumber":"+1234567890","firstName":"Test","lastName":"User"}"""
+            body = """{"username":"testuser","password":"TestPass123!","email":"test@example.com","firstName":"Test","lastName":"User"}"""
         }
         
         // When
