@@ -176,7 +176,8 @@ class CdkStack(Stack):
             "cognito-idp:AdminCreateUser",
             "cognito-idp:AdminSetUserPassword",
             "cognito-idp:AdminDeleteUser",  # For cleanup on registration failure
-            "cognito-idp:ListUsers"  # For checking duplicate email/phone
+            "cognito-idp:ListUsers",  # For checking duplicate email/phone
+            "cognito-idp:ChangePassword",
         )
 
         # Add Cognito configuration to Lambda environment
@@ -211,6 +212,10 @@ class CdkStack(Stack):
         check_username.add_method("GET", integration=apigw.LambdaIntegration(auth_handler))
         check_email = register.add_resource("check-email")
         check_email.add_method("GET", integration=apigw.LambdaIntegration(auth_handler))
+
+        password = api.root.add_resource("password")
+        change = password.add_resource("change")
+        change.add_method("POST", integration=apigw.LambdaIntegration(auth_handler))
 
         search = api.root.add_resource("search")
         search.add_method("GET", integration=apigw.LambdaIntegration(static_navigation_handler))
