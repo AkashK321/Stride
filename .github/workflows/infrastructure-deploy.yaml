@@ -247,6 +247,8 @@ jobs:
           BRANCH_STACK="${{ steps.get-stack-name.outputs.stack_name }}"
           if cdk deploy StrideSharedStack "$BRANCH_STACK" --require-approval never --outputs-file cdk-outputs.json; then
             echo "✅ Deployment successful!"
+            echo "Debug: cdk-outputs.json keys after deploy:"
+            jq -r 'keys[]' cdk-outputs.json || echo "Debug: could not read keys from cdk-outputs.json"
             echo "deployment_status=success" >> $GITHUB_OUTPUT
           else
             echo "❌ Deployment failed!"
@@ -267,6 +269,13 @@ jobs:
           SHARED_STACK_KEY="StrideSharedStack"
           BRANCH_STACK_KEY="${{ steps.get-stack-name.outputs.stack_name }}"
 
+          echo "Debug: expected branch stack key: $BRANCH_STACK_KEY"
+          echo "Debug: expected shared stack key: $SHARED_STACK_KEY"
+          echo "Debug: keys currently in cdk-outputs.json:"
+          jq -r 'keys[]' cdk-outputs.json
+          echo "Debug: full cdk-outputs.json contents:"
+          jq '.' cdk-outputs.json
+
           if ! jq -e ".\"$BRANCH_STACK_KEY\"" cdk-outputs.json >/dev/null 2>&1; then
             echo "Error: Branch stack outputs missing for key \"$BRANCH_STACK_KEY\""
             echo "Keys in cdk-outputs.json:"
@@ -276,7 +285,14 @@ jobs:
 
           if ! jq -e ".\"$SHARED_STACK_KEY\"" cdk-outputs.json >/dev/null 2>&1; then
             echo "Error: Shared stack outputs missing for key \"$SHARED_STACK_KEY\""
+            echo "Debug: cdk-outputs.json keys:"
             jq -r 'keys[]' cdk-outputs.json
+            echo "Debug: attempting CloudFormation lookup for shared stack outputs"
+            if aws cloudformation describe-stacks --stack-name "$SHARED_STACK_KEY" --query 'Stacks[0].Outputs' --output json; then
+              echo "Debug: CloudFormation lookup succeeded for $SHARED_STACK_KEY"
+            else
+              echo "Debug: CloudFormation lookup failed for $SHARED_STACK_KEY"
+            fi
             exit 1
           fi
 
