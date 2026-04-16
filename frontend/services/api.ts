@@ -1,6 +1,7 @@
 /**
  * API service for making HTTP requests to the backend.
  */
+import { getAccessToken } from "./tokenStorage";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
@@ -70,11 +71,22 @@ export interface RegisterResponse {
   username: string;
 }
 
+<<<<<<< HEAD
 export interface AvailabilityCheckResponse {
   available: boolean;
   username?: string;
   email?: string;
   error?: boolean;
+=======
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
+  newPasswordConfirm: string;
+}
+
+export interface ChangePasswordResponse {
+  message: string;
+>>>>>>> 07c3b48 (updated frontend to update live, implemented frontend)
 }
 
 export interface LandmarkResult {
@@ -215,6 +227,7 @@ export async function register(userData: RegisterRequest): Promise<RegisterRespo
 }
 
 /**
+<<<<<<< HEAD
  * Checks if a username is available during registration.
  * Returns an explicit error flag so the UI can show an "unknown" state.
  */
@@ -324,6 +337,40 @@ export async function checkEmailAvailability(
     console.warn("[API] check-email request error:", error);
     return fallbackResponse;
   }
+=======
+ * Changes the currently authenticated user's password.
+ */
+export async function changePassword(
+  request: ChangePasswordRequest
+): Promise<ChangePasswordResponse> {
+  const base = requireApiUrl();
+  const accessToken = await getAccessToken();
+
+  if (!accessToken) {
+    throw new Error("You are not authenticated. Please log in again.");
+  }
+
+  const response = await fetch(`${base}/password/change`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    const error: ApiError = data;
+    if (response.status === 401) {
+      throw new Error("Your session has expired. Please log in again.");
+    }
+    throw new Error(error.error || `Password change failed: ${response.statusText}`);
+  }
+
+  return data as ChangePasswordResponse;
+>>>>>>> 07c3b48 (updated frontend to update live, implemented frontend)
 }
 
 /**

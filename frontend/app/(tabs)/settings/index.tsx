@@ -1,21 +1,14 @@
-/**
- * Settings screen - app configuration and user preferences.
- *
- * This tab screen, accessible at "/settings", allows users to configure app settings,
- * manage preferences, and access account-related options like notifications, privacy, etc.
- *
- * Currently a placeholder screen that will be expanded with settings management features.
- * Uses React.createElement (non-JSX) to match the project's TypeScript configuration.
- */
 import * as React from "react";
 import { View, Text } from "react-native";
+import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import Button from "../../components/Button";
-import { useAuth } from "../../contexts/AuthContext";
-import { spacing } from "../../theme/spacing";
-import { typography } from "../../theme/typography";
+import Button from "../../../components/Button";
+import { useAuth } from "../../../contexts/AuthContext";
+import { spacing } from "../../../theme/spacing";
+import { typography } from "../../../theme/typography";
 
-export default function Settings() {
+export default function SettingsScreen() {
+  const router = useRouter();
   const { logout } = useAuth();
   const [isLoggingOut, setIsLoggingOut] = React.useState(false);
 
@@ -56,6 +49,13 @@ export default function Settings() {
         },
         "Settings",
       ),
+      React.createElement(Button, {
+        onPress: () => router.push("/settings/change-password"),
+        title: "Change Password",
+        accessibilityLabel: "Change Password",
+        accessibilityRole: "button",
+        accessibilityHint: "Go to the change password screen",
+      }),
       React.createElement(
         View,
         {
@@ -80,4 +80,3 @@ export default function Settings() {
     ),
   );
 }
-
