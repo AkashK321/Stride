@@ -41,9 +41,13 @@ export default function RegisterContact() {
     React.useState<ValidationStatus>("idle");
   const [isLoading, setIsLoading] = React.useState(false);
   const trimmedEmail = React.useMemo(() => email.trim(), [email]);
+  const requiresEmailAvailabilityCheck = React.useMemo(
+    () => Boolean(trimmedEmail) && EMAIL_REGEX.test(trimmedEmail),
+    [trimmedEmail]
+  );
   const isEmailAvailabilityBlocking = React.useMemo(
-    () => emailAvailabilityStatus === "loading" || emailAvailabilityStatus === "taken",
-    [emailAvailabilityStatus]
+    () => requiresEmailAvailabilityCheck && emailAvailabilityStatus !== "available",
+    [requiresEmailAvailabilityCheck, emailAvailabilityStatus]
   );
 
   const handleEmailChange = (text: string) => {
@@ -105,13 +109,18 @@ export default function RegisterContact() {
       return;
     }
 
-    if (emailAvailabilityStatus === "loading") {
+    if (requiresEmailAvailabilityCheck && (emailAvailabilityStatus === "loading" || emailAvailabilityStatus === "idle")) {
       setEmailError("Please wait while we verify email availability");
       return;
     }
 
-    if (emailAvailabilityStatus === "taken") {
+    if (requiresEmailAvailabilityCheck && emailAvailabilityStatus === "taken") {
       setEmailError("An account with this email already exists");
+      return;
+    }
+
+    if (requiresEmailAvailabilityCheck && emailAvailabilityStatus === "error") {
+      setEmailError("Unable to verify email availability right now");
       return;
     }
 
@@ -177,7 +186,7 @@ export default function RegisterContact() {
 
       // Set field errors if applicable
       const errorLower = errorMessage.toLowerCase();
-      if (errorLower.includes("username") || errorLower.includes("already exists")) {
+      if (errorLower.includes("username")) {
         // Username conflict - need to go back to step 2
         Alert.alert(
           "Username Taken",

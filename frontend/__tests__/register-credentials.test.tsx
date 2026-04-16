@@ -45,6 +45,12 @@ ReactNative.Keyboard.addListener = jest.fn((event: string, callback: (e: any) =>
 const alertSpy = jest.spyOn(Alert, "alert");
 
 describe("Register Credentials Screen Step 2 (app/(auth)/register-credentials.tsx)", () => {
+  const waitForUsernameAvailabilityCheck = async (expectedUsername: string) => {
+    await waitFor(() => {
+      expect(mockCheckUsernameAvailability).toHaveBeenCalledWith(expectedUsername);
+    });
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockKeyboardListeners.length = 0;
@@ -203,6 +209,41 @@ describe("Register Credentials Screen Step 2 (app/(auth)/register-credentials.ts
       const announcement = screen.getByLabelText("Username is available");
       expect(announcement).toBeTruthy();
       expect(announcement.props.accessibilityLiveRegion).toBe("polite");
+    });
+
+    it("prevents submit via keyboard while username check is still pending", async () => {
+      render(<RegisterCredentials />);
+      fireEvent.changeText(screen.getByPlaceholderText("Username"), "strideuser");
+      fireEvent.changeText(screen.getByPlaceholderText("Password"), "ValidPass123!");
+      fireEvent.changeText(screen.getByPlaceholderText("Confirm Password"), "ValidPass123!");
+
+      fireEvent(screen.getByPlaceholderText("Confirm Password"), "submitEditing");
+
+      await waitFor(() => {
+        expect(screen.getByText("Please wait while we verify username availability")).toBeTruthy();
+      });
+      expect(mockPush).not.toHaveBeenCalled();
+    });
+
+    it("prevents submit when username availability check returns an error", async () => {
+      mockCheckUsernameAvailability.mockResolvedValueOnce({ available: false, error: true });
+
+      render(<RegisterCredentials />);
+      fireEvent.changeText(screen.getByPlaceholderText("Username"), "strideuser");
+      fireEvent.changeText(screen.getByPlaceholderText("Password"), "ValidPass123!");
+      fireEvent.changeText(screen.getByPlaceholderText("Confirm Password"), "ValidPass123!");
+
+      await act(async () => {
+        jest.advanceTimersByTime(500);
+        await Promise.resolve();
+      });
+
+      fireEvent(screen.getByPlaceholderText("Confirm Password"), "submitEditing");
+
+      await waitFor(() => {
+        expect(screen.getAllByText("Unable to verify username availability right now").length).toBeGreaterThan(0);
+      });
+      expect(mockPush).not.toHaveBeenCalled();
     });
   });
 
@@ -414,6 +455,7 @@ describe("Register Credentials Screen Step 2 (app/(auth)/register-credentials.ts
       fireEvent.changeText(usernameInput, "  testuser  ");
       fireEvent.changeText(passwordInput, "  ValidPass123!  ");
       fireEvent.changeText(passwordConfirmInput, "  ValidPass123!  ");
+      await waitForUsernameAvailabilityCheck("testuser");
 
       const continueButton = screen.getByText("Continue");
       fireEvent.press(continueButton);
@@ -471,6 +513,7 @@ describe("Register Credentials Screen Step 2 (app/(auth)/register-credentials.ts
       fireEvent.changeText(usernameInput, "testuser");
       fireEvent.changeText(passwordInput, "ValidPass123!");
       fireEvent.changeText(passwordConfirmInput, "ValidPass123!");
+      await waitForUsernameAvailabilityCheck("testuser");
 
       const continueButton = screen.getByText("Continue");
       fireEvent.press(continueButton);
@@ -494,6 +537,7 @@ describe("Register Credentials Screen Step 2 (app/(auth)/register-credentials.ts
       fireEvent.changeText(usernameInput, "testuser");
       fireEvent.changeText(passwordInput, "ValidPass123!");
       fireEvent.changeText(passwordConfirmInput, "ValidPass123!");
+      await waitForUsernameAvailabilityCheck("testuser");
 
       const continueButton = screen.getByText("Continue");
       fireEvent.press(continueButton);
@@ -519,6 +563,7 @@ describe("Register Credentials Screen Step 2 (app/(auth)/register-credentials.ts
       fireEvent.changeText(usernameInput, "  testuser  ");
       fireEvent.changeText(passwordInput, "  ValidPass123!  ");
       fireEvent.changeText(passwordConfirmInput, "  ValidPass123!  ");
+      await waitForUsernameAvailabilityCheck("testuser");
 
       const continueButton = screen.getByText("Continue");
       fireEvent.press(continueButton);
@@ -551,6 +596,7 @@ describe("Register Credentials Screen Step 2 (app/(auth)/register-credentials.ts
       fireEvent.changeText(usernameInput, "testuser");
       fireEvent.changeText(passwordInput, "ValidPass123!");
       fireEvent.changeText(passwordConfirmInput, "ValidPass123!");
+      await waitForUsernameAvailabilityCheck("testuser");
 
       fireEvent.press(continueButton);
 

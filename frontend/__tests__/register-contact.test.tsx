@@ -56,6 +56,12 @@ jest.mock("../contexts/AuthContext", () => ({
 const alertSpy = jest.spyOn(Alert, "alert");
 
 describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () => {
+  const waitForEmailAvailabilityCheck = async (expectedEmail: string) => {
+    await waitFor(() => {
+      expect(mockCheckEmailAvailability).toHaveBeenCalledWith(expectedEmail);
+    });
+  };
+
   const mockLoginResponse = {
     accessToken: "access-123",
     idToken: "id-456",
@@ -142,6 +148,7 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
 
       const emailInput = screen.getByPlaceholderText("Email");
       fireEvent.changeText(emailInput, "test@example.com");
+      await waitForEmailAvailabilityCheck("test@example.com");
 
       const createAccountButton = screen.getByText("Create Account");
       await act(async () => {
@@ -163,6 +170,7 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
 
       const emailInput = screen.getByPlaceholderText("Email");
       fireEvent.changeText(emailInput, "  test@example.com  ");
+      await waitForEmailAvailabilityCheck("test@example.com");
 
       const createAccountButton = screen.getByText("Create Account");
       await act(async () => {
@@ -233,6 +241,37 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
       expect(announcement).toBeTruthy();
       expect(announcement.props.accessibilityLiveRegion).toBe("polite");
     });
+
+    it("prevents submit via keyboard while email check is pending", async () => {
+      render(<RegisterContact />);
+      fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
+
+      fireEvent(screen.getByPlaceholderText("Email"), "submitEditing");
+
+      await waitFor(() => {
+        expect(screen.getByText("Please wait while we verify email availability")).toBeTruthy();
+      });
+      expect(mockApiRegister).not.toHaveBeenCalled();
+    });
+
+    it("prevents submit when email availability check fails", async () => {
+      mockCheckEmailAvailability.mockResolvedValueOnce({ available: false, error: true });
+
+      render(<RegisterContact />);
+      fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
+
+      await act(async () => {
+        jest.advanceTimersByTime(500);
+        await Promise.resolve();
+      });
+
+      fireEvent(screen.getByPlaceholderText("Email"), "submitEditing");
+
+      await waitFor(() => {
+        expect(screen.getAllByText("Unable to verify email availability right now").length).toBeGreaterThan(0);
+      });
+      expect(mockApiRegister).not.toHaveBeenCalled();
+    });
   });
 
   // --- API integration ---
@@ -241,6 +280,7 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
     it("calls register() API with email data", async () => {
       render(<RegisterContact />);
       fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
+      await waitForEmailAvailabilityCheck("test@example.com");
 
       const createAccountButton = screen.getByText("Create Account");
       await act(async () => {
@@ -263,6 +303,7 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
     it("calls login() API after successful registration", async () => {
       render(<RegisterContact />);
       fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
+      await waitForEmailAvailabilityCheck("test@example.com");
 
       const createAccountButton = screen.getByText("Create Account");
       await act(async () => {
@@ -284,6 +325,7 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
     it("calls authLogin() with tokens after successful login", async () => {
       render(<RegisterContact />);
       fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
+      await waitForEmailAvailabilityCheck("test@example.com");
 
       const createAccountButton = screen.getByText("Create Account");
       await act(async () => {
@@ -303,6 +345,7 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
     it("navigates to /home after successful registration and login", async () => {
       render(<RegisterContact />);
       fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
+      await waitForEmailAvailabilityCheck("test@example.com");
 
       const createAccountButton = screen.getByText("Create Account");
       await act(async () => {
@@ -325,6 +368,7 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
 
       const { UNSAFE_root } = render(<RegisterContact />);
       fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
+      await waitForEmailAvailabilityCheck("test@example.com");
 
       const createAccountButton = screen.getByText("Create Account");
       fireEvent.press(createAccountButton);
@@ -354,6 +398,7 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
 
       render(<RegisterContact />);
       fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
+      await waitForEmailAvailabilityCheck("test@example.com");
 
       const createAccountButton = screen.getByText("Create Account");
       await act(async () => {
@@ -372,6 +417,7 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
 
       render(<RegisterContact />);
       fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
+      await waitForEmailAvailabilityCheck("test@example.com");
 
       const createAccountButton = screen.getByText("Create Account");
       await act(async () => {
@@ -405,14 +451,13 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
     });
 
     it("sets email error when email is already taken", async () => {
-      // Use error message that contains "email" to match email error condition
-      // Note: The code checks "username" || "already exists" first, so we need to avoid "already exists"
       const error = new Error("This email is already registered");
       mockApiRegister.mockRejectedValueOnce(error);
 
       render(<RegisterContact />);
       const emailInput = screen.getByPlaceholderText("Email");
       fireEvent.changeText(emailInput, "test@example.com");
+      await waitForEmailAvailabilityCheck("test@example.com");
 
       const createAccountButton = screen.getByText("Create Account");
       await act(async () => {
@@ -424,12 +469,27 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
       }, { timeout: 2000 });
     });
 
+    it("treats generic 'already exists' errors as email conflicts", async () => {
+      mockApiRegister.mockRejectedValueOnce(new Error("User already exists"));
+
+      render(<RegisterContact />);
+      fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
+      await waitForEmailAvailabilityCheck("test@example.com");
+
+      fireEvent.press(screen.getByText("Create Account"));
+
+      await waitFor(() => {
+        expect(screen.getByText("An account with this email already exists")).toBeTruthy();
+      });
+    });
+
     it("shows alert and navigates back when password error occurs", async () => {
       const error = new Error("Password does not meet requirements");
       mockApiRegister.mockRejectedValueOnce(error);
 
       render(<RegisterContact />);
       fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
+      await waitForEmailAvailabilityCheck("test@example.com");
 
       const createAccountButton = screen.getByText("Create Account");
       await act(async () => {
@@ -469,6 +529,7 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
 
       render(<RegisterContact />);
       fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
+      await waitForEmailAvailabilityCheck("test@example.com");
 
       const createAccountButton = screen.getByText("Create Account");
       await act(async () => {
@@ -510,6 +571,7 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
 
       render(<RegisterContact />);
       fireEvent.changeText(screen.getByPlaceholderText("Email"), "test@example.com");
+      await waitForEmailAvailabilityCheck("test@example.com");
 
       const createAccountButton = screen.getByText("Create Account");
       fireEvent.press(createAccountButton);

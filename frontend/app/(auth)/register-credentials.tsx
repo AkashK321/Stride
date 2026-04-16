@@ -80,9 +80,17 @@ export default function RegisterCredentials() {
   const isFormValid = React.useMemo(() => {
     return isUsernameValid && isPasswordValid && passwordsMatch;
   }, [isUsernameValid, isPasswordValid, passwordsMatch]);
-  const isUsernameAvailabilityBlocking = React.useMemo(
-    () => usernameAvailabilityStatus === "loading" || usernameAvailabilityStatus === "taken",
+  const requiresUsernameAvailabilityCheck = React.useMemo(
+    () => trimmedUsername.length >= 3,
+    [trimmedUsername]
+  );
+  const isUsernameAvailabilityBlockingStatus = React.useMemo(
+    () => usernameAvailabilityStatus !== "available",
     [usernameAvailabilityStatus]
+  );
+  const isUsernameAvailabilityBlocking = React.useMemo(
+    () => isFormValid && requiresUsernameAvailabilityCheck && isUsernameAvailabilityBlockingStatus,
+    [isFormValid, requiresUsernameAvailabilityCheck, isUsernameAvailabilityBlockingStatus]
   );
 
   // Listen to keyboard events to get keyboard height
@@ -279,14 +287,19 @@ export default function RegisterCredentials() {
       return;
     }
 
-    if (trimmedUsername.length >= 3) {
-      if (usernameAvailabilityStatus === "loading") {
+    if (requiresUsernameAvailabilityCheck) {
+      if (usernameAvailabilityStatus === "loading" || usernameAvailabilityStatus === "idle") {
         setUsernameError("Please wait while we verify username availability");
         return;
       }
 
       if (usernameAvailabilityStatus === "taken") {
         setUsernameError("This username is already taken");
+        return;
+      }
+
+      if (usernameAvailabilityStatus === "error") {
+        setUsernameError("Unable to verify username availability right now");
         return;
       }
     }
