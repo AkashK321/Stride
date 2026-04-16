@@ -242,7 +242,6 @@ describe("register", () => {
       password: "password123",
       passwordConfirm: "password123",
       email: "test@example.com",
-      phoneNumber: "+1234567890",
       firstName: "Test",
       lastName: "User",
     };
@@ -260,12 +259,51 @@ describe("register", () => {
       expect.objectContaining({
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(userData),
       })
     );
+    const registerRequest = (global.fetch as jest.Mock).mock.calls[0][1];
+    expect(JSON.parse(registerRequest.body)).toEqual(userData);
 
     // Verify the response
     expect(result).toEqual(mockResponse);
+  });
+
+  it("trims email before sending payload", async () => {
+    const mockResponse: RegisterResponse = {
+      message: "User registered successfully",
+      username: "testuser",
+    };
+
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockResponse,
+    });
+
+    await apiModule.register({
+      username: "testuser",
+      password: "password123",
+      passwordConfirm: "password123",
+      email: "  test@example.com  ",
+      firstName: "Test",
+      lastName: "User",
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://test-api.example.com/register",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    const registerRequest = (global.fetch as jest.Mock).mock.calls[0][1];
+    expect(JSON.parse(registerRequest.body)).toEqual({
+      username: "testuser",
+      password: "password123",
+      passwordConfirm: "password123",
+      firstName: "Test",
+      lastName: "User",
+      email: "test@example.com",
+    }); 
   });
 
   it("throws with API error message on failure", async () => {
@@ -282,7 +320,6 @@ describe("register", () => {
         password: "password123",
         passwordConfirm: "password123",
         email: "test@example.com",
-        phoneNumber: "+1234567890",
         firstName: "Test",
         lastName: "User",
       })
@@ -303,7 +340,6 @@ describe("register", () => {
         password: "password123",
         passwordConfirm: "password123",
         email: "test@example.com",
-        phoneNumber: "+1234567890",
         firstName: "Test",
         lastName: "User",
       })
@@ -329,7 +365,6 @@ describe("register", () => {
         password: "password123",
         passwordConfirm: "password123",
         email: "test@example.com",
-        phoneNumber: "+1234567890",
         firstName: "Test",
         lastName: "User",
       })
@@ -349,7 +384,6 @@ describe("register", () => {
         password: "password123",
         passwordConfirm: "password123",
         email: "test@example.com",
-        phoneNumber: "+1234567890",
         firstName: "Test",
         lastName: "User",
       });
@@ -371,7 +405,6 @@ describe("register", () => {
         password: "password123",
         passwordConfirm: "password123",
         email: "test@example.com",
-        phoneNumber: "+1234567890",
         firstName: "Test",
         lastName: "User",
       })
@@ -387,7 +420,6 @@ describe("register", () => {
         password: "password123",
         passwordConfirm: "password123",
         email: "test@example.com",
-        phoneNumber: "+1234567890",
         firstName: "Test",
         lastName: "User",
       })
@@ -406,7 +438,6 @@ describe("register", () => {
         password: "password123",
         passwordConfirm: "password123",
         email: "test@example.com",
-        phoneNumber: "+1234567890",
         firstName: "Test",
         lastName: "User",
       })
