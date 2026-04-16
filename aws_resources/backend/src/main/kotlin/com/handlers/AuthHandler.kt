@@ -10,6 +10,7 @@ import software.amazon.awssdk.services.cognitoidentityprovider.model.InitiateAut
 import software.amazon.awssdk.services.cognitoidentityprovider.model.InitiateAuthResponse
 import software.amazon.awssdk.services.cognitoidentityprovider.model.AuthFlowType
 import software.amazon.awssdk.services.cognitoidentityprovider.model.AuthenticationResultType
+import software.amazon.awssdk.services.cognitoidentityprovider.model.ChangePasswordRequest as CognitoChangePasswordRequest
 import software.amazon.awssdk.services.cognitoidentityprovider.model.CognitoIdentityProviderException
 import software.amazon.awssdk.services.cognitoidentityprovider.model.AdminCreateUserRequest
 import software.amazon.awssdk.services.cognitoidentityprovider.model.AdminSetUserPasswordRequest
@@ -49,6 +50,7 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
             path == "/register" && method == "POST" -> handleRegister(input, context)
             path == "/register/check-username" && method == "GET" -> handleCheckUsername(input, context)
             path == "/register/check-email" && method == "GET" -> handleCheckEmail(input, context)
+            path == "/password/change" && method == "POST" -> handleChangePassword(input, context)
             else -> createErrorResponse(404, "Not Found")
         }
 
@@ -689,6 +691,126 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
         }
     }
 
+    private fun handleChangePassword(
+        input: APIGatewayProxyRequestEvent,
+        context: Context,
+    ): APIGatewayProxyResponseEvent {
+        context.logger.log("Handling change password request")
+
+        try {
+            val body = input.body ?: return createErrorResponse(400, "Request body is required")
+            val authorizationHeader = getAuthorizationHeader(input)
+                ?: return createErrorResponse(401, "Authorization header is required")
+            val accessToken = extractBearerToken(authorizationHeader)
+                ?: return createErrorResponse(401, "Authorization header must use Bearer token")
+
+            val request = try {
+                mapper.readValue<ChangePasswordRequest>(body)
+            } catch (e: Exception) {
+                context.logger.log("ERROR: Failed to parse request body: ${e.message}")
+                return createErrorResponse(
+                    400,
+                    "Invalid request format. Expected JSON with currentPassword, newPassword, and newPasswordConfirm"
+                )
+            }
+
+            val currentPassword = request.currentPassword?.trim()
+            val newPassword = request.newPassword?.trim()
+            val newPasswordConfirm = request.newPasswordConfirm?.trim()
+
+            if (currentPassword.isNullOrEmpty() || newPassword.isNullOrEmpty() || newPasswordConfirm.isNullOrEmpty()) {
+                return createErrorResponse(400, "Current password, new password, and password confirmation are required")
+            }
+
+            if (newPassword != newPasswordConfirm) {
+                return createErrorResponse(400, "Passwords do not match")
+            }
+
+            if (newPassword == currentPassword) {
+                return createErrorResponse(400, "New password must be different from current password")
+            }
+
+            val changePasswordRequest = CognitoChangePasswordRequest.builder()
+                .accessToken(accessToken)
+                .previousPassword(currentPassword)
+                .proposedPassword(newPassword)
+                .build()
+
+            cognitoClient.changePassword(changePasswordRequest)
+
+            val responseBody = mapper.writeValueAsString(
+                mapOf("message" to "Password changed successfully")
+            )
+            return APIGatewayProxyResponseEvent()
+                .withStatusCode(200)
+                .withBody(responseBody)
+                .withHeaders(mapOf("Content-Type" to "application/json"))
+        } catch (e: CognitoIdentityProviderException) {
+            context.logger.log("ERROR: Cognito password change failed: ${e.message}")
+
+            val errorCode = e.awsErrorDetails()?.errorCode()
+            val normalizedMessage = "${e.awsErrorDetails()?.errorMessage() ?: e.message ?: ""}".lowercase()
+            val userFriendlyMessage = parseCognitoError(e)
+
+            val statusCode: Int
+            val message: String
+
+            when (errorCode) {
+                "InvalidPasswordException" -> {
+                    statusCode = 400
+                    message = userFriendlyMessage
+                }
+                "TooManyRequestsException", "LimitExceededException" -> {
+                    statusCode = 429
+                    message = userFriendlyMessage
+                }
+                "NotAuthorizedException" -> {
+                    val tokenError = normalizedMessage.contains("token") ||
+                        normalizedMessage.contains("expired") ||
+                        normalizedMessage.contains("invalid access token") ||
+                        normalizedMessage.contains("access token")
+                    if (tokenError) {
+                        statusCode = 401
+                        message = "Invalid or expired access token"
+                    } else {
+                        statusCode = 400
+                        message = "Current password is incorrect"
+                    }
+                }
+                else -> {
+                    statusCode = 400
+                    message = userFriendlyMessage
+                }
+            }
+
+            return createErrorResponse(statusCode, message)
+        } catch (e: Exception) {
+            context.logger.log("ERROR: Unexpected error during password change: ${e.message}")
+            e.printStackTrace()
+            return createErrorResponse(500, "Internal server error")
+        }
+    }
+
+    private fun getAuthorizationHeader(input: APIGatewayProxyRequestEvent): String? {
+        return input.headers
+            ?.entries
+            ?.firstOrNull { it.key.equals("Authorization", ignoreCase = true) }
+            ?.value
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+    }
+
+    private fun extractBearerToken(authorizationHeader: String): String? {
+        if (!authorizationHeader.startsWith("Bearer ", ignoreCase = true)) {
+            return null
+        }
+
+        return authorizationHeader
+            .substringAfter(" ", "")
+            .trim()
+            .takeIf { it.isNotEmpty() }
+    }
+
     // Data class for login request
     private data class LoginRequest(
         val username: String?,
@@ -703,5 +825,12 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
         val email: String?,
         val firstName: String?,
         val lastName: String?
+    )
+
+    // Data class for change password request
+    private data class ChangePasswordRequest(
+        val currentPassword: String?,
+        val newPassword: String?,
+        val newPasswordConfirm: String?,
     )
 }
