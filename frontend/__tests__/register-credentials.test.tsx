@@ -10,6 +10,12 @@ import { render, fireEvent, screen, waitFor, act } from "@testing-library/react-
 import { Alert, Keyboard } from "react-native";
 import RegisterCredentials from "../app/(auth)/register-credentials";
 
+const mockCheckUsernameAvailability = jest.fn();
+
+jest.mock("../services/api", () => ({
+  checkUsernameAvailability: (...args: any[]) => mockCheckUsernameAvailability(...args),
+}));
+
 // Mock expo-router
 const mockPush = jest.fn();
 const mockReplace = jest.fn();
@@ -46,6 +52,7 @@ describe("Register Credentials Screen Step 2 (app/(auth)/register-credentials.ts
       firstName: "John",
       lastName: "Doe",
     };
+    mockCheckUsernameAvailability.mockResolvedValue({ available: true, error: false });
     alertSpy.mockClear();
   });
 
@@ -146,6 +153,56 @@ describe("Register Credentials Screen Step 2 (app/(auth)/register-credentials.ts
       await waitFor(() => {
         expect(screen.queryByText("Username must be at least 3 characters")).toBeNull();
       });
+    });
+  });
+
+  describe("Username availability debounce and announcements", () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.runOnlyPendingTimers();
+      jest.useRealTimers();
+    });
+
+    it("debounces availability checks and only requests the latest username", async () => {
+      render(<RegisterCredentials />);
+      const usernameInput = screen.getByPlaceholderText("Username");
+
+      fireEvent.changeText(usernameInput, "abc");
+
+      await act(async () => {
+        jest.advanceTimersByTime(400);
+      });
+
+      expect(mockCheckUsernameAvailability).not.toHaveBeenCalled();
+
+      fireEvent.changeText(usernameInput, "abcd");
+
+      await act(async () => {
+        jest.advanceTimersByTime(500);
+        await Promise.resolve();
+      });
+
+      expect(mockCheckUsernameAvailability).toHaveBeenCalledTimes(1);
+      expect(mockCheckUsernameAvailability).toHaveBeenCalledWith("abcd");
+    });
+
+    it("announces username availability updates for screen readers", async () => {
+      render(<RegisterCredentials />);
+      const usernameInput = screen.getByPlaceholderText("Username");
+
+      fireEvent.changeText(usernameInput, "strideuser");
+
+      await act(async () => {
+        jest.advanceTimersByTime(500);
+        await Promise.resolve();
+      });
+
+      const announcement = screen.getByLabelText("Username is available");
+      expect(announcement).toBeTruthy();
+      expect(announcement.props.accessibilityLiveRegion).toBe("polite");
     });
   });
 

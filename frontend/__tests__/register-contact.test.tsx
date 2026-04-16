@@ -31,9 +31,11 @@ jest.mock("expo-router", () => ({
 // Mock services/api
 const mockApiRegister = jest.fn();
 const mockApiLogin = jest.fn();
+const mockCheckEmailAvailability = jest.fn();
 jest.mock("../services/api", () => ({
   register: (...args: any[]) => mockApiRegister(...args),
   login: (...args: any[]) => mockApiLogin(...args),
+  checkEmailAvailability: (...args: any[]) => mockCheckEmailAvailability(...args),
 }));
 
 // Mock AuthContext
@@ -72,6 +74,7 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
     };
     mockApiRegister.mockResolvedValue({ message: "Registration successful", username: "testuser" });
     mockApiLogin.mockResolvedValue(mockLoginResponse);
+    mockCheckEmailAvailability.mockResolvedValue({ available: true, error: false });
     mockAuthLogin.mockResolvedValue(undefined);
     alertSpy.mockClear();
   });
@@ -174,6 +177,61 @@ describe("Register Contact Screen Step 3 (app/(auth)/register-contact.tsx)", () 
           email: "test@example.com",
         })
       );
+    });
+  });
+
+  describe("Email availability debounce and announcements", () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.runOnlyPendingTimers();
+      jest.useRealTimers();
+    });
+
+    it("only checks availability after a valid email has been stable for 500ms", async () => {
+      render(<RegisterContact />);
+      const emailInput = screen.getByPlaceholderText("Email");
+
+      fireEvent.changeText(emailInput, "invalid-email");
+
+      await act(async () => {
+        jest.advanceTimersByTime(600);
+      });
+
+      expect(mockCheckEmailAvailability).not.toHaveBeenCalled();
+
+      fireEvent.changeText(emailInput, "test@example.com");
+
+      await act(async () => {
+        jest.advanceTimersByTime(400);
+      });
+      expect(mockCheckEmailAvailability).not.toHaveBeenCalled();
+
+      await act(async () => {
+        jest.advanceTimersByTime(100);
+        await Promise.resolve();
+      });
+
+      expect(mockCheckEmailAvailability).toHaveBeenCalledTimes(1);
+      expect(mockCheckEmailAvailability).toHaveBeenCalledWith("test@example.com");
+    });
+
+    it("announces email availability updates for screen readers", async () => {
+      mockCheckEmailAvailability.mockResolvedValueOnce({ available: false, error: false });
+
+      render(<RegisterContact />);
+      fireEvent.changeText(screen.getByPlaceholderText("Email"), "taken@example.com");
+
+      await act(async () => {
+        jest.advanceTimersByTime(500);
+        await Promise.resolve();
+      });
+
+      const announcement = screen.getByLabelText("Email is already in use");
+      expect(announcement).toBeTruthy();
+      expect(announcement.props.accessibilityLiveRegion).toBe("polite");
     });
   });
 

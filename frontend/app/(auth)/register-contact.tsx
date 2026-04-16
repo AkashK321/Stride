@@ -6,7 +6,7 @@
  */
 
 import * as React from "react";
-import { Text, Alert, Keyboard, TouchableWithoutFeedback, TextInput, ScrollView } from "react-native";
+import { View, Text, Alert, Keyboard, TouchableWithoutFeedback, TextInput, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import Button from "../../components/Button";
@@ -258,48 +258,56 @@ export default function RegisterContact() {
               alignSelf: "flex-start",
               color: colors.textSecondary,
             },
-            accessibilityLabel: "Registration form step 2",
+            accessibilityLabel: "Registration form step 3",
           },
           "Step 3 of 3: Email"
         ),
         React.createElement(
-          TextField,
+          View,
           {
-            ref: emailRef,
-            value: email,
-            onChangeText: handleEmailChange,
-            error: emailError,
-            autoCapitalize: "none",
-            autoComplete: "email",
-            keyboardType: "email-address",
-            returnKeyType: "done",
-            onSubmitEditing: handleRegister,
-            placeholder: "Email",
-            accessibilityLabel: "Email",
-            accessibilityHint: "Enter your email address.",
             style: {
               width: "100%",
             },
-            rightIcon:
-              emailAvailabilityStatus === "idle"
-                ? undefined
-                : React.createElement(ValidationIndicator, {
-                    status: emailAvailabilityStatus,
-                    variant: "icon",
-                    loadingText: "Checking email availability",
-                    availableText: "Email is available",
-                    takenText: "Email is already in use",
-                    errorText: "Unable to verify email availability",
-                  }),
           },
+          React.createElement(
+            TextField,
+            {
+              ref: emailRef,
+              value: email,
+              onChangeText: handleEmailChange,
+              error: emailError,
+              autoCapitalize: "none",
+              autoComplete: "email",
+              keyboardType: "email-address",
+              returnKeyType: "done",
+              onSubmitEditing: handleRegister,
+              placeholder: "Email",
+              accessibilityLabel: "Email",
+              accessibilityHint: "Enter your email address.",
+              style: {
+                width: "100%",
+              },
+              rightIcon:
+                emailAvailabilityStatus === "idle"
+                  ? undefined
+                  : React.createElement(ValidationIndicator, {
+                      status: emailAvailabilityStatus,
+                      variant: "icon",
+                      loadingText: "Checking email availability",
+                      availableText: "Email is available",
+                      takenText: "Email is already in use",
+                      errorText: "Unable to verify email availability",
+                    }),
+            },
+          ),
+          React.createElement(ValidationIndicator, {
+            status: emailAvailabilityStatus,
+            loadingText: "Checking email availability...",
+            availableText: "Email is available",
+            takenText: "Email is already in use",
+            errorText: "Unable to verify email availability right now",
+          }),
         ),
-        React.createElement(ValidationIndicator, {
-          status: emailAvailabilityStatus,
-          loadingText: "Checking email availability...",
-          availableText: "Email is available",
-          takenText: "Email is already in use",
-          errorText: "Unable to verify email availability right now",
-        }),
         React.createElement(Button, {
           onPress: handleRegister,
           title: "Create Account",
