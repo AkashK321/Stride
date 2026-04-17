@@ -67,7 +67,6 @@ If `DB_SECRET_ARN` is not available or access is denied, map population can fall
    - `populate` ensures `Landmarks.DoorID` exists (non-destructive `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`).
    - Landmark `door_id` values are authored manually in `floor_data/*/landmarks.py`.
    - Population fails if any authored landmark is missing `door_id`.
-
 ### Upload offsets
 
 `python cli.py populate` has two independent rotation offsets:
