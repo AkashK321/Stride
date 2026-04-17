@@ -272,12 +272,6 @@ jobs:
             exit 1
           fi
 
-          if ! jq -e ".\"$SHARED_STACK_KEY\"" cdk-outputs.json >/dev/null 2>&1; then
-            echo "Error: Shared stack outputs missing for key \"$SHARED_STACK_KEY\""
-            jq -r 'keys[]' cdk-outputs.json
-            exit 1
-          fi
-
           # Branch stack: API, WebSocket, DynamoDB (per-environment)
           STACK_NAME=$(jq -r ".\"$BRANCH_STACK_KEY\".StackName // empty" cdk-outputs.json 2>/dev/null || echo "")
           if [ -z "$STACK_NAME" ] || [ "$STACK_NAME" == "null" ]; then
@@ -300,10 +294,21 @@ jobs:
             echo "Warning: Could not extract CocoConfigTableName from branch stack outputs"
           fi
 
-          # Shared RDS: single secret for schema + map seed (not emitted on branch stack)
+          # Shared RDS: resolve from outputs file first, then fallback to CloudFormation.
+          # cdk-outputs.json may only include stacks that emitted fresh outputs in this deploy run.
           STRIDE_DB_ARN=$(jq -r ".\"$SHARED_STACK_KEY\".RdsSecretArn // empty" cdk-outputs.json 2>/dev/null || echo "")
           if [ -z "$STRIDE_DB_ARN" ] || [ "$STRIDE_DB_ARN" == "null" ]; then
+            echo "Shared stack key \"$SHARED_STACK_KEY\" missing in cdk-outputs.json or lacks RdsSecretArn. Falling back to CloudFormation stack outputs..."
+            STRIDE_DB_ARN=$(aws cloudformation describe-stacks \
+              --stack-name "$SHARED_STACK_KEY" \
+              --region us-east-1 \
+              --query "Stacks[0].Outputs[?OutputKey=='RdsSecretArn'].OutputValue" \
+              --output text 2>/dev/null || echo "")
+          fi
+          if [ -z "$STRIDE_DB_ARN" ] || [ "$STRIDE_DB_ARN" == "null" ]; then
             echo "Error: Could not extract RdsSecretArn from $SHARED_STACK_KEY outputs"
+            echo "Keys in cdk-outputs.json:"
+            jq -r 'keys[]' cdk-outputs.json
             exit 1
           fi
 
@@ -402,7 +407,7 @@ jobs:
           AWS_REGION: us-east-1
         run: |
           echo "Running floor / map population..."
-          python cli.py populate --coordinate-angle-offset 51
+          python cli.py populate --coordinate-angle-offset 141 --side-by-bearing-offset 51
 
   integration-tests:
     name: Run Integration Tests
