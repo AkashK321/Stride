@@ -126,6 +126,7 @@ def main():
                 FloorID INT REFERENCES Floors(FloorID) ON DELETE CASCADE,
                 Name VARCHAR(50) NOT NULL,
                 NearestNodeID VARCHAR(255) REFERENCES MapNodes(NodeIDString),
+                DoorID VARCHAR(255),
                 DistanceToNode DOUBLE PRECISION,
                 BearingFromNode VARCHAR(32),
                 MapCoordinateX INT,

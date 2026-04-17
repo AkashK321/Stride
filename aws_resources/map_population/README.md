@@ -63,6 +63,11 @@ If `DB_SECRET_ARN` is not available or access is denied, map population can fall
    python cli.py populate --coordinate-angle-offset 141 --side-by-bearing-offset 51
    ```
 
+   Notes on `DoorID` migration:
+   - `populate` ensures `Landmarks.DoorID` exists (non-destructive `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`).
+   - Landmark `door_id` values are authored manually in `floor_data/*/landmarks.py`.
+   - Population fails if any authored landmark is missing `door_id`.
+
 ### Upload offsets
 
 `python cli.py populate` has two independent rotation offsets:
