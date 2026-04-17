@@ -5,6 +5,21 @@ data class NavigationStartResponse(
     val instructions: List<NavigationInstruction>
 )
 
+data class NavigationUpdatePosition(
+    val node_id: String,
+    val coordinates: NavigationCoordinates
+)
+
+data class NavigationUpdateResponse(
+    val type: String,
+    val session_id: String,
+    val current_step: Int,
+    val remaining_instructions: List<NavigationInstruction>,
+    val request_id: Int,
+    val message: String,
+    val estimated_position: NavigationUpdatePosition
+)
+
 data class NavigationStartRequest(
     val destination: Destination,
     val start_location: StartLocation

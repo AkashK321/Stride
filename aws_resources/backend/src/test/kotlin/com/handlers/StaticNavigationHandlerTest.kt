@@ -155,15 +155,16 @@ class StaticNavigationHandlerTest {
         // All three segments are 90° East, so aggregation merges them into one, then arrive = 2 instructions.
         assertEquals(2, instructions.size)
 
-        // Step 1 (aggregated): all path segments 90° East; turn_at_end null (next is arrive)
+        // Step 1 (aggregated): all path segments 90° East; turn_intent null (next is arrival)
         assertEquals(90.0, (instructions[0]["heading_degrees"] as? Number)?.toDouble())
-        assertNull(instructions[0]["turn_at_end"])
+        assertNull(instructions[0]["turn_intent"])
         assertTrue((instructions[0]["distance_feet"] as Number).toDouble() > 30.0) // 1m + 10m + 2m in feet
 
-        // Step 2: arrive
+        // Step 2: arrival
+        assertEquals("arrival", instructions[1]["step_type"])
         assertNull(instructions[1]["heading_degrees"])
-        assertEquals("arrive", instructions[1]["direction"])
-        assertNull(instructions[1]["turn_at_end"])
+        assertNull(instructions[1]["direction"])
+        assertNull(instructions[1]["turn_intent"])
 
         // Direction/distance and landmark name
         assertTrue(responseBody.contains("Head East"))
@@ -253,18 +254,19 @@ class StaticNavigationHandlerTest {
         val instructions = bodyMap["instructions"] as List<Map<String, Any?>>
         assertEquals(3, instructions.size)
 
-        // Step 1 (aggregated): staircase->n1 + n1->n2, both 90°; turn at end = left (90° -> 0° to approach)
+        // Step 1 (aggregated): staircase->n1 + n1->n2, both 90°; turn intent = left (90° -> 0° to approach)
         assertEquals(90.0, (instructions[0]["heading_degrees"] as? Number)?.toDouble())
-        assertEquals("left", instructions[0]["turn_at_end"])
+        assertEquals("left", instructions[0]["turn_intent"])
 
-        // Step 2: n2 -> landmark (approach), BearingFromNode "North" -> 0°; turn_at_end null
+        // Step 2: n2 -> landmark (approach), BearingFromNode "North" -> 0°; turn_intent null
         assertEquals(0.0, (instructions[1]["heading_degrees"] as? Number)?.toDouble())
-        assertNull(instructions[1]["turn_at_end"])
+        assertNull(instructions[1]["turn_intent"])
 
-        // Step 3: arrive
+        // Step 3: arrival
+        assertEquals("arrival", instructions[2]["step_type"])
         assertNull(instructions[2]["heading_degrees"])
-        assertEquals("arrive", instructions[2]["direction"])
-        assertNull(instructions[2]["turn_at_end"])
+        assertNull(instructions[2]["direction"])
+        assertNull(instructions[2]["turn_intent"])
     }
 
 	@Test
