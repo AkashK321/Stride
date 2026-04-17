@@ -291,13 +291,17 @@ class RdsMapClient {
         val edgePairs = path.zipWithNext()
         val edgeMap = mutableMapOf<Pair<String, String>, EdgeSnapshot>()
         if (edgePairs.isNotEmpty()) {
-            val edgeClauses = edgePairs.joinToString(" OR ") { "(StartNodeID = ? AND EndNodeID = ?)" }
-            val edgeQuery = "SELECT StartNodeID, EndNodeID, DistanceMeters, Bearing FROM MapEdges WHERE $edgeClauses"
+            val edgeClauses = edgePairs.joinToString(" OR ") {
+                "((StartNodeID = ? AND EndNodeID = ?) OR (StartNodeID = ? AND EndNodeID = ?))"
+            }
+            val edgeQuery = "SELECT StartNodeID, EndNodeID, DistanceMeters, Bearing, IsBidirectional FROM MapEdges WHERE $edgeClauses"
             conn.prepareStatement(edgeQuery).use { stmt ->
                 var paramIndex = 1
                 edgePairs.forEach { (start, end) ->
                     stmt.setString(paramIndex++, start)
                     stmt.setString(paramIndex++, end)
+                    stmt.setString(paramIndex++, end)
+                    stmt.setString(paramIndex++, start)
                 }
                 val rs = stmt.executeQuery()
                 while (rs.next()) {
@@ -308,10 +312,20 @@ class RdsMapClient {
                     if (rs.wasNull()) {
                         throw IllegalArgumentException("Edge bearing is required for v2 navigation semantics: $start -> $end")
                     }
+                    val normalizedBearing = normalizeBearing(bearing)
                     edgeMap[Pair(start, end)] = EdgeSnapshot(
                         distanceMeters = distanceMeters,
-                        bearingDegrees = normalizeBearing(bearing),
+                        bearingDegrees = normalizedBearing,
                     )
+                    if (rs.getBoolean("IsBidirectional")) {
+                        val reversePair = Pair(end, start)
+                        if (!edgeMap.containsKey(reversePair)) {
+                            edgeMap[reversePair] = EdgeSnapshot(
+                                distanceMeters = distanceMeters,
+                                bearingDegrees = normalizeBearing(normalizedBearing + 180.0),
+                            )
+                        }
+                    }
                 }
             }
         }
