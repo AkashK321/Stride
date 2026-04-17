@@ -18,6 +18,7 @@ data class LandmarkDetails(
     val id: Int,
     val name: String,
     val nearestNodeId: String,
+    val doorId: String,
     val distanceToNode: Double,
     val bearingFromNode: String,
     val coordX: Int,

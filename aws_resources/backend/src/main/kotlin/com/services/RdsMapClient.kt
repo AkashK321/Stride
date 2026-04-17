@@ -92,17 +92,20 @@ class RdsMapClient {
     }
 
     fun getLandmark(landmarkId: Int, conn: Connection): LandmarkDetails? {
-        val query = "SELECT Name, NearestNodeID, DistanceToNode, BearingFromNode, MapCoordinateX, MapCoordinateY FROM Landmarks WHERE LandmarkID = ?"
+        val query = "SELECT Name, NearestNodeID, DoorID, DistanceToNode, BearingFromNode, MapCoordinateX, MapCoordinateY FROM Landmarks WHERE LandmarkID = ?"
         conn.prepareStatement(query).use { stmt -> 
             stmt.setInt(1, landmarkId)
             val rs = stmt.executeQuery()
             if (rs.next()) {
+                val nearestNodeId = rs.getString("NearestNodeID")
+                val doorId = rs.getString("DoorID")
                 return LandmarkDetails(
                     id = landmarkId,
                     name = rs.getString("Name"),
-                    nearestNodeId = rs.getString("NearestNodeID"),
+                    nearestNodeId = nearestNodeId,
+                    doorId = doorId,
                     distanceToNode = rs.getDouble("DistanceToNode"),
-                    bearingFromNode = rs.getString("BearingFromNode") ?: "continue",
+                    bearingFromNode = rs.getString("BearingFromNode") ?: "",
                     coordX = rs.getInt("MapCoordinateX"),
                     coordY = rs.getInt("MapCoordinateY")
                 )
@@ -134,7 +137,7 @@ class RdsMapClient {
 
     fun getLandmarkByName(name: String, conn: Connection): LandmarkDetails? {
         val query = """
-            SELECT LandmarkID, Name, NearestNodeID, DistanceToNode, BearingFromNode, MapCoordinateX, MapCoordinateY 
+            SELECT LandmarkID, Name, NearestNodeID, DoorID, DistanceToNode, BearingFromNode, MapCoordinateX, MapCoordinateY 
             FROM Landmarks 
             WHERE Name = ? 
             LIMIT 1
@@ -143,12 +146,15 @@ class RdsMapClient {
             stmt.setString(1, name)
             val rs = stmt.executeQuery()
             if (rs.next()) {
+                val nearestNodeId = rs.getString("NearestNodeID")
+                val doorId = rs.getString("DoorID")
                 return LandmarkDetails(
                     id = rs.getInt("LandmarkID"),
                     name = rs.getString("Name"),
-                    nearestNodeId = rs.getString("NearestNodeID"),
+                    nearestNodeId = nearestNodeId,
+                    doorId = doorId,
                     distanceToNode = rs.getDouble("DistanceToNode"),
-                    bearingFromNode = rs.getString("BearingFromNode") ?: "continue",
+                    bearingFromNode = rs.getString("BearingFromNode") ?: "",
                     coordX = rs.getInt("MapCoordinateX"),
                     coordY = rs.getInt("MapCoordinateY")
                 )
@@ -256,76 +262,98 @@ class RdsMapClient {
      */
     fun buildInstructions(conn: Connection, path: List<String>, landmark: LandmarkDetails): List<NavigationInstruction> {
         if (path.isEmpty()) return emptyList()
+        require(landmark.nearestNodeId == path.last()) {
+            "Landmark nearest node '${landmark.nearestNodeId}' must match route end '${path.last()}'."
+        }
+        require(landmark.doorId.isNotBlank()) { "Landmark ${landmark.id} is missing required door_id." }
 
         val placeholders = path.joinToString(",") { "?" }
-        val nodeQuery = "SELECT NodeIDString, CoordinateX, CoordinateY FROM MapNodes WHERE NodeIDString IN ($placeholders)"
-        val nodeData = mutableMapOf<String, Pair<Int, Int>>()
-        
+        val nodeQuery = "SELECT NodeIDString, CoordinateX, CoordinateY, NodeMeta FROM MapNodes WHERE NodeIDString IN ($placeholders)"
+        val nodeData = mutableMapOf<String, NodeSnapshot>()
         conn.prepareStatement(nodeQuery).use { stmt ->
             path.forEachIndexed { index, id -> stmt.setString(index + 1, id) }
             val rs = stmt.executeQuery()
             while (rs.next()) {
-                nodeData[rs.getString("NodeIDString")] = Pair(rs.getInt("CoordinateX"), rs.getInt("CoordinateY"))
+                val nodeId = rs.getString("NodeIDString")
+                val nodeMetaRaw = rs.getString("NodeMeta")
+                nodeData[nodeId] = NodeSnapshot(
+                    x = rs.getInt("CoordinateX"),
+                    y = rs.getInt("CoordinateY"),
+                    doors = parseNodeDoors(nodeId, nodeMetaRaw),
+                )
             }
         }
+        require(path.all { nodeData.containsKey(it) }) {
+            val missingNodes = path.filterNot { nodeData.containsKey(it) }
+            "Missing node metadata for path nodes: $missingNodes"
+        }
 
-        val edgeQuery = """
-            SELECT StartNodeID, EndNodeID, DistanceMeters, Bearing, IsBidirectional
-            FROM MapEdges WHERE StartNodeID IN ($placeholders) AND EndNodeID IN ($placeholders)
-        """
-        val edgeMap = mutableMapOf<Pair<String, String>, Pair<Double, Double?>>()
-        
-        if (path.size > 1) {
+        val edgePairs = path.zipWithNext()
+        val edgeMap = mutableMapOf<Pair<String, String>, EdgeSnapshot>()
+        if (edgePairs.isNotEmpty()) {
+            val edgeClauses = edgePairs.joinToString(" OR ") { "(StartNodeID = ? AND EndNodeID = ?)" }
+            val edgeQuery = "SELECT StartNodeID, EndNodeID, DistanceMeters, Bearing FROM MapEdges WHERE $edgeClauses"
             conn.prepareStatement(edgeQuery).use { stmt ->
                 var paramIndex = 1
-                path.forEach { stmt.setString(paramIndex++, it) }
-                path.forEach { stmt.setString(paramIndex++, it) }
+                edgePairs.forEach { (start, end) ->
+                    stmt.setString(paramIndex++, start)
+                    stmt.setString(paramIndex++, end)
+                }
                 val rs = stmt.executeQuery()
                 while (rs.next()) {
                     val start = rs.getString("StartNodeID")
                     val end = rs.getString("EndNodeID")
-                    val dist = rs.getDouble("DistanceMeters")
-                    val rawBearing = rs.getDouble("Bearing")
-                    val bearing: Double? = if (rs.wasNull()) null else rawBearing
-                    val isBidi = rs.getBoolean("IsBidirectional")
-                    
-                    edgeMap[Pair(start, end)] = Pair(dist, bearing)
-                    if (isBidi) {
-                        val reverseBearing = bearing?.let { (it + 180.0) % 360.0 }
-                        edgeMap[Pair(end, start)] = Pair(dist, reverseBearing)
+                    val distanceMeters = rs.getDouble("DistanceMeters")
+                    val bearing = rs.getDouble("Bearing")
+                    if (rs.wasNull()) {
+                        throw IllegalArgumentException("Edge bearing is required for v2 navigation semantics: $start -> $end")
                     }
+                    edgeMap[Pair(start, end)] = EdgeSnapshot(
+                        distanceMeters = distanceMeters,
+                        bearingDegrees = normalizeBearing(bearing),
+                    )
                 }
             }
         }
+        require(edgePairs.all { edgeMap.containsKey(Pair(it.first, it.second)) }) {
+            val missingEdges = edgePairs.filterNot { edgeMap.containsKey(Pair(it.first, it.second)) }
+            "Missing directed edges for route segments: $missingEdges"
+        }
+
+        val arrivalHeading = resolveArrivalHeading(
+            nearestNode = nodeData.getValue(path.last()),
+            landmark = landmark,
+            incomingBearing = edgePairs.lastOrNull()?.let { edgeMap[Pair(it.first, it.second)]?.bearingDegrees }
+        )
 
         val instructions = mutableListOf<NavigationInstruction>()
-        
-        // Map the Node path
         for (i in path.indices) {
             val nodeId = path[i]
-            val coords = nodeData[nodeId] ?: Pair(0, 0)
-            
+            val node = nodeData.getValue(nodeId)
+
             val (distFeet, directionStr, headingDegrees) = if (i < path.size - 1) {
-                // Not at the last node yet, lookup edge to the next node
                 val nextNodeId = path[i + 1]
-                val edgeInfo = edgeMap[Pair(nodeId, nextNodeId)]
-                if (edgeInfo != null) {
-                    Triple(edgeInfo.first * 3.28084, bearingToDirectionString(edgeInfo.second), edgeInfo.second)
-                } else {
-                    Triple(0.0, "continue", null)
-                }
+                val edgeInfo = edgeMap.getValue(Pair(nodeId, nextNodeId))
+                Triple(
+                    edgeInfo.distanceMeters * 3.28084,
+                    bearingToDirectionString(edgeInfo.bearingDegrees),
+                    edgeInfo.bearingDegrees
+                )
             } else {
-                // At the final node. Look towards the actual Landmark destination.
-                Triple(landmark.distanceToNode * 3.28084, "Head ${landmark.bearingFromNode}", cardinalToDegrees(landmark.bearingFromNode))
+                Triple(
+                    landmark.distanceToNode * 3.28084,
+                    bearingToDirectionString(arrivalHeading),
+                    arrivalHeading
+                )
             }
 
             val nextHeading = when {
                 i >= path.size - 1 -> null
-                i + 2 < path.size -> edgeMap[Pair(path[i + 1], path[i + 2])]?.second
-                else -> cardinalToDegrees(landmark.bearingFromNode)
+                i + 2 < path.size -> edgeMap[Pair(path[i + 1], path[i + 2])]?.bearingDegrees
+                else -> arrivalHeading
             }
 
-            val turnAtEnd = if (headingDegrees != null && nextHeading != null) {
+            val turnAtEnd = if (nextHeading != null) {
                 headingDeltaToTurnAtEnd(nextHeading - headingDegrees)
             } else null
 
@@ -337,8 +365,8 @@ class RdsMapClient {
                     direction = directionStr,
                     node_id = nodeId,
                     coordinates = NavigationCoordinates(
-                        x = coords.first.toDouble(),
-                        y = coords.second.toDouble()
+                        x = node.x.toDouble(),
+                        y = node.y.toDouble()
                     ),
                     heading_degrees = headingDegrees,
                     turn_intent = turnAtEnd
@@ -391,11 +419,93 @@ class RdsMapClient {
         const val AGGREGATION_HEADING_TOLERANCE_DEGREES = 22.5
     }
 
+    private data class EdgeSnapshot(
+        val distanceMeters: Double,
+        val bearingDegrees: Double,
+    )
+
+    private data class NodeSnapshot(
+        val x: Int,
+        val y: Int,
+        val doors: List<NodeDoorMeta>,
+    )
+
+    private data class NodeDoorMeta(
+        val id: String,
+        val sideByBearing: List<DoorSideByBearing>,
+    )
+
+    private data class DoorSideByBearing(
+        val bearingDegrees: Double,
+        val side: String,
+    )
+
     private fun headingsNearlyEqual(a: Double?, b: Double?): Boolean {
         if (a == null || b == null) return a == b
         var diff = kotlin.math.abs(a - b)
         if (diff > 180.0) diff = 360.0 - diff
         return diff <= AGGREGATION_HEADING_TOLERANCE_DEGREES
+    }
+
+    private fun parseNodeDoors(nodeId: String, nodeMetaRaw: String?): List<NodeDoorMeta> {
+        if (nodeMetaRaw.isNullOrBlank()) return emptyList()
+        val root = mapper.readTree(nodeMetaRaw)
+        val doorsNode = root.get("doors") ?: return emptyList()
+        require(doorsNode.isArray) { "NodeMeta.doors must be an array for node '$nodeId'" }
+
+        return doorsNode.map { doorNode ->
+            val doorId = doorNode.get("id")?.asText()?.trim().orEmpty()
+            require(doorId.isNotBlank()) { "Node '$nodeId' contains a door entry without id." }
+            val sideByBearingNode = doorNode.get("side_by_bearing")
+            require(sideByBearingNode != null && sideByBearingNode.isArray && sideByBearingNode.size() > 0) {
+                "Node '$nodeId' door '$doorId' must define non-empty side_by_bearing."
+            }
+            val sideEntries = sideByBearingNode.map { sideEntry ->
+                val side = sideEntry.get("side")?.asText()?.trim()?.lowercase().orEmpty()
+                require(side == "left" || side == "right") {
+                    "Node '$nodeId' door '$doorId' has invalid side '$side'."
+                }
+                val bearing = sideEntry.get("bearing_deg")?.asDouble()
+                    ?: throw IllegalArgumentException("Node '$nodeId' door '$doorId' is missing bearing_deg.")
+                DoorSideByBearing(
+                    bearingDegrees = normalizeBearing(bearing),
+                    side = side,
+                )
+            }
+            NodeDoorMeta(
+                id = doorId,
+                sideByBearing = sideEntries,
+            )
+        }
+    }
+
+    private fun normalizeBearing(bearing: Double): Double {
+        val mod = bearing % 360.0
+        return if (mod < 0.0) mod + 360.0 else mod
+    }
+
+    private fun angularDifference(a: Double, b: Double): Double {
+        var diff = kotlin.math.abs(normalizeBearing(a) - normalizeBearing(b))
+        if (diff > 180.0) diff = 360.0 - diff
+        return diff
+    }
+
+    private fun resolveArrivalHeading(
+        nearestNode: NodeSnapshot,
+        landmark: LandmarkDetails,
+        incomingBearing: Double?,
+    ): Double {
+        val matchingDoor = nearestNode.doors.firstOrNull { it.id == landmark.doorId }
+            ?: throw IllegalArgumentException(
+                "Landmark ${landmark.id} door_id '${landmark.doorId}' is not present on node '${landmark.nearestNodeId}'."
+            )
+        val sideEntries = matchingDoor.sideByBearing
+        if (incomingBearing == null) {
+            return sideEntries.first().bearingDegrees
+        }
+        val best = sideEntries.minByOrNull { angularDifference(it.bearingDegrees, incomingBearing) }
+            ?: throw IllegalArgumentException("Door '${matchingDoor.id}' has no bearing entries.")
+        return best.bearingDegrees
     }
 
     /**
@@ -440,17 +550,6 @@ class RdsMapClient {
             i = j
         }
         return result
-    }
-
-    private fun cardinalToDegrees(bearingFromNode: String?): Double? {
-        if (bearingFromNode.isNullOrBlank()) return null
-        return when (bearingFromNode.trim().lowercase()) {
-            "north" -> 0.0
-            "east" -> 90.0
-            "south" -> 180.0
-            "west" -> 270.0
-            else -> null
-        }
     }
 
     fun bearingToDirectionString(bearing: Double?): String {
