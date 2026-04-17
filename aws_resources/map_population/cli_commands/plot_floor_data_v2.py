@@ -144,12 +144,25 @@ def plot_floor(data_obj, floor_number, compare_data_obj=None, output_path: Path 
     landmark_y = [l["y_feet"] for l in landmarks]
     landmark_scatter = ax.scatter(landmark_x, landmark_y, s=30, c="#dc2626", marker="x", label="landmarks", zorder=4)
 
+    plotted_edge_count = 0
+    missing_edge_refs: list[tuple[str, str]] = []
     for edge in edges:
         s = node_lookup.get(edge["start"])
         e = node_lookup.get(edge["end"])
         if not s or not e:
+            missing_edge_refs.append((edge["start"], edge["end"]))
             continue
         ax.plot([s["x_feet"], e["x_feet"]], [s["y_feet"], e["y_feet"]], color="#2563eb", linewidth=1.8, alpha=0.8, zorder=1)
+        plotted_edge_count += 1
+
+    print(f"Plotted {plotted_edge_count}/{len(edges)} edges for floor {floor_number}.")
+    if missing_edge_refs:
+        missing_preview = ", ".join(f"{start}->{end}" for start, end in missing_edge_refs[:8])
+        extra = "" if len(missing_edge_refs) <= 8 else f" ... (+{len(missing_edge_refs) - 8} more)"
+        print(
+            "Skipped edges with missing node ids: "
+            f"{missing_preview}{extra}"
+        )
 
     if compare_data_obj is not None:
         compare_floor = next((f for f in compare_data_obj["floors"] if f["floor_number"] == floor_number), None)
