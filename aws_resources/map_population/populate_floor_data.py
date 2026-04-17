@@ -21,6 +21,11 @@ DEFAULT_COORDINATE_ANGLE_OFFSET_DEG = 141.0
 DEFAULT_SIDE_BY_BEARING_OFFSET_DEG = 0.0
 
 
+def ensure_landmarks_doorid_column(cursor):
+    """Add Landmarks.DoorID if absent for non-destructive migrations."""
+    cursor.execute("ALTER TABLE Landmarks ADD COLUMN IF NOT EXISTS DoorID VARCHAR(255)")
+
+
 def get_db_secret():
     """Retrieve DB credentials from Secrets Manager with env var fallback."""
     env_fallback = {
@@ -150,6 +155,8 @@ def populate_database(
     cursor = conn.cursor()
     
     try:
+        ensure_landmarks_doorid_column(cursor)
+
         # 1. Insert Building (CamelCase table/columns)
         cursor.execute(
             """
@@ -299,15 +306,21 @@ def populate_database(
                 # Landmark cardinal bearings are no longer part of map authoring contract.
                 # Keep DB column as nullable/legacy for backend compatibility.
                 bearing_from_node = landmark.get("bearing_from_node")
+                door_id = landmark.get("door_id")
+                if not door_id:
+                    raise ValueError(
+                        f"Landmark '{landmark['name']}' is missing required door_id in floor authoring data."
+                    )
                 
                 cursor.execute(
                     """
-                    INSERT INTO Landmarks (LandmarkID, FloorID, Name, NearestNodeID, DistanceToNode, BearingFromNode, MapCoordinateX, MapCoordinateY)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO Landmarks (LandmarkID, FloorID, Name, NearestNodeID, DoorID, DistanceToNode, BearingFromNode, MapCoordinateX, MapCoordinateY)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (LandmarkID) DO UPDATE SET
                         FloorID = EXCLUDED.FloorID,
                         Name = EXCLUDED.Name,
                         NearestNodeID = EXCLUDED.NearestNodeID,
+                        DoorID = EXCLUDED.DoorID,
                         DistanceToNode = EXCLUDED.DistanceToNode,
                         BearingFromNode = EXCLUDED.BearingFromNode,
                         MapCoordinateX = EXCLUDED.MapCoordinateX,
@@ -318,6 +331,7 @@ def populate_database(
                         floor_id,
                         landmark['name'],
                         nearest_node_key,
+                        door_id,
                         distance_to_node,
                         bearing_from_node,
                         x_stored,
