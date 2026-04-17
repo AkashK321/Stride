@@ -22,11 +22,42 @@ DEFAULT_SIDE_BY_BEARING_OFFSET_DEG = 0.0
 
 
 def get_db_secret():
-    """Retrieves database credentials from AWS Secrets Manager."""
-    secret_arn = os.environ['DB_SECRET_ARN']
-    client = boto3.client('secretsmanager')
-    response = client.get_secret_value(SecretId=secret_arn)
-    return json.loads(response['SecretString'])
+    """Retrieve DB credentials from Secrets Manager with env var fallback."""
+    env_fallback = {
+        "host": os.environ.get("DB_HOST"),
+        "port": os.environ.get("DB_PORT"),
+        "dbname": os.environ.get("DB_NAME"),
+        "username": os.environ.get("DB_USER"),
+        "password": os.environ.get("DB_PASSWORD"),
+    }
+
+    secret_arn = os.environ.get("DB_SECRET_ARN")
+    if not secret_arn:
+        missing = [key for key, value in env_fallback.items() if not value]
+        if missing:
+            raise RuntimeError(
+                "DB_SECRET_ARN is not set and fallback env vars are missing: "
+                + ", ".join(sorted(missing))
+            )
+        logger.info("DB_SECRET_ARN not set, using DB_* environment fallback credentials.")
+        return env_fallback
+
+    try:
+        client = boto3.client("secretsmanager")
+        response = client.get_secret_value(SecretId=secret_arn)
+        return json.loads(response["SecretString"])
+    except Exception as exc:
+        missing = [key for key, value in env_fallback.items() if not value]
+        if missing:
+            raise RuntimeError(
+                "Failed to retrieve DB secret from Secrets Manager and fallback env vars are "
+                f"missing: {', '.join(sorted(missing))}"
+            ) from exc
+        logger.warning(
+            "Failed to retrieve DB secret from Secrets Manager (%s). Falling back to DB_* env vars.",
+            exc,
+        )
+        return env_fallback
 
 
 def calculate_bearing(x1, y1, x2, y2):
@@ -206,6 +237,18 @@ def populate_database(
                 )
                 node_coords[node['id']] = (x_stored, y_stored)
                 logger.info(f"Upserted node {node['id']} at ({x_stored}, {y_stored})")
+
+            # Remove nodes that were deleted from authored floor data so stale DB nodes
+            # cannot influence nearest-node lookups or downstream routing behavior.
+            current_node_ids = list(node_coords.keys())
+            if current_node_ids:
+                placeholders = ", ".join(["%s"] * len(current_node_ids))
+                cursor.execute(
+                    f"DELETE FROM MapNodes WHERE FloorID = %s AND NodeIDString NOT IN ({placeholders})",
+                    [floor_id, *current_node_ids],
+                )
+            else:
+                cursor.execute("DELETE FROM MapNodes WHERE FloorID = %s", (floor_id,))
             
             # 4. Insert MapEdges (CamelCase)
             for edge in floor_data.get('edges', []):
