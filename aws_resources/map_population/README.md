@@ -60,6 +60,7 @@ If `DB_SECRET_ARN` is not available or access is denied, map population can fall
 5. Seed map data into RDS:
 
    ```bash
+<<<<<<< HEAD
    python cli.py populate --coordinate-angle-offset 141 --side-by-bearing-offset 51
    ```
 
