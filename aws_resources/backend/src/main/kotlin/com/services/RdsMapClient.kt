@@ -344,6 +344,7 @@ class RdsMapClient {
         for (i in path.indices) {
             val nodeId = path[i]
             val node = nodeData.getValue(nodeId)
+            val endNodeId = if (i < path.size - 1) path[i + 1] else landmark.doorId
 
             val (distFeet, directionStr, headingDegrees) = if (i < path.size - 1) {
                 val nextNodeId = path[i + 1]
@@ -377,6 +378,8 @@ class RdsMapClient {
                     step_type = NavigationStepType.segment,
                     distance_feet = distFeet,
                     direction = directionStr,
+                    start_node_id = nodeId,
+                    end_node_id = endNodeId,
                     node_id = nodeId,
                     coordinates = NavigationCoordinates(
                         x = node.x.toDouble(),
@@ -395,6 +398,8 @@ class RdsMapClient {
                 step_type = NavigationStepType.arrival,
                 distance_feet = 0.0,
                 direction = null,
+                start_node_id = landmark.doorId,
+                end_node_id = landmark.doorId,
                 node_id = "${landmark.name}",
                 coordinates = NavigationCoordinates(
                     x = landmark.coordX.toDouble(),
@@ -557,7 +562,9 @@ class RdsMapClient {
                 direction = first.direction,
                 heading_degrees = first.heading_degrees,
                 turn_intent = lastInGroup.turn_intent,
-                node_id = lastInGroup.node_id,
+                start_node_id = first.start_node_id,
+                end_node_id = lastInGroup.end_node_id,
+                node_id = first.node_id,
                 coordinates = lastInGroup.coordinates
             ))
             stepNum++

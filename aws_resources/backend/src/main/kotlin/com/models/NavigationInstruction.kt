@@ -22,6 +22,8 @@ data class NavigationInstruction(
     val step_type: NavigationStepType,
     val distance_feet: Double,
     val direction: String?,
+    val start_node_id: String,
+    val end_node_id: String,
     val node_id: String,
     val coordinates: NavigationCoordinates,
     val heading_degrees: Double?,
