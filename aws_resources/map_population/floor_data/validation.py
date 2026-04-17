@@ -8,12 +8,7 @@ from collections import Counter
 import math
 
 
-def validate_floor_payload(
-    floor: dict,
-    floor_label: str = "unknown-floor",
-    enforce_door_bearing_incidence: bool = True,
-    enforce_unique_coordinates: bool = True,
-) -> None:
+def validate_floor_payload(floor: dict, floor_label: str = "unknown-floor") -> None:
     """
     Validate a single floor payload in the canonical map authoring format.
 
@@ -43,13 +38,11 @@ def validate_floor_payload(
     _assert_edges_reference_existing_nodes(edges, node_ids, floor_label)
     _assert_edge_bearings_valid(edges, floor_label)
     _assert_no_unintentional_self_loops(edges, floor_label)
-    if enforce_unique_coordinates:
-        _assert_no_unintentional_duplicate_coordinates(nodes, floor_label)
+    _assert_no_unintentional_duplicate_coordinates(nodes, floor_label)
 
     _assert_landmarks_reference_existing_nodes(landmarks, node_ids, floor_label)
     _assert_hallwaypoint_doors_have_side_by_bearing(nodes, floor_label)
-    if enforce_door_bearing_incidence:
-        _assert_doors_reference_valid_incident_bearings(nodes, edges, floor_label)
+    _assert_doors_reference_valid_incident_bearings(nodes, edges, floor_label)
     _assert_landmark_door_ids_exist_on_nearest_nodes(nodes, landmarks, floor_label)
 
 
