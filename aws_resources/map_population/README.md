@@ -60,7 +60,6 @@ If `DB_SECRET_ARN` is not available or access is denied, map population can fall
 5. Seed map data into RDS:
 
    ```bash
-<<<<<<< HEAD
    python cli.py populate --coordinate-angle-offset 141 --side-by-bearing-offset 51
    ```
 
@@ -132,4 +131,3 @@ Default plot files are saved under `aws_resources/map_population/plots/`:
 - Edge bearings persisted to DB are always recomputed from stored node coordinates.
 - `python cli.py clear-db --yes` clears map data tables only (schema remains).
 - COCO object config seeding is separate (`aws_resources/object_config_seed`) and not part of map population.
-
