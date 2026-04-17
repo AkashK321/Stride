@@ -29,7 +29,10 @@ def _run_validate_command(_: argparse.Namespace) -> int:
 
 
 def _run_populate_command(args: argparse.Namespace) -> int:
-    return run_population_main(coordinate_angle_offset_deg=args.coordinate_angle_offset)
+    return run_population_main(
+        coordinate_angle_offset_deg=args.coordinate_angle_offset,
+        side_by_bearing_offset_deg=args.side_by_bearing_offset,
+    )
 
 
 def main() -> int:
@@ -45,6 +48,12 @@ def main() -> int:
         type=float,
         default=141.0,
         help="Clockwise angle offset in degrees applied during upload (default: 141).",
+    )
+    populate.add_argument(
+        "--side-by-bearing-offset",
+        type=float,
+        default=51.0,
+        help="Clockwise offset in degrees applied to door side_by_bearing metadata (default: 51).",
     )
     populate.set_defaults(handler=_run_populate_command)
 
