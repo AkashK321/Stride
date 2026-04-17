@@ -52,7 +52,7 @@ Set required env before DB operations:
 5. Seed map data into RDS:
 
    ```bash
-   python cli.py populate --coordinate-angle-offset 51
+   python cli.py populate --coordinate-angle-offset 141
    ```
 
 6. Plot deployed DB map to verify what is actually stored:
