@@ -334,38 +334,26 @@ class RdsMapClient {
             "Missing directed edges for route segments: $missingEdges"
         }
 
-        val arrivalHeading = resolveArrivalHeading(
+        val incomingBearing = edgePairs.lastOrNull()?.let { edgeMap[Pair(it.first, it.second)]?.bearingDegrees }
+        val arrivalDoorCue = resolveArrivalDoorCue(
             nearestNode = nodeData.getValue(path.last()),
             landmark = landmark,
-            incomingBearing = edgePairs.lastOrNull()?.let { edgeMap[Pair(it.first, it.second)]?.bearingDegrees }
+            incomingBearing = incomingBearing
         )
+        val arrivalDirection = "Arrived, destination on your ${arrivalDoorCue.side}"
 
         val instructions = mutableListOf<NavigationInstruction>()
-        for (i in path.indices) {
-            val nodeId = path[i]
+        for (i in edgePairs.indices) {
+            val (nodeId, nextNodeId) = edgePairs[i]
             val node = nodeData.getValue(nodeId)
-            val endNodeId = if (i < path.size - 1) path[i + 1] else landmark.doorId
-
-            val (distFeet, directionStr, headingDegrees) = if (i < path.size - 1) {
-                val nextNodeId = path[i + 1]
-                val edgeInfo = edgeMap.getValue(Pair(nodeId, nextNodeId))
-                Triple(
-                    edgeInfo.distanceMeters * 3.28084,
-                    bearingToDirectionString(edgeInfo.bearingDegrees),
-                    edgeInfo.bearingDegrees
-                )
-            } else {
-                Triple(
-                    landmark.distanceToNode * 3.28084,
-                    bearingToDirectionString(arrivalHeading),
-                    arrivalHeading
-                )
-            }
+            val edgeInfo = edgeMap.getValue(Pair(nodeId, nextNodeId))
+            val distFeet = edgeInfo.distanceMeters * 3.28084
+            val directionStr = bearingToDirectionString(edgeInfo.bearingDegrees)
+            val headingDegrees = edgeInfo.bearingDegrees
 
             val nextHeading = when {
-                i >= path.size - 1 -> null
-                i + 2 < path.size -> edgeMap[Pair(path[i + 1], path[i + 2])]?.bearingDegrees
-                else -> arrivalHeading
+                i + 1 < edgePairs.size -> edgeMap[Pair(edgePairs[i + 1].first, edgePairs[i + 1].second)]?.bearingDegrees
+                else -> null
             }
 
             val turnAtEnd = if (nextHeading != null) {
@@ -379,7 +367,7 @@ class RdsMapClient {
                     distance_feet = distFeet,
                     direction = directionStr,
                     start_node_id = nodeId,
-                    end_node_id = endNodeId,
+                    end_node_id = nextNodeId,
                     node_id = nodeId,
                     coordinates = NavigationCoordinates(
                         x = node.x.toDouble(),
@@ -397,9 +385,9 @@ class RdsMapClient {
                 step = path.size + 1,
                 step_type = NavigationStepType.arrival,
                 distance_feet = 0.0,
-                direction = null,
-                start_node_id = landmark.doorId,
-                end_node_id = landmark.doorId,
+                direction = arrivalDirection,
+                start_node_id = landmark.nearestNodeId,
+                end_node_id = landmark.nearestNodeId,
                 node_id = "${landmark.name}",
                 coordinates = NavigationCoordinates(
                     x = landmark.coordX.toDouble(),
@@ -509,22 +497,21 @@ class RdsMapClient {
         return diff
     }
 
-    private fun resolveArrivalHeading(
+    private fun resolveArrivalDoorCue(
         nearestNode: NodeSnapshot,
         landmark: LandmarkDetails,
         incomingBearing: Double?,
-    ): Double {
+    ): DoorSideByBearing {
         val matchingDoor = nearestNode.doors.firstOrNull { it.id == landmark.doorId }
             ?: throw IllegalArgumentException(
                 "Landmark ${landmark.id} door_id '${landmark.doorId}' is not present on node '${landmark.nearestNodeId}'."
             )
         val sideEntries = matchingDoor.sideByBearing
         if (incomingBearing == null) {
-            return sideEntries.first().bearingDegrees
+            return sideEntries.first()
         }
-        val best = sideEntries.minByOrNull { angularDifference(it.bearingDegrees, incomingBearing) }
+        return sideEntries.minByOrNull { angularDifference(it.bearingDegrees, incomingBearing) }
             ?: throw IllegalArgumentException("Door '${matchingDoor.id}' has no bearing entries.")
-        return best.bearingDegrees
     }
 
     /**

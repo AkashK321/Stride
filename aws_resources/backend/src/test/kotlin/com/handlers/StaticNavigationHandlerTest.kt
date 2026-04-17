@@ -166,10 +166,10 @@ class StaticNavigationHandlerTest {
         assertNull(instructions[0]["turn_intent"])
         assertTrue((instructions[0]["distance_feet"] as Number).toDouble() > 30.0) // 1m + 10m + 2m in feet
 
-        // Step 2: arrival
+        // Step 2: arrival (door-side cue only; no approach segment)
         assertEquals("arrival", instructions[1]["step_type"])
         assertNull(instructions[1]["heading_degrees"])
-        assertNull(instructions[1]["direction"])
+        assertEquals("Arrived, destination on your right", instructions[1]["direction"])
         assertNull(instructions[1]["turn_intent"])
 
         // Direction/distance and landmark name
@@ -260,25 +260,21 @@ class StaticNavigationHandlerTest {
         assertTrue(response.body?.contains("session_id") == true)
         assertTrue(response.body?.contains("instructions") == true)
 
-        // After aggregation: first two segments (both 90° East) merged, then approach (0° North), then arrive = 3 instructions
+        // After aggregation: first two segments (both 90° East) merged, then arrive cue = 2 instructions
         val bodyMap = jacksonObjectMapper().readValue<Map<String, Any>>(response.body!!)
         @Suppress("UNCHECKED_CAST")
         val instructions = bodyMap["instructions"] as List<Map<String, Any?>>
-        assertEquals(3, instructions.size)
+        assertEquals(2, instructions.size)
 
-        // Step 1 (aggregated): staircase->n1 + n1->n2, both 90°; turn intent = left (90° -> 0° to approach)
+        // Step 1 (aggregated): staircase->n1 + n1->n2, both 90°; no further turn because next step is arrival cue.
         assertEquals(90.0, (instructions[0]["heading_degrees"] as? Number)?.toDouble())
-        assertEquals("left", instructions[0]["turn_intent"])
+        assertNull(instructions[0]["turn_intent"])
 
-        // Step 2: n2 -> landmark (approach), BearingFromNode "North" -> 0°; turn_intent null
-        assertEquals(0.0, (instructions[1]["heading_degrees"] as? Number)?.toDouble())
+        // Step 2: arrival
+        assertEquals("arrival", instructions[1]["step_type"])
+        assertNull(instructions[1]["heading_degrees"])
+        assertEquals("Arrived, destination on your left", instructions[1]["direction"])
         assertNull(instructions[1]["turn_intent"])
-
-        // Step 3: arrival
-        assertEquals("arrival", instructions[2]["step_type"])
-        assertNull(instructions[2]["heading_degrees"])
-        assertNull(instructions[2]["direction"])
-        assertNull(instructions[2]["turn_intent"])
     }
 
 	@Test
