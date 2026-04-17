@@ -19,8 +19,6 @@ import com.models.NavigationInstruction
 import com.models.NavigationCoordinates
 import com.models.NavigationUpdatePosition
 import com.models.NavigationUpdateResponse
-import com.models.MapNode
-import com.models.NavigationStepType
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest
@@ -35,11 +33,9 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.max
 import kotlin.math.log
-import kotlin.math.sqrt
 
 private val METERS_TO_FEET = 3.28084
 private val FEET_TO_PIXELS = 10.0
-private val PIXEL_TO_FEET = 1.0 / FEET_TO_PIXELS
 private val MAX_DISTANCE_FEET = 15.0
 
 class LiveNavigationHandler(
@@ -63,24 +59,6 @@ class LiveNavigationHandler(
     )
 
     private val rdsMapClient = RdsMapClient()
-
-    private fun logNavTrace(
-        logger: LambdaLogger,
-        event: String,
-        fields: Map<String, Any?>,
-    ) {
-        try {
-            val tracePayload = linkedMapOf<String, Any?>(
-                "event" to event,
-                "source" to "LiveNavigationHandler",
-                "ts_ms" to System.currentTimeMillis(),
-            )
-            tracePayload.putAll(fields)
-            logger.log("[nav-trace] ${mapper.writeValueAsString(tracePayload)}")
-        } catch (e: Exception) {
-            logger.log("[nav-trace] failed_to_serialize event=$event error=${e.message}")
-        }
-    }
 
     private fun estimateUserLocation(payload: Map<String, Any?>, prevX: Double, prevY: Double, prevTimeMs: Long, logger: LambdaLogger): Pair<Double, Double> {
         val heading = (payload["heading_degrees"] as Number).toDouble()
@@ -130,53 +108,6 @@ class LiveNavigationHandler(
         }
         
         return Pair(currentX, currentY)
-    }
-
-    private fun getNavigationProgress(nextNode: MapNode?, currX: Double, currY: Double): Double {
-        if (nextNode == null) return 0.0
-        val dx = currX - nextNode.coordX
-        val dy = currY - nextNode.coordY
-        return sqrt(dx * dx + dy * dy) * PIXEL_TO_FEET
-    }
-
-    /**
-     * Applies live progress to the active instruction by subtracting traveled distance on the
-     * current edge from the first aggregated instruction's remaining distance.
-     */
-    private fun applyProgressToCurrentInstruction(
-        conn: Connection,
-        instructions: List<NavigationInstruction>,
-        remainingPath: List<String>,
-        distToNextNodeFeet: Double,
-        logger: LambdaLogger,
-    ): List<NavigationInstruction> {
-        if (instructions.isEmpty()) return instructions
-        val firstInstruction = instructions.first()
-        if (firstInstruction.step_type != NavigationStepType.segment) return instructions
-        if (remainingPath.size < 2) return instructions
-        if (!distToNextNodeFeet.isFinite()) return instructions
-
-        val currentNodeId = remainingPath[0]
-        val nextNodeId = remainingPath[1]
-        val currentEdgeFeet = rdsMapClient.getEdgeDistanceFeet(conn, currentNodeId, nextNodeId)
-            ?: return instructions
-
-        val clampedDistanceToNext = distToNextNodeFeet.coerceIn(0.0, currentEdgeFeet)
-        val traveledOnCurrentEdge = (currentEdgeFeet - clampedDistanceToNext).coerceAtLeast(0.0)
-        val adjustedDistanceFeet = (firstInstruction.distance_feet - traveledOnCurrentEdge).coerceAtLeast(0.0)
-        logger.log(
-            String.format(
-                "Instruction progress | edge %s->%s: edge=%.2f ft, to_next=%.2f ft, first_step %.2f -> %.2f ft",
-                currentNodeId,
-                nextNodeId,
-                currentEdgeFeet,
-                clampedDistanceToNext,
-                firstInstruction.distance_feet,
-                adjustedDistanceFeet
-            )
-        )
-
-        return listOf(firstInstruction.copy(distance_feet = adjustedDistanceFeet)) + instructions.drop(1)
     }
 
     private fun fuseLocationWithLandmarks(
@@ -342,19 +273,6 @@ class LiveNavigationHandler(
         val imageBase64 = payload["image_base64"] as String
         val focalLength = (payload["focal_length_pixels"] as Number).toDouble()
 
-        logNavTrace(
-            logger = logger,
-            event = "navigation_request_received",
-            fields = mapOf(
-                "session_id" to sessionId,
-                "request_id" to requestId,
-                "route_key" to routeKey,
-                "distance_traveled_input_ft" to (payload["distance_traveled"] as? Number)?.toDouble(),
-                "heading_degrees" to (payload["heading_degrees"] as? Number)?.toDouble(),
-                "timestamp_ms" to currentTimestampMs,
-            ),
-        )
-
         val sessionData = sessionTableClient.getItemDetails(sessionId)
         val previousX = sessionData?.get("current_x")?.toDoubleOrNull() ?: 0.0
         val previousY = sessionData?.get("current_y")?.toDoubleOrNull() ?: 0.0
@@ -399,7 +317,7 @@ class LiveNavigationHandler(
             logger.log("Database error resolving closest map node: ${e.message}")
         }
 
-        var instructions: List<NavigationInstruction> = emptyList()
+        val instructions: List<NavigationInstruction>
         var pathNodesNew: List<String> = emptyList()
         var pathRecalculated = false
         try {
@@ -428,23 +346,11 @@ class LiveNavigationHandler(
                     logger.log("Calculated path: ${pathNodesNew.joinToString(" -> ")}")
 
                     // 4. Transform Path into Instructions
-                    var builtInstructions = rdsMapClient.buildInstructions(conn, pathNodesNew, landmark)
-                    var progressFeet = 0.0
-                    if (pathNodesNew.size > 1) {
-                        val newNextNode = rdsMapClient.getNode(pathNodesNew[1], conn)
-                        progressFeet = getNavigationProgress(newNextNode, estimatedX, estimatedY)
-                    }
-                    instructions = applyProgressToCurrentInstruction(
-                        conn = conn,
-                        instructions = builtInstructions,
-                        remainingPath = pathNodesNew,
-                        distToNextNodeFeet = progressFeet,
-                        logger = logger,
-                    )
+                    instructions = rdsMapClient.buildInstructions(conn, pathNodesNew, landmark)
                     logger.log("Translated instructions")
-                    instructions.forEach { inst ->
+                    instructions.forEach({inst -> 
                         logger.log("Instruction: $inst")
-                    }
+                    })
                 }
             } else {
                 logger.log("Closest node $closestNodeId is on the original path. No need to recalculate.")
@@ -455,19 +361,7 @@ class LiveNavigationHandler(
                 instructions = rdsMapClient.getDbConnection().use { conn ->
                     val landmark = rdsMapClient.getLandmark(destLandmarkId.toInt(), conn)
                         ?: throw IllegalArgumentException("Landmark not found or has no associated node.")
-                    var builtInstructions = rdsMapClient.buildInstructions(conn, pathNodesNew, landmark)
-                    var progressFeet = 0.0
-                    if (pathNodesNew.size > 1) {
-                        val nextNode = rdsMapClient.getNode(pathNodesNew[1], conn)
-                        progressFeet = getNavigationProgress(nextNode, estimatedX, estimatedY)
-                    }
-                    applyProgressToCurrentInstruction(
-                        conn = conn,
-                        instructions = builtInstructions,
-                        remainingPath = pathNodesNew,
-                        distToNextNodeFeet = progressFeet,
-                        logger = logger,
-                    )
+                    rdsMapClient.buildInstructions(conn, pathNodesNew, landmark)
                 }
             }
         } catch (e: Exception) {
@@ -484,31 +378,6 @@ class LiveNavigationHandler(
             )
             return APIGatewayV2WebSocketResponse().apply { statusCode = 500 }
         }
-
-        val activePath = pathNodesNew.takeIf { it.isNotEmpty() } ?: pathNodes
-        val logicalCurrentNodeId =
-            if (activePath.isNotEmpty() && currentStep < activePath.size) activePath[currentStep] else closestNodeId
-        val firstInstruction = instructions.firstOrNull()
-        logNavTrace(
-            logger = logger,
-            event = "navigation_update_computed",
-            fields = mapOf(
-                "session_id" to sessionId,
-                "request_id" to requestId,
-                "current_step" to currentStep,
-                "path_len" to activePath.size,
-                "closest_node_id" to closestNodeId,
-                "logical_current_node_id" to logicalCurrentNodeId,
-                "path_recalculated" to pathRecalculated,
-                "instructions_count" to instructions.size,
-                "first_instruction_step" to firstInstruction?.step,
-                "first_instruction_distance_feet" to firstInstruction?.distance_feet,
-                "first_instruction_turn_intent" to firstInstruction?.turn_intent,
-                "distance_traveled_input_ft" to (payload["distance_traveled"] as? Number)?.toDouble(),
-                "estimated_x" to estimatedX,
-                "estimated_y" to estimatedY,
-            ),
-        )
 
         // Update state in DynamoDB with new estimated location and timestamp. Set TTL for 2 hours to allow stale session cleanup.
         val ttlSeconds = (System.currentTimeMillis() / 1000) + 7200 // 2 hour expiration

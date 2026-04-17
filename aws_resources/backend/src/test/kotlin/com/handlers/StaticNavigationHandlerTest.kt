@@ -6,7 +6,6 @@ import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent
 import io.mockk.*
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -68,32 +67,6 @@ class StaticNavigationHandlerTest {
         return rs
     }
 
-    private fun assertStrictInstructionSchema(instruction: Map<String, Any?>) {
-        val expectedInstructionKeys = setOf(
-            "step",
-            "step_type",
-            "distance_feet",
-            "direction",
-            "start_node_id",
-            "end_node_id",
-            "node_id",
-            "coordinates",
-            "heading_degrees",
-            "turn_intent"
-        )
-        assertEquals(expectedInstructionKeys, instruction.keys)
-
-        val coordinates = instruction["coordinates"] as? Map<*, *>
-        assertTrue(coordinates != null, "instructions[].coordinates must be present")
-        assertEquals(setOf("x", "y"), coordinates!!.keys.map { it.toString() }.toSet())
-
-        // Legacy coordinate aliases should never exist in strict v2 payloads.
-        assertFalse(instruction.containsKey("x"))
-        assertFalse(instruction.containsKey("y"))
-        assertFalse(instruction.containsKey("coordinate_x"))
-        assertFalse(instruction.containsKey("coordinate_y"))
-    }
-
     @Test
     fun `handleNavigationStart should calculate shortest path using Dijkstra and return instructions`() {
         val mockLandmarkStmt = mockk<PreparedStatement>(relaxed = true)
@@ -101,7 +74,6 @@ class StaticNavigationHandlerTest {
             mapOf(
                 "Name" to "Room 205",
                 "NearestNodeID" to "n2",
-                "DoorID" to "room_205",
                 "DistanceToNode" to 2.0, // 2 meters from node n2
                 "BearingFromNode" to "East",
                 "MapCoordinateX" to 12,
@@ -129,15 +101,10 @@ class StaticNavigationHandlerTest {
 
         val mockNodesStmt = mockk<PreparedStatement>(relaxed = true)
         every { mockNodesStmt.executeQuery() } returns mockResultSet(listOf(
-            mapOf("NodeIDString" to "staircase_main_2S01", "CoordinateX" to -10, "CoordinateY" to 0, "NodeMeta" to null),
-            mapOf("NodeIDString" to "n1", "CoordinateX" to 0, "CoordinateY" to 0, "NodeMeta" to null),
-            mapOf(
-                "NodeIDString" to "n2",
-                "CoordinateX" to 10,
-                "CoordinateY" to 0,
-                "NodeMeta" to """{"doors":[{"id":"room_205","label":"Room 205","side_by_bearing":[{"bearing_deg":90.0,"side":"right"}]}]}"""
-            ),
-            mapOf("NodeIDString" to "n3", "CoordinateX" to 10, "CoordinateY" to 5, "NodeMeta" to null)
+            mapOf("NodeIDString" to "staircase_main_2S01", "CoordinateX" to -10, "CoordinateY" to 0),
+            mapOf("NodeIDString" to "n1", "CoordinateX" to 0, "CoordinateY" to 0),
+            mapOf("NodeIDString" to "n2", "CoordinateX" to 10, "CoordinateY" to 0),
+            mapOf("NodeIDString" to "n3", "CoordinateX" to 10, "CoordinateY" to 5)
         ))
 
         val mockPathEdgesStmt = mockk<PreparedStatement>(relaxed = true)
@@ -156,7 +123,7 @@ class StaticNavigationHandlerTest {
                 sql.contains("SELECT NodeIDString, CoordinateX, CoordinateY FROM MapNodes WHERE NodeIDString") -> mockSingleNodeStmt
                 sql.contains("FROM MapEdges e") -> mockGraphStmt
                 sql.contains("FROM MapNodes WHERE NodeIDString IN") -> mockNodesStmt
-                sql.contains("SELECT StartNodeID, EndNodeID, DistanceMeters, Bearing, IsBidirectional FROM MapEdges WHERE") -> mockPathEdgesStmt
+                sql.contains("WHERE StartNodeID IN") -> mockPathEdgesStmt
                 else -> mockk<PreparedStatement>(relaxed = true)
             }
         }
@@ -183,7 +150,6 @@ class StaticNavigationHandlerTest {
         val bodyMap = jacksonObjectMapper().readValue<Map<String, Any>>(responseBody)
         @Suppress("UNCHECKED_CAST")
         val instructions = bodyMap["instructions"] as List<Map<String, Any?>>
-        instructions.forEach { assertStrictInstructionSchema(it) }
 
         // Path is staircase->n1->n2 (dest node n2); landmark "Room 205" has BearingFromNode "East" (90°).
         // All three segments are 90° East, so aggregation merges them into one, then arrive = 2 instructions.
@@ -194,10 +160,10 @@ class StaticNavigationHandlerTest {
         assertNull(instructions[0]["turn_intent"])
         assertTrue((instructions[0]["distance_feet"] as Number).toDouble() > 30.0) // 1m + 10m + 2m in feet
 
-        // Step 2: arrival (door-side cue only; no approach segment)
+        // Step 2: arrival
         assertEquals("arrival", instructions[1]["step_type"])
         assertNull(instructions[1]["heading_degrees"])
-        assertEquals("Arrived, destination on your right", instructions[1]["direction"])
+        assertNull(instructions[1]["direction"])
         assertNull(instructions[1]["turn_intent"])
 
         // Direction/distance and landmark name
@@ -212,7 +178,6 @@ class StaticNavigationHandlerTest {
             mapOf(
                 "Name" to "Room 226",
                 "NearestNodeID" to "n2",
-                "DoorID" to "room_226",
                 "DistanceToNode" to 1.5,
                 "BearingFromNode" to "North",
                 "MapCoordinateX" to 10,
@@ -239,14 +204,9 @@ class StaticNavigationHandlerTest {
 
         val mockNodesStmt = mockk<PreparedStatement>(relaxed = true)
         every { mockNodesStmt.executeQuery() } returns mockResultSet(listOf(
-            mapOf("NodeIDString" to "staircase_main_2S01", "CoordinateX" to -10, "CoordinateY" to 0, "NodeMeta" to null),
-            mapOf("NodeIDString" to "n1", "CoordinateX" to 0, "CoordinateY" to 0, "NodeMeta" to null),
-            mapOf(
-                "NodeIDString" to "n2",
-                "CoordinateX" to 10,
-                "CoordinateY" to 0,
-                "NodeMeta" to """{"doors":[{"id":"room_226","label":"Room 226","side_by_bearing":[{"bearing_deg":0.0,"side":"left"}]}]}"""
-            )
+            mapOf("NodeIDString" to "staircase_main_2S01", "CoordinateX" to -10, "CoordinateY" to 0),
+            mapOf("NodeIDString" to "n1", "CoordinateX" to 0, "CoordinateY" to 0),
+            mapOf("NodeIDString" to "n2", "CoordinateX" to 10, "CoordinateY" to 0)
         ))
 
         val mockPathEdgesStmt = mockk<PreparedStatement>(relaxed = true)
@@ -264,7 +224,7 @@ class StaticNavigationHandlerTest {
                 sql.contains("SELECT NodeIDString, CoordinateX, CoordinateY FROM MapNodes WHERE NodeIDString") -> mockSingleNodeStmt
                 sql.contains("FROM MapEdges e") -> mockGraphStmt
                 sql.contains("FROM MapNodes WHERE NodeIDString IN") -> mockNodesStmt
-                sql.contains("SELECT StartNodeID, EndNodeID, DistanceMeters, Bearing, IsBidirectional FROM MapEdges WHERE") -> mockPathEdgesStmt
+                sql.contains("WHERE StartNodeID IN") -> mockPathEdgesStmt
                 else -> mockk<PreparedStatement>(relaxed = true)
             }
         }
@@ -288,22 +248,25 @@ class StaticNavigationHandlerTest {
         assertTrue(response.body?.contains("session_id") == true)
         assertTrue(response.body?.contains("instructions") == true)
 
-        // After aggregation: first two segments (both 90° East) merged, then arrive cue = 2 instructions
+        // After aggregation: first two segments (both 90° East) merged, then approach (0° North), then arrive = 3 instructions
         val bodyMap = jacksonObjectMapper().readValue<Map<String, Any>>(response.body!!)
         @Suppress("UNCHECKED_CAST")
         val instructions = bodyMap["instructions"] as List<Map<String, Any?>>
-        instructions.forEach { assertStrictInstructionSchema(it) }
-        assertEquals(2, instructions.size)
+        assertEquals(3, instructions.size)
 
-        // Step 1 (aggregated): staircase->n1 + n1->n2, both 90°; no further turn because next step is arrival cue.
+        // Step 1 (aggregated): staircase->n1 + n1->n2, both 90°; turn intent = left (90° -> 0° to approach)
         assertEquals(90.0, (instructions[0]["heading_degrees"] as? Number)?.toDouble())
-        assertNull(instructions[0]["turn_intent"])
+        assertEquals("left", instructions[0]["turn_intent"])
 
-        // Step 2: arrival
-        assertEquals("arrival", instructions[1]["step_type"])
-        assertNull(instructions[1]["heading_degrees"])
-        assertEquals("Arrived, destination on your left", instructions[1]["direction"])
+        // Step 2: n2 -> landmark (approach), BearingFromNode "North" -> 0°; turn_intent null
+        assertEquals(0.0, (instructions[1]["heading_degrees"] as? Number)?.toDouble())
         assertNull(instructions[1]["turn_intent"])
+
+        // Step 3: arrival
+        assertEquals("arrival", instructions[2]["step_type"])
+        assertNull(instructions[2]["heading_degrees"])
+        assertNull(instructions[2]["direction"])
+        assertNull(instructions[2]["turn_intent"])
     }
 
 	@Test
