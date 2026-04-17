@@ -129,7 +129,7 @@ class StaticNavigationHandlerTest {
                 sql.contains("SELECT NodeIDString, CoordinateX, CoordinateY FROM MapNodes WHERE NodeIDString") -> mockSingleNodeStmt
                 sql.contains("FROM MapEdges e") -> mockGraphStmt
                 sql.contains("FROM MapNodes WHERE NodeIDString IN") -> mockNodesStmt
-                sql.contains("SELECT StartNodeID, EndNodeID, DistanceMeters, Bearing FROM MapEdges WHERE") -> mockPathEdgesStmt
+                sql.contains("SELECT StartNodeID, EndNodeID, DistanceMeters, Bearing, IsBidirectional FROM MapEdges WHERE") -> mockPathEdgesStmt
                 else -> mockk<PreparedStatement>(relaxed = true)
             }
         }
@@ -236,7 +236,7 @@ class StaticNavigationHandlerTest {
                 sql.contains("SELECT NodeIDString, CoordinateX, CoordinateY FROM MapNodes WHERE NodeIDString") -> mockSingleNodeStmt
                 sql.contains("FROM MapEdges e") -> mockGraphStmt
                 sql.contains("FROM MapNodes WHERE NodeIDString IN") -> mockNodesStmt
-                sql.contains("SELECT StartNodeID, EndNodeID, DistanceMeters, Bearing FROM MapEdges WHERE") -> mockPathEdgesStmt
+                sql.contains("SELECT StartNodeID, EndNodeID, DistanceMeters, Bearing, IsBidirectional FROM MapEdges WHERE") -> mockPathEdgesStmt
                 else -> mockk<PreparedStatement>(relaxed = true)
             }
         }
