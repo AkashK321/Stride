@@ -26,6 +26,11 @@ def ensure_landmarks_doorid_column(cursor):
     cursor.execute("ALTER TABLE Landmarks ADD COLUMN IF NOT EXISTS DoorID VARCHAR(255)")
 
 
+def ensure_landmarks_doorid_column(cursor):
+    """Add Landmarks.DoorID if absent for non-destructive migrations."""
+    cursor.execute("ALTER TABLE Landmarks ADD COLUMN IF NOT EXISTS DoorID VARCHAR(255)")
+
+
 def get_db_secret():
     """Retrieve DB credentials from Secrets Manager with env var fallback."""
     env_fallback = {
