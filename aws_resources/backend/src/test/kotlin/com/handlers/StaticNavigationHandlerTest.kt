@@ -74,6 +74,7 @@ class StaticNavigationHandlerTest {
             mapOf(
                 "Name" to "Room 205",
                 "NearestNodeID" to "n2",
+                "DoorID" to "room_205",
                 "DistanceToNode" to 2.0, // 2 meters from node n2
                 "BearingFromNode" to "East",
                 "MapCoordinateX" to 12,
@@ -101,10 +102,15 @@ class StaticNavigationHandlerTest {
 
         val mockNodesStmt = mockk<PreparedStatement>(relaxed = true)
         every { mockNodesStmt.executeQuery() } returns mockResultSet(listOf(
-            mapOf("NodeIDString" to "staircase_main_2S01", "CoordinateX" to -10, "CoordinateY" to 0),
-            mapOf("NodeIDString" to "n1", "CoordinateX" to 0, "CoordinateY" to 0),
-            mapOf("NodeIDString" to "n2", "CoordinateX" to 10, "CoordinateY" to 0),
-            mapOf("NodeIDString" to "n3", "CoordinateX" to 10, "CoordinateY" to 5)
+            mapOf("NodeIDString" to "staircase_main_2S01", "CoordinateX" to -10, "CoordinateY" to 0, "NodeMeta" to null),
+            mapOf("NodeIDString" to "n1", "CoordinateX" to 0, "CoordinateY" to 0, "NodeMeta" to null),
+            mapOf(
+                "NodeIDString" to "n2",
+                "CoordinateX" to 10,
+                "CoordinateY" to 0,
+                "NodeMeta" to """{"doors":[{"id":"room_205","label":"Room 205","side_by_bearing":[{"bearing_deg":90.0,"side":"right"}]}]}"""
+            ),
+            mapOf("NodeIDString" to "n3", "CoordinateX" to 10, "CoordinateY" to 5, "NodeMeta" to null)
         ))
 
         val mockPathEdgesStmt = mockk<PreparedStatement>(relaxed = true)
@@ -123,7 +129,7 @@ class StaticNavigationHandlerTest {
                 sql.contains("SELECT NodeIDString, CoordinateX, CoordinateY FROM MapNodes WHERE NodeIDString") -> mockSingleNodeStmt
                 sql.contains("FROM MapEdges e") -> mockGraphStmt
                 sql.contains("FROM MapNodes WHERE NodeIDString IN") -> mockNodesStmt
-                sql.contains("WHERE StartNodeID IN") -> mockPathEdgesStmt
+                sql.contains("SELECT StartNodeID, EndNodeID, DistanceMeters, Bearing FROM MapEdges WHERE") -> mockPathEdgesStmt
                 else -> mockk<PreparedStatement>(relaxed = true)
             }
         }
@@ -178,6 +184,7 @@ class StaticNavigationHandlerTest {
             mapOf(
                 "Name" to "Room 226",
                 "NearestNodeID" to "n2",
+                "DoorID" to "room_226",
                 "DistanceToNode" to 1.5,
                 "BearingFromNode" to "North",
                 "MapCoordinateX" to 10,
@@ -204,9 +211,14 @@ class StaticNavigationHandlerTest {
 
         val mockNodesStmt = mockk<PreparedStatement>(relaxed = true)
         every { mockNodesStmt.executeQuery() } returns mockResultSet(listOf(
-            mapOf("NodeIDString" to "staircase_main_2S01", "CoordinateX" to -10, "CoordinateY" to 0),
-            mapOf("NodeIDString" to "n1", "CoordinateX" to 0, "CoordinateY" to 0),
-            mapOf("NodeIDString" to "n2", "CoordinateX" to 10, "CoordinateY" to 0)
+            mapOf("NodeIDString" to "staircase_main_2S01", "CoordinateX" to -10, "CoordinateY" to 0, "NodeMeta" to null),
+            mapOf("NodeIDString" to "n1", "CoordinateX" to 0, "CoordinateY" to 0, "NodeMeta" to null),
+            mapOf(
+                "NodeIDString" to "n2",
+                "CoordinateX" to 10,
+                "CoordinateY" to 0,
+                "NodeMeta" to """{"doors":[{"id":"room_226","label":"Room 226","side_by_bearing":[{"bearing_deg":0.0,"side":"left"}]}]}"""
+            )
         ))
 
         val mockPathEdgesStmt = mockk<PreparedStatement>(relaxed = true)
@@ -224,7 +236,7 @@ class StaticNavigationHandlerTest {
                 sql.contains("SELECT NodeIDString, CoordinateX, CoordinateY FROM MapNodes WHERE NodeIDString") -> mockSingleNodeStmt
                 sql.contains("FROM MapEdges e") -> mockGraphStmt
                 sql.contains("FROM MapNodes WHERE NodeIDString IN") -> mockNodesStmt
-                sql.contains("WHERE StartNodeID IN") -> mockPathEdgesStmt
+                sql.contains("SELECT StartNodeID, EndNodeID, DistanceMeters, Bearing FROM MapEdges WHERE") -> mockPathEdgesStmt
                 else -> mockk<PreparedStatement>(relaxed = true)
             }
         }
