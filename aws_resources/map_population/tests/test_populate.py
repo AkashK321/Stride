@@ -8,6 +8,7 @@ from populate_floor_data import (
     calculate_distance,
     build_node_meta_for_storage,
     rotate_coords_for_storage,
+    get_db_secret,
 )
 
 def test_rotate_coords_for_storage_zero_angle():
@@ -116,4 +117,45 @@ def test_build_node_meta_for_storage_rotates_side_by_bearing_with_offset():
             }
         ]
     }
+
+
+def test_get_db_secret_uses_env_fallback_when_secret_arn_missing(monkeypatch):
+    monkeypatch.delenv("DB_SECRET_ARN", raising=False)
+    monkeypatch.setenv("DB_HOST", "localhost")
+    monkeypatch.setenv("DB_PORT", "5432")
+    monkeypatch.setenv("DB_NAME", "stride")
+    monkeypatch.setenv("DB_USER", "stride_user")
+    monkeypatch.setenv("DB_PASSWORD", "stride_pass")
+
+    creds = get_db_secret()
+
+    assert creds == {
+        "host": "localhost",
+        "port": "5432",
+        "dbname": "stride",
+        "username": "stride_user",
+        "password": "stride_pass",
+    }
+
+
+def test_get_db_secret_falls_back_to_env_on_secret_fetch_error(monkeypatch):
+    class FailingSecretsClient:
+        def get_secret_value(self, SecretId):
+            raise RuntimeError("AccessDenied")
+
+    monkeypatch.setenv("DB_SECRET_ARN", "arn:aws:secretsmanager:us-east-1:1234:secret:test")
+    monkeypatch.setenv("DB_HOST", "localhost")
+    monkeypatch.setenv("DB_PORT", "5432")
+    monkeypatch.setenv("DB_NAME", "stride")
+    monkeypatch.setenv("DB_USER", "stride_user")
+    monkeypatch.setenv("DB_PASSWORD", "stride_pass")
+    monkeypatch.setattr("populate_floor_data.boto3.client", lambda service: FailingSecretsClient())
+
+    creds = get_db_secret()
+
+    assert creds["host"] == "localhost"
+    assert creds["port"] == "5432"
+    assert creds["dbname"] == "stride"
+    assert creds["username"] == "stride_user"
+    assert creds["password"] == "stride_pass"
 
