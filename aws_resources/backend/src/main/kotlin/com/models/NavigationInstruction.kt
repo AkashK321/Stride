@@ -1,24 +1,29 @@
 package com.models
 
-/**
- * Defines a data class for representing a navigation instruction, 
- * which includes details about the step number, distance to the next node in feet, 
- * direction of movement, node ID, and coordinates of the next node. 
- * This class can be used to store and manage navigation instructions in the application.
- * 
- * @property step The step number in the navigation sequence.
- * @property distance_feet The distance to the next node in feet. 
- * @property direction The direction of movement (e.g., "N", "NE", "E", etc.).
- * @property node_id The ID of the next node in the navigation path.
- * @property coordinates A map containing the X and Y coordinates of the next node (e.g., {"x": 100.0, "y": 200.0}).
- */
+enum class NavigationStepType {
+    segment,
+    arrival
+}
 
+data class NavigationCoordinates(
+    val x: Double,
+    val y: Double
+)
+
+/**
+ * Canonical navigation instruction contract for v2 map responses.
+ *
+ * - Uses a single coordinate shape (`coordinates.x`, `coordinates.y`) for all instructions.
+ * - Exposes explicit step semantics through `step_type` (segment vs arrival).
+ * - Exposes explicit turn semantics through `turn_intent` for segment transitions.
+ */
 data class NavigationInstruction(
     val step: Int,
+    val step_type: NavigationStepType,
     val distance_feet: Double,
     val direction: String?,
     val node_id: String,
-    val coordinates: Map<String, Double>,
+    val coordinates: NavigationCoordinates,
     val heading_degrees: Double?,
-    val turn_at_end: String?
+    val turn_intent: String?
 )

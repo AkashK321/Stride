@@ -11,7 +11,8 @@ import java.util.PriorityQueue
 import com.models.LandmarkDetails
 import com.models.NavigationInstruction
 import com.models.MapNode
-import kotlin.math.round
+import com.models.NavigationCoordinates
+import com.models.NavigationStepType
 
 class RdsMapClient {
     private val mapper = jacksonObjectMapper()
@@ -331,12 +332,16 @@ class RdsMapClient {
             instructions.add(
                 NavigationInstruction(
                     step = i + 1,
+                    step_type = NavigationStepType.segment,
                     distance_feet = distFeet,
                     direction = directionStr,
                     node_id = nodeId,
-                    coordinates = mapOf("x" to coords.first.toDouble(), "y" to coords.second.toDouble()),
+                    coordinates = NavigationCoordinates(
+                        x = coords.first.toDouble(),
+                        y = coords.second.toDouble()
+                    ),
                     heading_degrees = headingDegrees,
-                    turn_at_end = turnAtEnd
+                    turn_intent = turnAtEnd
                 )
             )
         }
@@ -345,12 +350,16 @@ class RdsMapClient {
         instructions.add(
             NavigationInstruction(
                 step = path.size + 1,
+                step_type = NavigationStepType.arrival,
                 distance_feet = 0.0,
-                direction = "arrive",
+                direction = null,
                 node_id = "${landmark.name}",
-                coordinates = mapOf("x" to landmark.coordX.toDouble(), "y" to landmark.coordY.toDouble()),
+                coordinates = NavigationCoordinates(
+                    x = landmark.coordX.toDouble(),
+                    y = landmark.coordY.toDouble()
+                ),
                 heading_degrees = null,
-                turn_at_end = null
+                turn_intent = null
             )
         )
 
@@ -392,7 +401,7 @@ class RdsMapClient {
     /**
      * Aggregates instructions: merges consecutive segments with same/near heading, and merges
      * zero-distance segments into the previous segment (so "0 ft, then turn left" disappears).
-     * The group's turn_at_end, node_id, and coordinates come from the last segment in the group.
+     * The group's turn_intent, node_id, and coordinates come from the last segment in the group.
      */
     private fun aggregateInstructions(instructions: List<NavigationInstruction>): List<NavigationInstruction> {
         if (instructions.isEmpty()) return emptyList()
@@ -401,8 +410,8 @@ class RdsMapClient {
         var stepNum = 1
         while (i < instructions.size) {
             val first = instructions[i]
-            if (first.direction == "arrive") {
-                result.add(first.copy(step = stepNum, turn_at_end = null))
+            if (first.step_type == NavigationStepType.arrival) {
+                result.add(first.copy(step = stepNum, turn_intent = null))
                 stepNum++
                 i++
                 continue
@@ -410,7 +419,7 @@ class RdsMapClient {
             var totalFeet = first.distance_feet
             var lastInGroup = first
             var j = i + 1
-            while (j < instructions.size && instructions[j].direction != "arrive" &&
+            while (j < instructions.size && instructions[j].step_type != NavigationStepType.arrival &&
                    (headingsNearlyEqual(first.heading_degrees, instructions[j].heading_degrees) ||
                     instructions[j].distance_feet == 0.0)) {
                 totalFeet += instructions[j].distance_feet
@@ -419,10 +428,11 @@ class RdsMapClient {
             }
             result.add(NavigationInstruction(
                 step = stepNum,
+                step_type = NavigationStepType.segment,
                 distance_feet = totalFeet,
                 direction = first.direction,
                 heading_degrees = first.heading_degrees,
-                turn_at_end = lastInGroup.turn_at_end,
+                turn_intent = lastInGroup.turn_intent,
                 node_id = lastInGroup.node_id,
                 coordinates = lastInGroup.coordinates
             ))
@@ -457,9 +467,5 @@ class RdsMapClient {
             bearing >= 292.5 && bearing < 337.5 -> "Head Northwest"
             else -> "continue"
         }
-    }
-
-    fun snapBearingToMap(bearing: Double, offset: Double): Double {
-        return round(bearing / 90.0) * 90.0 + offset
     }
 }
