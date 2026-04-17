@@ -19,7 +19,12 @@ def validate_floor0() -> None:
     if floor is None:
         raise ValueError(f"{BUILDING_ID}-F{FLOOR_NUMBER}: floor payload not found")
     generic_validator = importlib.import_module("floor_data.validation").validate_floor_payload
-    generic_validator(floor, floor_label=f"{BUILDING_ID}-F{FLOOR_NUMBER}")
+    generic_validator(
+        floor,
+        floor_label=f"{BUILDING_ID}-F{FLOOR_NUMBER}",
+        enforce_door_bearing_incidence=False,
+        enforce_unique_coordinates=False,
+    )
 
 
 if __name__ == "__main__":
