@@ -83,3 +83,37 @@ def test_build_node_meta_for_storage_prefers_explicit_node_meta():
     }
     assert build_node_meta_for_storage(node) == {"custom": "value"}
 
+
+def test_build_node_meta_for_storage_rotates_side_by_bearing_with_offset():
+    """Door side_by_bearing headings should rotate with side-bearing offset."""
+    node = {
+        "id": "n1",
+        "x_feet": 0,
+        "y_feet": 0,
+        "type": "HallwayPoint",
+        "doors": [
+            {
+                "id": "room_101",
+                "label": "Room 101",
+                "side_by_bearing": [
+                    {"bearing_deg": 0, "side": "left"},
+                    {"bearing_deg": 270, "side": "right"},
+                ],
+            }
+        ],
+    }
+
+    result = build_node_meta_for_storage(node, side_by_bearing_offset_deg=51.0)
+    assert result == {
+        "doors": [
+            {
+                "id": "room_101",
+                "label": "Room 101",
+                "side_by_bearing": [
+                    {"bearing_deg": 51.0, "side": "left"},
+                    {"bearing_deg": 321.0, "side": "right"},
+                ],
+            }
+        ]
+    }
+

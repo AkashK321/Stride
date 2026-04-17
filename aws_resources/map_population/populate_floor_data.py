@@ -5,7 +5,6 @@ Converts physical measurements (feet) to map coordinates and creates nodes, edge
 FIXED: All table/column names are CamelCase to match teammate's schema.
 """
 
-import copy
 import json
 import os
 import pg8000
@@ -62,46 +61,52 @@ def rotate_coords_for_storage(x_feet, y_feet, angle_offset_deg):
     return int(round(x_rot_math)), int(round(-y_rot_math))
 
 
-def build_node_meta_for_storage(node):
+def _apply_angle_offset_to_doors(doors, side_by_bearing_offset_deg):
+    """Rotate door side_by_bearing headings into DB storage frame."""
+    adjusted_doors = []
+    for door in doors or []:
+        adjusted_door = dict(door)
+        adjusted_side_entries = []
+        for entry in door.get("side_by_bearing", []) or []:
+            adjusted_entry = dict(entry)
+            if "bearing_deg" in adjusted_entry:
+                adjusted_entry["bearing_deg"] = (
+                    float(adjusted_entry["bearing_deg"]) + float(side_by_bearing_offset_deg)
+                ) % 360.0
+            adjusted_side_entries.append(adjusted_entry)
+        if "side_by_bearing" in adjusted_door:
+            adjusted_door["side_by_bearing"] = adjusted_side_entries
+        adjusted_doors.append(adjusted_door)
+    return adjusted_doors
+
+
+def build_node_meta_for_storage(
+    node,
+    side_by_bearing_offset_deg=DEFAULT_SIDE_BY_BEARING_OFFSET_DEG,
+):
     """
     Normalize per-node metadata payload for DB storage.
 
     Supports both legacy `node_meta` and v2 top-level semantic fields.
     """
     if node.get("node_meta") is not None:
-        return node["node_meta"]
+        legacy_meta = dict(node["node_meta"])
+        if "doors" in legacy_meta:
+            legacy_meta["doors"] = _apply_angle_offset_to_doors(
+                legacy_meta.get("doors", []),
+                side_by_bearing_offset_deg,
+            )
+        return legacy_meta
 
     semantic_meta = {}
     if "doors" in node:
-        semantic_meta["doors"] = node.get("doors", [])
+        semantic_meta["doors"] = _apply_angle_offset_to_doors(
+            node.get("doors", []),
+            side_by_bearing_offset_deg,
+        )
     if "intersections" in node:
         semantic_meta["intersections"] = node.get("intersections", [])
     return semantic_meta or None
-
-
-def transform_node_meta_bearings_for_storage(
-    node_meta,
-    side_by_bearing_offset_deg: float,
-):
-    """
-    Add an optional calibration to door side_by_bearing.bearing_deg in stored NodeMeta.
-
-    Coordinate rotation (--coordinate-angle-offset) already moves node positions; MapEdges
-    bearings are derived from stored geometry. This offset is an extra knob for aligning
-    authored door approach bearings with the deployed frame when needed (e.g. CI passes
-    --side-by-bearing-offset 51). When zero, door bearings are stored as-authored.
-    """
-    if not node_meta:
-        return node_meta
-    extra = float(side_by_bearing_offset_deg)
-    if extra == 0.0:
-        return node_meta
-    meta = copy.deepcopy(node_meta)
-    for door in meta.get("doors", []):
-        for entry in door.get("side_by_bearing", []):
-            if "bearing_deg" in entry:
-                entry["bearing_deg"] = (float(entry["bearing_deg"]) + extra) % 360.0
-    return meta
 
 
 def populate_database(
@@ -173,13 +178,10 @@ def populate_database(
                     node['y_feet'],
                     angle_offset_deg,
                 )
-                node_meta = build_node_meta_for_storage(node)
-                if node_meta is not None:
-                    node_meta = transform_node_meta_bearings_for_storage(
-                        node_meta,
-                        side_bearing_offset,
-                    )
-
+                node_meta = build_node_meta_for_storage(
+                    node,
+                    side_by_bearing_offset_deg=side_bearing_offset,
+                )
                 cursor.execute(
                     """
                     INSERT INTO MapNodes (NodeIDString, FloorID, BuildingID, CoordinateX, CoordinateY, NodeType, NodeMeta)
