@@ -43,8 +43,8 @@ def main() -> int:
     populate.add_argument(
         "--coordinate-angle-offset",
         type=float,
-        default=51.0,
-        help="Clockwise angle offset in degrees applied during upload (default: 51).",
+        default=141.0,
+        help="Clockwise angle offset in degrees applied during upload (default: 141).",
     )
     populate.set_defaults(handler=_run_populate_command)
 

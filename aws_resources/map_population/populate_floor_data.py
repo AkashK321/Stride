@@ -17,7 +17,7 @@ logger.setLevel(logging.INFO)
 
 # Configuration
 FEET_TO_METERS = 0.3048
-DEFAULT_COORDINATE_ANGLE_OFFSET_DEG = 51.0
+DEFAULT_COORDINATE_ANGLE_OFFSET_DEG = 141.0
 
 
 def get_db_secret():

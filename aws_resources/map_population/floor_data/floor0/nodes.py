@@ -307,7 +307,7 @@ NODES = [
         y_feet= 78,
         doors=[
             DoorRef(
-                id="room_054",
+                id="room_054b",
                 label="Room 054B",
                 side_by_bearing=[
                     DoorSideByBearing(bearing_deg=180, side="right"), 

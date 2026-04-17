@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
-def main(coordinate_angle_offset_deg: float = 51.0) -> int:
+def main(coordinate_angle_offset_deg: float = 141.0) -> int:
     """Main entry point for database population."""
     logger.info("Starting database population...")
     logger.info("Using coordinate angle offset: %.2f deg", float(coordinate_angle_offset_deg))
