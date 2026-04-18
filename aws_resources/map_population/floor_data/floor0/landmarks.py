@@ -49,7 +49,7 @@ LANDMARKS = [
     landmark("Room 051", 78, 77, nearest_node="hall_051", door_id="room_051"),
     landmark("Room 059", 82, 145, nearest_node="hall_059", door_id="room_059"),
     landmark("Room 061", 51, 108, nearest_node="hall_061", door_id="room_061"),
-    landmark("Room 065", -2, 108, nearest_node="hall_069", door_id="room_069"),
+    landmark("Room 065", -2, 108, nearest_node="hall_065", door_id="room_065"),
     landmark("Room 069", -46, 108, nearest_node="hall_069", door_id="room_069"),
     landmark("Room 129", -38, 93, nearest_node="hall_129", door_id="room_129low"),
 
