@@ -22,6 +22,13 @@ class FloorRegistration:
 REGISTERED_FLOORS: tuple[FloorRegistration, ...] = (
     FloorRegistration(
         building_id="B01",
+        floor_number=0,  
+        module_path="floor_data.floor0_v2",
+        data_var="FLOOR0_DATA_V2",
+        validator_path="floor_data.floor0_v2.validate:validate_floor0_v2",
+    ),
+    FloorRegistration(
+        building_id="B01",
         floor_number=2,
         module_path="floor_data.floor2_v2",
         data_var="FLOOR2_DATA_V2",
@@ -117,4 +124,3 @@ def validate_registered_floors() -> None:
 
     # Also verify the registration/data contract itself.
     get_all_buildings_data()
-
