@@ -640,7 +640,6 @@ class LiveNavigationHandlerTest {
         assertEquals(strictInstructions.size, remainingInstructions.size)
         remainingInstructions.forEach { assertStrictInstructionSchema(it) }
     }
-
     @Test
     fun `handleRequest should subtract traversed distance from strict instructions`() {
         val mockSessionData = mapOf(
