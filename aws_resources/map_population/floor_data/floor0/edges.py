@@ -24,8 +24,11 @@ EDGES = [
     # hall_023 -> hall_024 (East, 90°)
     edge(start="hall_023", end="hall_024", bearing_deg=90, bidirectional=True),
     
-    # hall_024 -> hall_026 (East, 90°)
-    edge(start="hall_024", end="hall_026", bearing_deg=90, bidirectional=True),
+    # hall_024 -> corner_mid3 (East, 90°)
+    edge(start="hall_024", end="corner_mid3", bearing_deg=90, bidirectional=True),
+
+    # hall_corner_mid3 -> hall_026 (East, 90°)
+    edge(start="corner_mid3", end="hall_026", bearing_deg=90, bidirectional=True),
     
     # hall_026 -> hall_029 (East, 90°)
     edge(start="hall_026", end="hall_029", bearing_deg=90, bidirectional=True),
@@ -49,7 +52,10 @@ EDGES = [
     edge(start="hall_039", end="hall_038", bearing_deg=90, bidirectional=True),
     
     # hall_038 -> hall_040_042 (East, 90°)
-    edge(start="hall_038", end="hall_040_042", bearing_deg=90, bidirectional=True),
+    edge(start="hall_038", end="corner_southeast", bearing_deg=90, bidirectional=True),
+    
+    # corner_southeast -> hall_040_042 (East, 90°)
+    edge(start="corner_southeast", end="hall_040_042", bearing_deg=90, bidirectional=True),
     
     
     # ==================================================================
@@ -140,17 +146,17 @@ EDGES = [
     # ==================================================================
     # EXTRAS
     # ==================================================================
-    edge(start="hall_069", end="corner_mid", bearing_deg=0, bidirectional=True),
-    edge(start="corner_mid", end="corner_mid2", bearing_deg=0, bidirectional=True),
+    edge(start="hall_069", end="corner_mid", bearing_deg=180, bidirectional=True),
+    edge(start="corner_mid", end="corner_mid2", bearing_deg=180, bidirectional=True),
     edge(start="corner_mid2", end="hall_129", bearing_deg=90, bidirectional=True),
-    edge(start="corner_lobby_mid", end="corner_lobby_south", bearing_deg=0, bidirectional=True),
-    edge(start="corner_lobby_south", end="corner_lobby_west", bearing_deg=90, bidirectional=True),
-    edge(start="corner_lobby_north", end="corner_lobby_mid", bearing_deg=0, bidirectional=True),
-    edge(start="hall_129", end="corner_mid3", bearing_deg=0, bidirectional=True),
+    edge(start="corner_lobby_mid", end="corner_lobby_south", bearing_deg=180, bidirectional=True),
+    edge(start="corner_lobby_south", end="corner_lobby_west", bearing_deg=270, bidirectional=True),
+    edge(start="corner_lobby_north", end="corner_lobby_mid", bearing_deg=180, bidirectional=True),
+    edge(start="hall_129", end="corner_mid3", bearing_deg=180, bidirectional=True),
     
     edge(start="corner_rm005", end="hall_005", bearing_deg=0, bidirectional=True),
-    edge(start="hall_016", end="corner_southwest", bearing_deg=180, bidirectional=True),
-    edge(start="hall_044", end="corner_southeast", bearing_deg=0, bidirectional=True),
+    edge(start="corner_southwest", end="hall_016", bearing_deg=0, bidirectional=True),
+    edge(start="corner_southeast", end="hall_044", bearing_deg=0, bidirectional=True),
 
 
 
