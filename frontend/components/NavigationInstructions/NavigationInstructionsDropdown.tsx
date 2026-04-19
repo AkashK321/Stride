@@ -20,43 +20,6 @@ import NavigationInstructionItem, {
 const MAX_DROPDOWN_HEIGHT = Dimensions.get("window").height * 0.45;
 const ROW_HEIGHT = 80; // approximate height per instruction row
 
-function normalizeDirection(dir: string | null | undefined): string | null {
-  if (!dir) return null;
-  const lower = dir.trim().toLowerCase();
-
-  if (lower.includes("north")) return "north";
-  if (lower.includes("east")) return "east";
-  if (lower.includes("south")) return "south";
-  if (lower.includes("west")) return "west";
-
-  if (lower.includes("left")) return "left";
-  if (lower.includes("right")) return "right";
-  if (lower.includes("straight")) return "straight";
-
-  return lower;
-}
-
-function getRelativeTurn(
-  currentDir: string | null | undefined,
-  nextDir: string | null | undefined,
-): "left" | "right" | "around" | "straight" | null {
-  const current = normalizeDirection(currentDir);
-  const next = normalizeDirection(nextDir);
-  if (!current || !next) return null;
-  if (current === next) return "straight";
-
-  const order = ["north", "east", "south", "west"] as const;
-  const fromIdx = order.indexOf(current as (typeof order)[number]);
-  const toIdx = order.indexOf(next as (typeof order)[number]);
-  if (fromIdx === -1 || toIdx === -1) return null;
-
-  const delta = (toIdx - fromIdx + order.length) % order.length;
-  if (delta === 1) return "right";
-  if (delta === 3) return "left";
-  if (delta === 2) return "around";
-  return null;
-}
-
 export interface NavigationInstructionsDropdownProps {
   instructions: NavigationInstruction[];
   onExit: () => void;
@@ -139,26 +102,22 @@ export default function NavigationInstructionsDropdown({
     safeSelectedIndex + 1 < instructions.length
       ? instructions[safeSelectedIndex + 1]
       : null;
-  const currentRelativeTurn = getRelativeTurn(
-    currentInstruction.direction,
-    currentNextInstruction?.direction,
-  );
 
   let headerIconName: React.ComponentProps<typeof Ionicons>["name"] =
     "arrow-up-outline";
 
   if (
-    currentInstruction.direction === "arrive" ||
-    currentNextInstruction?.direction === "arrive"
+    currentInstruction.step_type === "arrival" ||
+    currentNextInstruction?.step_type === "arrival"
   ) {
     headerIconName = "flag-outline";
-  } else if (currentRelativeTurn === "left") {
+  } else if (currentInstruction.turn_intent === "left") {
     headerIconName = "arrow-back-outline";
-  } else if (currentRelativeTurn === "right") {
+  } else if (currentInstruction.turn_intent === "right") {
     headerIconName = "arrow-forward-outline";
-  } else if (currentRelativeTurn === "around") {
+  } else if (currentInstruction.turn_intent === "around") {
     headerIconName = "refresh-outline";
-  } else if (currentRelativeTurn === "straight") {
+  } else if (currentInstruction.turn_intent === "straight") {
     headerIconName = "arrow-up-outline";
   }
 
