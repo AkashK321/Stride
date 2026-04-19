@@ -6,6 +6,7 @@ import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent
 import io.mockk.*
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -65,6 +66,32 @@ class StaticNavigationHandlerTest {
         }
         every { rs.wasNull() } returns false
         return rs
+    }
+
+    private fun assertStrictInstructionSchema(instruction: Map<String, Any?>) {
+        val expectedInstructionKeys = setOf(
+            "step",
+            "step_type",
+            "distance_feet",
+            "direction",
+            "start_node_id",
+            "end_node_id",
+            "node_id",
+            "coordinates",
+            "heading_degrees",
+            "turn_intent"
+        )
+        assertEquals(expectedInstructionKeys, instruction.keys)
+
+        val coordinates = instruction["coordinates"] as? Map<*, *>
+        assertTrue(coordinates != null, "instructions[].coordinates must be present")
+        assertEquals(setOf("x", "y"), coordinates!!.keys.map { it.toString() }.toSet())
+
+        // Legacy coordinate aliases should never exist in strict v2 payloads.
+        assertFalse(instruction.containsKey("x"))
+        assertFalse(instruction.containsKey("y"))
+        assertFalse(instruction.containsKey("coordinate_x"))
+        assertFalse(instruction.containsKey("coordinate_y"))
     }
 
     @Test
@@ -156,6 +183,7 @@ class StaticNavigationHandlerTest {
         val bodyMap = jacksonObjectMapper().readValue<Map<String, Any>>(responseBody)
         @Suppress("UNCHECKED_CAST")
         val instructions = bodyMap["instructions"] as List<Map<String, Any?>>
+        instructions.forEach { assertStrictInstructionSchema(it) }
 
         // Path is staircase->n1->n2 (dest node n2); landmark "Room 205" has BearingFromNode "East" (90°).
         // All three segments are 90° East, so aggregation merges them into one, then arrive = 2 instructions.
@@ -264,6 +292,7 @@ class StaticNavigationHandlerTest {
         val bodyMap = jacksonObjectMapper().readValue<Map<String, Any>>(response.body!!)
         @Suppress("UNCHECKED_CAST")
         val instructions = bodyMap["instructions"] as List<Map<String, Any?>>
+        instructions.forEach { assertStrictInstructionSchema(it) }
         assertEquals(2, instructions.size)
 
         // Step 1 (aggregated): staircase->n1 + n1->n2, both 90°; no further turn because next step is arrival cue.
