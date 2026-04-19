@@ -97,6 +97,14 @@ def rotate_coords_for_storage(x_feet, y_feet, angle_offset_deg):
     return int(round(x_rot_math)), int(round(-y_rot_math))
 
 
+def rotate_bearing_for_storage(bearing_deg, bearing_offset_deg):
+    """
+    Rotate authored edge bearing into DB storage frame.
+    Uses the bearing offset calibration used for directional metadata.
+    """
+    return (float(bearing_deg) + float(bearing_offset_deg) + 180.0) % 360.0
+
+
 def _apply_angle_offset_to_doors(doors, side_by_bearing_offset_deg):
     """Rotate door side_by_bearing headings into DB storage frame."""
     adjusted_doors = []
@@ -265,9 +273,12 @@ def populate_database(
                 x2, y2 = node_coords[end_node_key]
                 
                 distance = calculate_distance(x1, y1, x2, y2)
-                # Always derive DB bearing from stored (already-rotated) coordinates
-                # so geometry and persisted heading remain in the same frame.
-                bearing = calculate_bearing(x1, y1, x2, y2)
+                # Source of truth: authored edge bearing (bearing_deg) from floor data.
+                # Rotate into DB frame using the bearing offset calibration.
+                bearing = rotate_bearing_for_storage(
+                    edge['bearing_deg'],
+                    side_offset_deg,
+                )
                 cursor.execute(
                     """
                     INSERT INTO MapEdges (FloorID, StartNodeID, EndNodeID, DistanceMeters, Bearing, IsBidirectional)
@@ -282,7 +293,14 @@ def populate_database(
                         edge.get('bidirectional', True)
                     )
                 )
-                logger.info(f"Inserted edge: {edge['start']} -> {edge['end']}, distance: {distance:.2f}m, bearing: {bearing:.1f}°")
+                logger.info(
+                    "Inserted edge: %s -> %s, distance: %.2fm, bearing: %.1f° (authored %.1f°)",
+                    edge['start'],
+                    edge['end'],
+                    distance,
+                    bearing,
+                    float(edge['bearing_deg']),
+                )
             
             # 5. Insert Landmarks (CamelCase) with stable IDs so re-runs give same landmark_id
             # LandmarkID = floor_id * 10000 + (1-based index) so e.g. floor 1 -> 10001,10002,...; floor 2 -> 20001,20002,...
