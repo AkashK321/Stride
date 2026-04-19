@@ -39,9 +39,6 @@ export interface NavigationResponse {
   type?: string;
   request_id?: number;
   latency_ms?: number; // Calculated on frontend, not from backend
-  status?: string;
-  error?: string;
-  message?: string;
 }
 
 export interface NavigationUpdateResponse extends NavigationResponse {
@@ -101,27 +98,19 @@ function isLiveNavigationResponse(data: NavigationSocketResponse): boolean {
   );
 }
 
-/** Logs outbound frame requests without image bytes. */
-function logFrameRequest(message: NavigationFrameMessage): void {
-  const baseFields = {
-    request_id: message.request_id,
-    timestamp_ms: message.timestamp_ms,
-    timestamp_iso: new Date(message.timestamp_ms).toISOString(),
+/** Logs live-nav `action: "navigation"` sends without image bytes. */
+function logLiveNavigationRequest(message: NavigationFrameMessage): void {
+  if (message.action !== "navigation") return;
+  const { image_base64, ...rest } = message;
+  const rawLen = image_base64.length;
+  const decodedApprox = Math.round((rawLen * 3) / 4);
+  const safe = {
+    ...rest,
+    image_base64_omitted: true,
+    image_base64_length_chars: rawLen,
+    image_decoded_kb_approx: Math.round(decodedApprox / 1024),
   };
-  if (message.action === "navigation") {
-    console.log(
-      `[WS][nav] → REQ\n${formatJq({
-        ...baseFields,
-        distance_traveled: message.distance_traveled,
-      })}`,
-    );
-    return;
-  }
-  if (message.action === "frame") {
-    console.log(
-      `[WS][collision] → REQ\n${formatJq(baseFields)}`,
-    );
-  }
+  console.log(`[WS][nav] → REQ\n${formatJq(safe)}`);
 }
 
 /** Logs live navigation responses (no image payload on this route). */
@@ -231,7 +220,7 @@ export class NavigationWebSocket {
         this.ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data) as NavigationSocketResponse;
-
+            
             // Calculate latency if request_id is present
             if (data.request_id !== undefined) {
               const pendingId = Number(data.request_id);
@@ -245,15 +234,16 @@ export class NavigationWebSocket {
               }
             }
 
-            // logLiveNavigationResponse(data);
+            logLiveNavigationResponse(data);
 
             // In development mode, send response to local CSV logger server
             if (__DEV__ && typeof fetch !== "undefined") {
-              this.logResponseToDevServer(data).catch((_err) => {
-                // Dev logger is optional in local debugging.
+              this.logResponseToDevServer(data).catch((err) => {
+                // Silently fail - dev logger is optional
+                console.debug("[WebSocket] Failed to log to dev server:", err);
               });
             }
-
+            
             this.onMessage?.(data);
           } catch (e) {
             console.error("Failed to parse WebSocket message:", e);
@@ -333,7 +323,7 @@ export class NavigationWebSocket {
 
     try {
       const payload = JSON.stringify(message);
-
+      
       // Calculate payload size in bytes
       // For UTF-8 strings, we can approximate: base64 strings are ASCII (1 byte/char)
       // JSON metadata is also ASCII, so string length approximates byte size
@@ -345,19 +335,19 @@ export class NavigationWebSocket {
         // Fallback: for base64 + JSON (both ASCII), length ≈ bytes
         payloadSizeBytes = payload.length;
       }
-
+      
       // Calculate image size for logging
       const imageBase64Length = message.image_base64.length;
       const imageSizeBytes = Math.round((imageBase64Length * 3) / 4);
       const metadataSizeBytes = payloadSizeBytes - imageBase64Length;
-
+      
       // API Gateway WebSocket default limit is 32 KB (32 * 1024 bytes)
       // Using 25 KB as a conservative threshold to account for:
       // - Base64 encoding overhead (already included in image_base64)
       // - JSON metadata (session_id, sensors, etc.)
       // - Any WebSocket frame overhead
       const MAX_PAYLOAD_SIZE_BYTES = 30 * 1024;
-
+      
       if (payloadSizeBytes > MAX_PAYLOAD_SIZE_BYTES) {
         console.warn(
           `[WebSocket] ❌ Frame payload too large (${Math.round(payloadSizeBytes / 1024)} KB), skipping send to prevent disconnection. ` +
@@ -372,13 +362,13 @@ export class NavigationWebSocket {
       // Track request for latency measurement
       const sentTime = Date.now();
       this._pendingRequests.set(message.request_id, sentTime);
-
+      
       // Track session_id for dev logging
       if (message.session_id) {
         this._currentSessionId = message.session_id;
       }
 
-      logFrameRequest(message);
+      logLiveNavigationRequest(message);
 
       this.ws.send(payload);
       return true;
@@ -394,14 +384,14 @@ export class NavigationWebSocket {
    */
   private async logResponseToDevServer(response: NavigationSocketResponse): Promise<void> {
     if (!__DEV__) return;
-
+    
     try {
       // Try to connect to local dev logger server
       // Use the machine's IP address that Expo is running on
       // For Expo Go, we can use localhost or the Metro bundler's IP
       // Default to localhost, but could be configured via env var
       const loggerUrl = process.env.EXPO_PUBLIC_DEV_LOGGER_URL || "http://localhost:3001/log";
-
+      
       await fetch(loggerUrl, {
         method: "POST",
         headers: {
@@ -412,12 +402,12 @@ export class NavigationWebSocket {
           response: response,
         }),
       });
-    } catch (_error) {
+    } catch (error) {
       // Silently fail - dev logger is optional
       // Only log in debug mode to avoid console spam
-      // if (console.debug) {
-      //   console.debug("[WebSocket] Dev logger not available:", error);
-      // }
+      if (console.debug) {
+        console.debug("[WebSocket] Dev logger not available:", error);
+      }
     }
   }
 
