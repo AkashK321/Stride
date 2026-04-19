@@ -152,7 +152,29 @@ def plot_floor(data_obj, floor_number, compare_data_obj=None, output_path: Path 
         if not s or not e:
             missing_edge_refs.append((edge["start"], edge["end"]))
             continue
-        ax.plot([s["x_feet"], e["x_feet"]], [s["y_feet"], e["y_feet"]], color="#2563eb", linewidth=1.8, alpha=0.8, zorder=1)
+        ax.plot(
+            [s["x_feet"], e["x_feet"]],
+            [s["y_feet"], e["y_feet"]],
+            color="#2563eb",
+            linewidth=1.8,
+            alpha=0.8,
+            zorder=1,
+        )
+        ax.annotate(
+            "",
+            xy=(e["x_feet"], e["y_feet"]),
+            xytext=(s["x_feet"], s["y_feet"]),
+            arrowprops={
+                "arrowstyle": "-|>",
+                "color": "#1d4ed8",
+                "lw": 1.1,
+                "alpha": 0.9,
+                "shrinkA": 8,
+                "shrinkB": 8,
+                "mutation_scale": 11,
+            },
+            zorder=2,
+        )
         plotted_edge_count += 1
 
     print(f"Plotted {plotted_edge_count}/{len(edges)} edges for floor {floor_number}.")
@@ -180,6 +202,21 @@ def plot_floor(data_obj, floor_number, compare_data_obj=None, output_path: Path 
                     linewidth=1.2,
                     alpha=0.6,
                     linestyle="--",
+                    zorder=0,
+                )
+                ax.annotate(
+                    "",
+                    xy=(e["x_feet"], e["y_feet"]),
+                    xytext=(s["x_feet"], s["y_feet"]),
+                    arrowprops={
+                        "arrowstyle": "->",
+                        "color": "#6b7280",
+                        "lw": 0.9,
+                        "alpha": 0.55,
+                        "shrinkA": 8,
+                        "shrinkB": 8,
+                        "mutation_scale": 10,
+                    },
                     zorder=0,
                 )
 
