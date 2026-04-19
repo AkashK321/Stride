@@ -7,6 +7,7 @@
  * The WebSocket URL is derived from the REST API URL by converting it to the
  * corresponding WebSocket endpoint, or uses a dedicated WS env variable.
  */
+import { NavigationInstruction } from "./api";
 
 /**
  * Navigation frame payload sent to the backend via WebSocket.
@@ -35,28 +36,54 @@ export interface NavigationFrameMessage {
  * Response from the backend after processing a navigation frame.
  */
 export interface NavigationResponse {
+  type?: string;
+  request_id?: number;
+  latency_ms?: number; // Calculated on frontend, not from backend
+}
+
+export interface NavigationUpdateResponse extends NavigationResponse {
+  type: "navigation_update";
+  session_id: string;
+  current_step: number;
+  remaining_instructions: NavigationInstruction[];
+  estimated_position: {
+    node_id: string;
+    coordinates: {
+      x: number;
+      y: number;
+    };
+  };
+  message: string;
+}
+
+export interface NavigationErrorResponse extends NavigationResponse {
+  type: "navigation_error";
+  session_id: string;
+  error: string;
+  message?: string;
+}
+
+export interface CollisionDetectionResponse extends NavigationResponse {
   frameSize?: number;
   valid?: boolean;
   estimatedDistances?: Array<{
     className: string;
     distance: string;
   }>;
-  type?: string;
-  session_id?: string;
-  current_step?: number;
-  remaining_instructions?: Array<unknown>;
-  estimated_position?: unknown;
   confidence?: number;
   message?: string;
   error?: string;
   status?: string;
-  request_id?: number;
-  latency_ms?: number; // Calculated on frontend, not from backend
 }
+
+export type NavigationSocketResponse =
+  | NavigationUpdateResponse
+  | NavigationErrorResponse
+  | CollisionDetectionResponse;
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
-type MessageHandler = (response: NavigationResponse) => void;
+type MessageHandler = (response: NavigationSocketResponse) => void;
 type StatusHandler = (status: ConnectionStatus) => void;
 
 /** Pretty-print JSON like `jq .` (2-space indent). */
@@ -64,10 +91,9 @@ function formatJq(obj: unknown): string {
   return JSON.stringify(obj, null, 2);
 }
 
-function isLiveNavigationResponse(data: NavigationResponse): boolean {
+function isLiveNavigationResponse(data: NavigationSocketResponse): boolean {
   return (
     data.type === "navigation_update" ||
-    data.type === "navigation_complete" ||
     data.type === "navigation_error"
   );
 }
@@ -88,7 +114,7 @@ function logLiveNavigationRequest(message: NavigationFrameMessage): void {
 }
 
 /** Logs live navigation responses (no image payload on this route). */
-function logLiveNavigationResponse(data: NavigationResponse): void {
+function logLiveNavigationResponse(data: NavigationSocketResponse): void {
   if (!isLiveNavigationResponse(data)) return;
   console.log(`[WS][nav] ← RES\n${formatJq(data)}`);
 }
@@ -193,7 +219,7 @@ export class NavigationWebSocket {
 
         this.ws.onmessage = (event) => {
           try {
-            const data: NavigationResponse = JSON.parse(event.data);
+            const data = JSON.parse(event.data) as NavigationSocketResponse;
             
             // Calculate latency if request_id is present
             if (data.request_id !== undefined) {
@@ -356,7 +382,7 @@ export class NavigationWebSocket {
    * Log response to development CSV logger server (dev mode only).
    * Silently fails if the server is not running.
    */
-  private async logResponseToDevServer(response: NavigationResponse): Promise<void> {
+  private async logResponseToDevServer(response: NavigationSocketResponse): Promise<void> {
     if (!__DEV__) return;
     
     try {

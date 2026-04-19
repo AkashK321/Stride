@@ -24,7 +24,8 @@ import {
 } from "../../services/api";
 import {
   NavigationFrameMessage,
-  NavigationResponse,
+  NavigationSocketResponse,
+  NavigationUpdateResponse,
   NavigationWebSocket,
   getWebSocketUrl,
 } from "../../services/navigationWebSocket";
@@ -45,6 +46,68 @@ function getImageSize(uri: string): Promise<{ width: number; height: number }> {
   return new Promise((resolve, reject) => {
     Image.getSize(uri, (width, height) => resolve({ width, height }), reject);
   });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function normalizeNavigationInstruction(instruction: unknown): NavigationInstruction | null {
+  if (!isRecord(instruction)) return null;
+  const coordinates = instruction.coordinates;
+  const stepType = instruction.step_type;
+  const turnIntent = instruction.turn_intent;
+
+  if (!isRecord(coordinates)) return null;
+  if (stepType !== "segment" && stepType !== "arrival") return null;
+  if (
+    turnIntent !== null &&
+    turnIntent !== "left" &&
+    turnIntent !== "right" &&
+    turnIntent !== "around" &&
+    turnIntent !== "straight"
+  ) {
+    return null;
+  }
+  if (typeof instruction.step !== "number") return null;
+  if (typeof instruction.distance_feet !== "number") return null;
+  if (instruction.direction !== null && typeof instruction.direction !== "string") return null;
+  if (typeof instruction.start_node_id !== "string") return null;
+  if (typeof instruction.end_node_id !== "string") return null;
+  if (typeof instruction.node_id !== "string") return null;
+  if (typeof coordinates.x !== "number" || typeof coordinates.y !== "number") return null;
+  if (instruction.heading_degrees !== null && typeof instruction.heading_degrees !== "number") {
+    return null;
+  }
+
+  return {
+    step: instruction.step,
+    step_type: stepType,
+    distance_feet: instruction.distance_feet,
+    direction: instruction.direction,
+    start_node_id: instruction.start_node_id,
+    end_node_id: instruction.end_node_id,
+    node_id: instruction.node_id,
+    coordinates: {
+      x: coordinates.x,
+      y: coordinates.y,
+    },
+    heading_degrees: instruction.heading_degrees,
+    turn_intent: turnIntent,
+  };
+}
+
+function normalizeNavigationInstructions(instructions: unknown): NavigationInstruction[] {
+  if (!Array.isArray(instructions)) return [];
+  return instructions
+    .map(normalizeNavigationInstruction)
+    .filter((instruction): instruction is NavigationInstruction => instruction !== null);
+}
+
+function isNavigationUpdateResponse(
+  response: NavigationSocketResponse,
+): response is NavigationUpdateResponse {
+  return response.type === "navigation_update";
 }
 
 export default function NavigationSession() {
@@ -76,8 +139,7 @@ export default function NavigationSession() {
 
   const { getAlignment } = useHeading();
   const activeInstruction = navigationInstructions?.[currentStepIndex] ?? null;
-  // const alignment = getAlignment(activeInstruction?.heading_degrees ?? null);
-  const alignment = getAlignment(270); // mock "face west"
+  const alignment = getAlignment(activeInstruction?.heading_degrees ?? null);
 
   const toggleSpeakerMode = React.useCallback(() => {
     setSpeakerMode((prev) => !prev);
@@ -205,10 +267,10 @@ export default function NavigationSession() {
     nextRequestId,
   ]);
 
-  const handleSocketMessage = React.useCallback((response: NavigationResponse) => {
-    if (response.type === "navigation_update") {
-      const remaining = response.remaining_instructions as NavigationInstruction[] | undefined;
-      if (Array.isArray(remaining) && remaining.length > 0) {
+  const handleSocketMessage = React.useCallback((response: NavigationSocketResponse) => {
+    if (isNavigationUpdateResponse(response)) {
+      const remaining = normalizeNavigationInstructions(response.remaining_instructions);
+      if (remaining.length > 0) {
         setNavigationInstructions(remaining);
       }
       if (typeof response.current_step === "number") {
@@ -358,9 +420,12 @@ export default function NavigationSession() {
           start_location: { node_id: "r208_door" },
         });
         if (cancelled) return;
-        // Use instructions exactly as returned from the backend
+        const normalizedInstructions = normalizeNavigationInstructions(response.instructions);
+        if (normalizedInstructions.length === 0) {
+          throw new Error("Navigation response contained no valid instructions");
+        }
         setNavigationSessionId(response.session_id);
-        setNavigationInstructions(response.instructions);
+        setNavigationInstructions(normalizedInstructions);
       } catch (err) {
         if (cancelled) return;
         setNavigationInstructions(null);

@@ -14,23 +14,23 @@ export interface NavigationInstructionItemProps {
 export function formatInstruction(
   current: NavigationInstruction,
 ): string {
-  const { direction, distance_feet, turn_at_end } = current;
+  const { distance_feet, step_type, turn_intent } = current;
   const roundedDistance = Math.round(distance_feet / 5) * 5;
   const distanceText = `${roundedDistance} ft`;
 
   // Arrival handling
-  if (direction === "arrive") {
+  if (step_type === "arrival") {
     return `In ${distanceText}, you will arrive`;
   }
 
-  if (turn_at_end === "straight") {
+  if (turn_intent === "straight") {
     return `In ${distanceText}, continue straight`;
   }
-  if (turn_at_end === "around") {
+  if (turn_intent === "around") {
     return `In ${distanceText}, turn around`;
   }
-  if (turn_at_end === "left" || turn_at_end === "right") {
-    return `In ${distanceText}, turn ${turn_at_end}`;
+  if (turn_intent === "left" || turn_intent === "right") {
+    return `In ${distanceText}, turn ${turn_intent}`;
   }
 
   return `Continue for ${distanceText}`;
@@ -40,26 +40,26 @@ export default function NavigationInstructionItem({
   instruction,
   nextInstruction,
 }: NavigationInstructionItemProps) {
-  const { direction, distance_feet, turn_at_end } = instruction;
+  const { distance_feet, step_type, turn_intent } = instruction;
   const roundedDistance = Math.round(distance_feet / 5) * 5;
   const distanceText = `${roundedDistance} ft`;
 
   let iconName: React.ComponentProps<typeof Ionicons>["name"] = "arrow-up";
   let turnLabel = "Continue";
 
-  if (direction === "arrive") {
+  if (step_type === "arrival") {
     iconName = "flag-outline";
     turnLabel = "Destination";
-  } else if (turn_at_end === "left") {
+  } else if (turn_intent === "left") {
     iconName = "arrow-back-outline";
     turnLabel = "Turn left";
-  } else if (turn_at_end === "right") {
+  } else if (turn_intent === "right") {
     iconName = "arrow-forward-outline";
     turnLabel = "Turn right";
-  } else if (turn_at_end === "around") {
+  } else if (turn_intent === "around") {
     iconName = "refresh-outline";
     turnLabel = "Turn around";
-  } else if (turn_at_end === "straight") {
+  } else if (turn_intent === "straight") {
     iconName = "arrow-up-outline";
     turnLabel = "Continue straight";
   }
