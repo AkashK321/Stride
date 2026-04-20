@@ -417,7 +417,7 @@ export default function NavigationSession() {
       try {
         const response = await startNavigation({
           destination: { landmark_id: String(params.landmark_id) },
-          start_location: { node_id: "r208_door" },
+          start_location: { node_id: "hall_061" },
         });
         if (cancelled) return;
         const normalizedInstructions = normalizeNavigationInstructions(response.instructions);
