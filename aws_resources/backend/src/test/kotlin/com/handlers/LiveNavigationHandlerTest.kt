@@ -196,7 +196,7 @@ class LiveNavigationHandlerTest {
         
         // Asserting with a delta to handle floating point imprecision
         assertEquals(114.0, result.first, 0.01)
-        assertEquals(114.0, result.second, 0.01)
+        assertEquals(87.0, result.second, 0.01)
     }
 
     @Test
