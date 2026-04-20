@@ -19,7 +19,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import software.amazon.awssdk.services.apigatewaymanagementapi.ApiGatewayManagementApiClient
 import software.amazon.awssdk.services.apigatewaymanagementapi.ApiGatewayManagementApiClientBuilder
@@ -181,10 +180,23 @@ class LiveNavigationHandlerTest {
             distanceMeters = 3.048 // Exactly 10.0 feet
         )
 
+        /*
+         * Setup constraints for math verification:
+         * PDR is at (120, 120)
+         * Heading is 0.0 (Looking North/Up)
+         * Landmark is at (100, 0)
+         * Distance is 10 ft -> 10 coordinate units (stored coords are feet).
+         * CV Estimate X: 100 - (10 * sin(0)) = 100
+         * CV Estimate Y: 0 + (10 * cos(0)) = 10
+         * Alpha calc: maxAlpha(0.9) * (1 - (10ft / 15ft)) = 0.9 * 0.3333 = 0.30
+         * Fused X: (0.3 * 100) + (0.7 * 120) = 30 + 84 = 114.0
+         * Fused Y: (0.3 * 10) + (0.7 * 120) = 3 + 84 = 87.0
+         */
         val result = invokeFuseLocationWithLandmarks(120.0, 120.0, 0.0, listOf(detectedObj), mockLogger)
         
+        // Asserting with a delta to handle floating point imprecision
         assertEquals(114.0, result.first, 0.01)
-        assertEquals(114.0, result.second, 0.01)
+        assertEquals(87.0, result.second, 0.01)
     }
 
     @Test
@@ -213,6 +225,7 @@ class LiveNavigationHandlerTest {
 
         val response = handler.handleRequest(event, mockContext)
 
+        // The default route specifically returns 200 and posts an error message back to the connection
         assertEquals(200, response.statusCode)
         verify { mockLogger.log(match<String> { it.contains("route: \$default") }) }
     }
@@ -243,6 +256,7 @@ class LiveNavigationHandlerTest {
                 stage = "prod"
                 routeKey = "navigation"
             }
+            // Missing almost everything, particularly session_id
             body = """{"request_id": 1}"""
         }
 
@@ -326,7 +340,6 @@ class LiveNavigationHandlerTest {
         assertEquals(400, response.statusCode)
     }
 
-    @Disabled("Skipped — pre-existing failure unrelated to PR #274")
     @Test
     fun `handleRequest should process valid payload and return 200`() {
         val validBase64 = Base64.getEncoder().encodeToString("dummy_image".toByteArray())
@@ -358,26 +371,30 @@ class LiveNavigationHandlerTest {
         }
     }
 
-    @Disabled("Skipped — pre-existing failure unrelated to PR #274")
     @Test
     fun `handleRequest should return remaining instructions when closest node is on the original path`() {
+        // 1. Setup mock session data with an existing path
         val mockSessionData = mapOf(
             "current_x" to "0.0",
             "current_y" to "0.0",
             "last_updated_ms" to "1670000000000",
             "destLandmarkId" to "1",
-            "path" to "node1,node2,node3,node4"
+            "path" to "node1,node2,node3,node4" // Original path
         )
         every { anyConstructed<DynamoDbTableClient>().getItemDetails(any()) } returns mockSessionData
 
+        // 2. Setup the closest node to be "node2". 
+        // This means the user has progressed past "node1" and the remaining path should be "node2", "node3", "node4".
         every { anyConstructed<RdsMapClient>().getClosestMapNode(any(), any(), any()) } returns mapOf("NodeID" to "node2")
 
         val mockLandmark = mockk<LandmarkDetails>(relaxed = true)
         every { anyConstructed<RdsMapClient>().getLandmark(any(), any()) } returns mockLandmark
 
+        // Mock buildInstructions to return a dummy instruction so the handler doesn't fail
         val mockInstruction = mockk<NavigationInstruction>(relaxed = true)
         every { anyConstructed<RdsMapClient>().buildInstructions(any(), any(), any()) } returns listOf(mockInstruction)
 
+        // 3. Construct a valid payload to trigger the handler
         val validBase64 = Base64.getEncoder().encodeToString("dummy_image".toByteArray())
         val event = APIGatewayV2WebSocketEvent().apply {
             requestContext = RequestContext().apply {
@@ -398,32 +415,36 @@ class LiveNavigationHandlerTest {
             }"""
         }
 
+        // 4. Execute the handler
         val response = handler.handleRequest(event, mockContext)
 
+        // Verify it was a successful request
         assertEquals(200, response.statusCode)
 
+        // 5. Verify that buildInstructions was called specifically with the truncated list
         verify {
             anyConstructed<RdsMapClient>().buildInstructions(
                 any(),
-                listOf("node2", "node3", "node4"),
+                listOf("node2", "node3", "node4"), // <--- Expected remaining path
                 any()
             )
         }
     }
 
-    @Disabled("Skipped — pre-existing failure unrelated to PR #274")
     @Test
     fun `handleRequest should reset currentStep to 0 when path is recalculated`() {
+        // 1. Setup mock session data indicating the user is mid-navigation (Step 5)
         val mockSessionData = mapOf(
             "current_x" to "0.0",
             "current_y" to "0.0",
             "currentStep" to "5", 
             "last_updated_ms" to "1670000000000",
             "destLandmarkId" to "1",
-            "path" to "node1,node2,node3"
+            "path" to "node1,node2,node3" // Original path
         )
         every { anyConstructed<DynamoDbTableClient>().getItemDetails(any()) } returns mockSessionData
 
+        // 2. Force the localized node to be OFF the original path to trigger recalculation
         every { anyConstructed<RdsMapClient>().getClosestMapNode(any(), any(), any()) } returns mapOf("NodeID" to "node99")
         every { anyConstructed<RdsMapClient>().getBuildingIdForNode(any(), any()) } returns "B1"
 
@@ -431,12 +452,15 @@ class LiveNavigationHandlerTest {
         every { mockLandmark.nearestNodeId } returns "destNode"
         every { anyConstructed<RdsMapClient>().getLandmark(any(), any()) } returns mockLandmark
 
+        // Mock the new path being generated
         every { anyConstructed<RdsMapClient>().calculateShortestPath(any(), any(), any(), any()) } returns Pair(listOf("node99", "destNode"), 15.0)
         every { anyConstructed<RdsMapClient>().buildInstructions(any(), any(), any()) } returns emptyList()
 
+        // Capture the map passed to DynamoDB putItem so we can inspect it
         val putItemSlot = slot<Map<String, Any>>()
         every { anyConstructed<DynamoDbTableClient>().putItem(capture(putItemSlot)) } just Runs
 
+        // 3. Construct a valid payload
         val validBase64 = Base64.getEncoder().encodeToString("dummy_image".toByteArray())
         val event = APIGatewayV2WebSocketEvent().apply {
             requestContext = RequestContext().apply {
@@ -457,18 +481,23 @@ class LiveNavigationHandlerTest {
             }"""
         }
 
+        // 4. Execute the handler
         val response = handler.handleRequest(event, mockContext)
 
+        // Verify it was a successful request
         assertEquals(200, response.statusCode)
 
+        // 5. Verify currentStep was correctly reset to 0 in the DynamoDB state
         val savedState = putItemSlot.captured
         assertEquals(0, savedState["currentStep"], "currentStep should be reset to 0 upon path recalculation")
+        
+        // Ensure the new path was actually saved, confirming recalculation occurred
         assertEquals("node99,destNode", savedState["path"])
     }
 
-    @Disabled("Skipped — pre-existing failure unrelated to PR #274")
     @Test
     fun `handleRequest should use logical current node for session tracking when on path`() {
+        // 1. Setup mock session data indicating user is on Step 1 (which corresponds to 'node2')
         val mockSessionData = mapOf(
             "current_x" to "0.0",
             "current_y" to "0.0",
@@ -479,12 +508,15 @@ class LiveNavigationHandlerTest {
         )
         every { anyConstructed<DynamoDbTableClient>().getItemDetails(any()) } returns mockSessionData
 
+        // 2. Mock a scenario where the sensor drifts and detects "node99" as the closest physical node,
+        // but not far enough to trigger an off-path recalculation in this specific mock execution.
         every { anyConstructed<RdsMapClient>().getClosestMapNode(any(), any(), any()) } returns mapOf("NodeID" to "node2")
-        every { anyConstructed<RdsMapClient>().getNode("node3", any()) } returns MapNode("node3", 500, 500)
+        every { anyConstructed<RdsMapClient>().getNode("node3", any()) } returns MapNode("node3", 500, 500) // Next node is far away (> 2ft)
 
         val putItemSlot = slot<Map<String, Any>>()
         every { anyConstructed<DynamoDbTableClient>().putItem(capture(putItemSlot)) } just Runs
 
+        // 3. Construct a valid payload with distance_traveled
         val validBase64 = Base64.getEncoder().encodeToString("dummy_image".toByteArray())
         val event = APIGatewayV2WebSocketEvent().apply {
             requestContext = RequestContext().apply {
@@ -504,10 +536,12 @@ class LiveNavigationHandlerTest {
             }"""
         }
 
+        // 4. Execute the handler
         val response = handler.handleRequest(event, mockContext)
 
         assertEquals(200, response.statusCode)
 
+        // 5. Verify the state saved to the DB used the logical path index (node2), NOT a physical drift node
         val savedState = putItemSlot.captured
         assertEquals("node2", savedState["currentNodeId"], "Session should lock to logical node of current step (index 1 = node2)")
     }
@@ -608,7 +642,7 @@ class LiveNavigationHandlerTest {
         every { anyConstructed<DynamoDbTableClient>().getItemDetails(any()) } returns mockSessionData
 
         every { anyConstructed<RdsMapClient>().getClosestMapNode(any(), any(), any()) } returns mapOf("NodeID" to "node1")
-        every { anyConstructed<RdsMapClient>().getNode("node2", any()) } returns MapNode("node2", 100, 0)
+        every { anyConstructed<RdsMapClient>().getNode("node2", any()) } returns MapNode("node2", 10, 0)
         every { anyConstructed<RdsMapClient>().getEdgeDistanceFeet(any(), "node1", "node2") } returns 30.0
 
         val mockLandmark = mockk<LandmarkDetails>(relaxed = true)
