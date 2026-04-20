@@ -22,10 +22,9 @@ class FloorRegistration:
 REGISTERED_FLOORS: tuple[FloorRegistration, ...] = (
     FloorRegistration(
         building_id="B01",
-        floor_number=0,  
-        module_path="floor_data.floor0_v2",
-        data_var="FLOOR0_DATA_V2",
-        validator_path="floor_data.floor0_v2.validate:validate_floor0_v2",
+        floor_number=0,
+        module_path="floor_data.floor0",
+        data_var="FLOOR0_DATA",
     ),
     FloorRegistration(
         building_id="B01",
