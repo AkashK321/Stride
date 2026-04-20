@@ -101,16 +101,9 @@ function isLiveNavigationResponse(data: NavigationSocketResponse): boolean {
 /** Logs live-nav `action: "navigation"` sends without image bytes. */
 function logLiveNavigationRequest(message: NavigationFrameMessage): void {
   if (message.action !== "navigation") return;
-  const { image_base64, ...rest } = message;
-  const rawLen = image_base64.length;
-  const decodedApprox = Math.round((rawLen * 3) / 4);
-  const safe = {
-    ...rest,
-    image_base64_omitted: true,
-    image_base64_length_chars: rawLen,
-    image_decoded_kb_approx: Math.round(decodedApprox / 1024),
-  };
-  console.log(`[WS][nav] → REQ\n${formatJq(safe)}`);
+  console.log(
+    `[WS][nav] → REQ\n${formatJq({ distance_traveled: message.distance_traveled })}`,
+  );
 }
 
 /** Logs live navigation responses (no image payload on this route). */
@@ -234,7 +227,7 @@ export class NavigationWebSocket {
               }
             }
 
-            logLiveNavigationResponse(data);
+            // logLiveNavigationResponse(data);
 
             // In development mode, send response to local CSV logger server
             if (__DEV__ && typeof fetch !== "undefined") {
