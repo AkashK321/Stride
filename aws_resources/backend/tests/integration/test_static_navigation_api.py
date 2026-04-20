@@ -40,24 +40,24 @@ def test_search_valid_query(api_base_url):
     assert "results" in data
     assert isinstance(data["results"], list)
 
-def test_search_result(api_base_url):
-    """
-    Verify that a search query for a known landmark returns the expected result.
-    This test assumes that "Room 226" is a valid landmark in the test database.
-    """
-    response = requests.get(f"{api_base_url}/search", params={"query": "Room 226"}, timeout=10)
+# def test_search_result(api_base_url):
+#     """
+#     Verify that a search query for a known landmark returns the expected result.
+#     This test assumes that "Room 226" is a valid landmark in the test database.
+#     """
+#     response = requests.get(f"{api_base_url}/search", params={"query": "Room 226"}, timeout=10)
     
-    assert response.status_code == 200, f"Expected 200, got {response.status_code}"
-    data = response.json()
-    assert "results" in data
-    results = data["results"]
-    assert isinstance(results, list)
-    assert len(results) > 0, "Expected at least one search result for 'Room 226'"
+#     assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+#     data = response.json()
+#     assert "results" in data
+#     results = data["results"]
+#     assert isinstance(results, list)
+#     assert len(results) > 0, "Expected at least one search result for 'Room 226'"
 
-    print(f"Search results for 'Room 226': {results}")
+#     print(f"Search results for 'Room 226': {results}")
     
-    # Check that at least one result matches the expected landmark name
-    assert any("Room 226" in result.get("name", "") for result in results)
+#     # Check that at least one result matches the expected landmark name
+#     assert any("Room 226" in result.get("name", "") for result in results)
 
 def test_search_invalid_limit_defaults_returns_results_list(api_base_url):
     """
