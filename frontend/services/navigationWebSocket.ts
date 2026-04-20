@@ -102,7 +102,11 @@ function isLiveNavigationResponse(data: NavigationSocketResponse): boolean {
 function logLiveNavigationRequest(message: NavigationFrameMessage): void {
   if (message.action !== "navigation") return;
   console.log(
-    `[WS][nav] → REQ\n${formatJq({ distance_traveled: message.distance_traveled })}`,
+    `[WS][nav] → REQ\n${formatJq({
+      timestamp_ms: message.timestamp_ms,
+      timestamp_iso: new Date(message.timestamp_ms).toISOString(),
+      distance_traveled: message.distance_traveled,
+    })}`,
   );
 }
 
@@ -395,12 +399,12 @@ export class NavigationWebSocket {
           response: response,
         }),
       });
-    } catch (error) {
+    } catch (_error) {
       // Silently fail - dev logger is optional
       // Only log in debug mode to avoid console spam
-      if (console.debug) {
-        console.debug("[WebSocket] Dev logger not available:", error);
-      }
+      // if (console.debug) {
+      //   console.debug("[WebSocket] Dev logger not available:", error);
+      // }
     }
   }
 
