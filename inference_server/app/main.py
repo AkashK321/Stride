@@ -11,7 +11,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.inference_core import load_yolo, resolve_model_path
 from app.persistence.sqlite_store import SqliteStore
-from app.routes import dashboard, invocations
+from app.routes import dashboard, invocations, ocr
 from app.session_gate import InferenceSessionState
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -49,6 +49,7 @@ app = FastAPI(
 app.state.templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 app.include_router(invocations.router)
+app.include_router(ocr.router)
 app.include_router(dashboard.router)
 
 static_dir = BASE_DIR / "static"

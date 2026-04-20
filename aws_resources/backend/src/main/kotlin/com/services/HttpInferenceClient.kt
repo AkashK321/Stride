@@ -1,5 +1,7 @@
 package com.services
 
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
 import com.models.InferenceResult
 import com.services.inference.UltralyticsInferenceParser
 import java.net.URI
@@ -81,6 +83,61 @@ object HttpInferenceClient {
                 status = "error",
                 error = "HTTP inference failed: ${e.message}",
             )
+        }
+    }
+
+    data class OcrResult(
+        val success: Boolean,
+        val text: String = "",
+        val error: String? = null,
+    )
+
+    private val ocrMapper = jacksonObjectMapper()
+
+    fun invokeOcrEndpoint(imageBytes: ByteArray): OcrResult {
+        val base = baseUrl()
+            ?: return OcrResult(success = false, error = "$ENV_INFERENCE_HTTP_URL is not set")
+
+        val ocrUri = try {
+            URI.create("${base.trimEnd('/')}/ocr")
+        } catch (e: Exception) {
+            return OcrResult(success = false, error = "Invalid $ENV_INFERENCE_HTTP_URL: ${e.message}")
+        }
+
+        return try {
+            val secret = System.getenv(ENV_INFERENCE_HTTP_SECRET)?.trim()?.takeIf { it.isNotEmpty() }
+            val contentType = detectContentType(imageBytes)
+
+            val reqBuilder = HttpRequest.newBuilder()
+                .uri(ocrUri)
+                .timeout(Duration.ofSeconds(15))
+                .header("Content-Type", contentType)
+                .header("Accept", "application/json")
+
+            if (secret != null) {
+                reqBuilder.header(HEADER_INFERENCE_SECRET, secret)
+            }
+
+            val request = reqBuilder
+                .POST(HttpRequest.BodyPublishers.ofByteArray(imageBytes))
+                .build()
+
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            val body = response.body()
+
+            if (response.statusCode() in 200..299) {
+                val map: Map<String, Any?> = ocrMapper.readValue(body)
+                OcrResult(
+                    success = map["success"] as? Boolean ?: false,
+                    text = map["text"] as? String ?: "",
+                    error = map["error"] as? String,
+                )
+            } else {
+                OcrResult(success = false, error = "HTTP ${response.statusCode()}: ${body.take(400)}")
+            }
+        } catch (e: Exception) {
+            println("Error calling OCR endpoint: ${e.message}")
+            OcrResult(success = false, error = "OCR request failed: ${e.message}")
         }
     }
 

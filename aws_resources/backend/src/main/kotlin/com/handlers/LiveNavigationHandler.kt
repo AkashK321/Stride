@@ -29,6 +29,7 @@ import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient
 import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueRequest
 import java.sql.Connection
 import java.sql.DriverManager
+import com.services.HttpInferenceClient
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.max
@@ -62,6 +63,26 @@ class LiveNavigationHandler(
     )
 
     private val rdsMapClient = RdsMapClient()
+
+    private fun getJpegDimensions(imageBytes: ByteArray): Pair<Int, Int>? {
+        if (imageBytes.size < 4 || imageBytes[0] != 0xFF.toByte() || imageBytes[1] != 0xD8.toByte()) {
+            return null
+        }
+        var offset = 2
+        while (offset + 4 < imageBytes.size) {
+            if (imageBytes[offset] != 0xFF.toByte()) return null
+            val marker = imageBytes[offset + 1].toInt() and 0xFF
+            if (marker == 0xC0 || marker == 0xC2) {
+                if (offset + 9 >= imageBytes.size) return null
+                val h = ((imageBytes[offset + 5].toInt() and 0xFF) shl 8) or (imageBytes[offset + 6].toInt() and 0xFF)
+                val w = ((imageBytes[offset + 7].toInt() and 0xFF) shl 8) or (imageBytes[offset + 8].toInt() and 0xFF)
+                return Pair(w, h)
+            }
+            val segLen = ((imageBytes[offset + 2].toInt() and 0xFF) shl 8) or (imageBytes[offset + 3].toInt() and 0xFF)
+            offset += 2 + segLen
+        }
+        return null
+    }
 
     private fun estimateUserLocation(heading: Double, distanceTraveled: Double, prevX: Double, prevY: Double, logger: LambdaLogger): Pair<Double, Double> {
         var currentX = prevX 
@@ -320,15 +341,15 @@ class LiveNavigationHandler(
             return APIGatewayV2WebSocketResponse().apply { statusCode = 200 }
         }
 
-        // Defensive guard: this handler should only process the dedicated live-nav route.
-        if (routeKey != "navigation") {
+        // Defensive guard: this handler processes navigation and ocr_crop routes.
+        if (routeKey != "navigation" && routeKey != "ocr_crop") {
             postJsonToConnection(
                 apiClient = apiClient,
                 connectionId = connectionId,
                 payload = mapOf(
                     "type" to "navigation_error",
                     "session_id" to "unknown",
-                    "error" to "Unsupported route '$routeKey'. Use 'navigation'."
+                    "error" to "Unsupported route '$routeKey'. Use 'navigation' or 'ocr_crop'."
                 ),
                 logger = logger
             )
@@ -349,6 +370,10 @@ class LiveNavigationHandler(
                 logger = logger
             )
             return APIGatewayV2WebSocketResponse().apply { statusCode = 400 }
+        }
+
+        if (routeKey == "ocr_crop") {
+            return handleOcrCrop(payload, apiClient, connectionId, logger)
         }
 
         val validationError = validateNavigationFramePayload(payload)
@@ -410,6 +435,32 @@ class LiveNavigationHandler(
                 logger = logger,
                 focalLength = navRequest.focal_length_pixels,
             )
+
+        // Check if any sign was detected with blank OCR text — request high-res crop from phone
+        val signNeedingOcr = detectedObjects.firstOrNull { detected ->
+            detected.obj.className == "sign" && detected.obj.text.isNullOrBlank()
+        }
+        if (signNeedingOcr != null) {
+            val imageBytes = Base64.getDecoder().decode(navRequest.image_base64)
+            val frameDims = getJpegDimensions(imageBytes)
+
+            if (frameDims != null) {
+                val ocrRequestPayload = mapOf(
+                    "type" to "ocr_request",
+                    "session_id" to navRequest.session_id,
+                    "request_id" to navRequest.request_id,
+                    "bbox" to listOf(
+                        signNeedingOcr.obj.x,
+                        signNeedingOcr.obj.y,
+                        signNeedingOcr.obj.x + signNeedingOcr.obj.width,
+                        signNeedingOcr.obj.y + signNeedingOcr.obj.height
+                    ),
+                    "frame_size" to listOf(frameDims.first, frameDims.second)
+                )
+                logger.log("Sign detected with blank OCR text — sending ocr_request to phone: bbox=${ocrRequestPayload["bbox"]}, frame=${ocrRequestPayload["frame_size"]}")
+                postJsonToConnection(apiClient, connectionId, ocrRequestPayload, logger)
+            }
+        }
 
         val (estimatedX, estimatedY) = fuseLocationWithLandmarks(pdrX, pdrY, navRequest.heading_degrees, detectedObjects, logger)
         
@@ -553,5 +604,104 @@ class LiveNavigationHandler(
             statusCode = 200
             body = "OK" 
         }
+    }
+
+    private fun handleOcrCrop(
+        payload: Map<String, Any?>,
+        apiClient: ApiGatewayManagementApiClient,
+        connectionId: String,
+        logger: LambdaLogger
+    ): APIGatewayV2WebSocketResponse {
+        val sessionId = payload["session_id"] as? String
+        val requestId = payload["request_id"]
+        val cropBase64 = payload["crop_base64"] as? String
+
+        if (sessionId.isNullOrBlank() || cropBase64.isNullOrBlank()) {
+            val errorPayload = mutableMapOf<String, Any>(
+                "type" to "navigation_error",
+                "session_id" to (sessionId ?: "unknown"),
+                "error" to "Missing session_id or crop_base64 in ocr_crop message"
+            )
+            if (requestId != null) errorPayload["request_id"] = requestId
+            postJsonToConnection(apiClient, connectionId, errorPayload, logger)
+            return APIGatewayV2WebSocketResponse().apply { statusCode = 400 }
+        }
+
+        logger.log("Received ocr_crop for session=$sessionId, crop size=${cropBase64.length} chars")
+
+        val cropBytes = try {
+            Base64.getDecoder().decode(cropBase64)
+        } catch (e: IllegalArgumentException) {
+            val errorPayload = mutableMapOf<String, Any>(
+                "type" to "navigation_error",
+                "session_id" to sessionId,
+                "error" to "Invalid base64 in crop_base64"
+            )
+            if (requestId != null) errorPayload["request_id"] = requestId
+            postJsonToConnection(apiClient, connectionId, errorPayload, logger)
+            return APIGatewayV2WebSocketResponse().apply { statusCode = 400 }
+        }
+
+        val ocrResult = HttpInferenceClient.invokeOcrEndpoint(cropBytes)
+        val ocrText = if (ocrResult.success) ocrResult.text else ""
+        logger.log("OCR result for high-res crop: text='$ocrText', success=${ocrResult.success}, error=${ocrResult.error}")
+
+        if (ocrText.isBlank()) {
+            val responsePayload = mutableMapOf<String, Any>(
+                "type" to "ocr_result",
+                "session_id" to sessionId,
+                "text" to ""
+            )
+            if (requestId != null) responsePayload["request_id"] = requestId
+            postJsonToConnection(apiClient, connectionId, responsePayload, logger)
+            return APIGatewayV2WebSocketResponse().apply { statusCode = 200; body = "OK" }
+        }
+
+        // Attempt landmark fusion with the OCR text
+        val sessionData = getSessionData(sessionTableClient, sessionId, logger)
+        if (sessionData.previousX == Double.POSITIVE_INFINITY) {
+            val responsePayload = mutableMapOf<String, Any>(
+                "type" to "ocr_result",
+                "session_id" to sessionId,
+                "text" to ocrText
+            )
+            if (requestId != null) responsePayload["request_id"] = requestId
+            postJsonToConnection(apiClient, connectionId, responsePayload, logger)
+            return APIGatewayV2WebSocketResponse().apply { statusCode = 200; body = "OK" }
+        }
+
+        // Look up the OCR text as a landmark name in RDS
+        val dbLandmark = try {
+            rdsMapClient.getDbConnection().use { conn ->
+                rdsMapClient.getLandmarkByName(ocrText, conn)
+            }
+        } catch (e: Exception) {
+            logger.log("DB error looking up OCR landmark '$ocrText': ${e.message}")
+            null
+        }
+
+        if (dbLandmark == null) {
+            logger.log("OCR text '$ocrText' not found as landmark in RDS — returning text only")
+            val responsePayload = mutableMapOf<String, Any>(
+                "type" to "ocr_result",
+                "session_id" to sessionId,
+                "text" to ocrText
+            )
+            if (requestId != null) responsePayload["request_id"] = requestId
+            postJsonToConnection(apiClient, connectionId, responsePayload, logger)
+            return APIGatewayV2WebSocketResponse().apply { statusCode = 200; body = "OK" }
+        }
+
+        logger.log("OCR landmark '$ocrText' found in RDS at (${dbLandmark.coordX}, ${dbLandmark.coordY}) — will re-fuse position")
+
+        val responsePayload = mutableMapOf<String, Any>(
+            "type" to "ocr_result",
+            "session_id" to sessionId,
+            "text" to ocrText,
+            "landmark_found" to true
+        )
+        if (requestId != null) responsePayload["request_id"] = requestId
+        postJsonToConnection(apiClient, connectionId, responsePayload, logger)
+        return APIGatewayV2WebSocketResponse().apply { statusCode = 200; body = "OK" }
     }
 }

@@ -4,28 +4,28 @@ overview: "Implement a two-stage \"Detect-then-Zoom\" pipeline: the phone sends 
 todos:
   - id: ocr-endpoint
     content: Add POST /ocr endpoint to inference server (new route file + ocr_from_image_bytes function in inference_core.py)
-    status: pending
+    status: completed
   - id: min-crop-gate
     content: "Add min-crop gate in predict_image_bytes: skip OCR for sign crops < 30x30 px"
-    status: pending
+    status: completed
   - id: kotlin-ocr-client
     content: Add invokeOcrEndpoint to HttpInferenceClient.kt for POST /ocr
-    status: pending
+    status: completed
   - id: nav-handler-ocr-request
     content: "Update LiveNavigationHandler: send ocr_request message when sign detected with blank text, add handleOcrCrop method"
-    status: pending
+    status: completed
   - id: cdk-ocr-route
     content: Add ocr_crop WebSocket route in cdk_stack.py mapped to LiveNavigationHandler
-    status: pending
+    status: completed
   - id: frontend-cache-photo
     content: Cache full-res photo URI in a ref inside captureBase64Frame
-    status: pending
+    status: completed
   - id: frontend-handle-ocr
     content: "Handle ocr_request in handleSocketMessage: scale bbox, crop full-res image, send ocr_crop message"
-    status: pending
+    status: completed
   - id: frontend-ws-types
     content: Add OcrCropMessage interface and ocr_request fields to NavigationResponse in navigationWebSocket.ts
-    status: pending
+    status: completed
 isProject: false
 ---
 

@@ -24,6 +24,7 @@ ALLOWED_CONTENT_TYPES = frozenset(
 )
 
 SIGN_CLASS_NAME = "sign"
+OCR_MIN_CROP_PX = 30
 OCR_MIN_WIDTH = 400
 OCR_CLAHE_CLIP = 3.0
 OCR_CLAHE_GRID = (8, 8)
@@ -75,6 +76,7 @@ def _extract_sign_text(image: Image.Image, x1: int, y1: int, x2: int, y2: int) -
     room_matches = re.findall(r"\d+[A-Za-z]?", raw_text)
     return " ".join(room_matches) if room_matches else ""
 
+
 DEFAULT_MODEL_URL = (
     "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11l.pt"
 )
@@ -122,6 +124,52 @@ def normalize_content_type(raw: str | None) -> str | None:
     if not raw:
         return None
     return raw.split(";")[0].strip().lower()
+
+
+def ocr_from_image_bytes(image_bytes: bytes, content_type: str | None) -> tuple[dict[str, Any], int]:
+    """Run OCR on a pre-cropped sign image. No YOLO — just preprocessing + EasyOCR."""
+    ct = normalize_content_type(content_type)
+    if ct not in ALLOWED_CONTENT_TYPES:
+        return (
+            {"success": False, "error": f"Unsupported content type: {content_type}"},
+            400,
+        )
+    if not image_bytes:
+        return {"success": False, "error": "Empty image data"}, 400
+
+    try:
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except Exception as e:
+        return {"success": False, "error": f"Invalid image format: {e}"}, 400
+
+    try:
+        crop_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+        crop_h, crop_w = crop_cv.shape[:2]
+        if crop_w < OCR_MIN_WIDTH:
+            scale = OCR_MIN_WIDTH / crop_w
+            crop_cv = cv2.resize(
+                crop_cv,
+                (int(crop_w * scale), int(crop_h * scale)),
+                interpolation=cv2.INTER_CUBIC,
+            )
+            kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], dtype=np.float32)
+            crop_cv = cv2.filter2D(crop_cv, -1, kernel)
+
+        gray = cv2.cvtColor(crop_cv, cv2.COLOR_BGR2GRAY)
+        clahe = cv2.createCLAHE(clipLimit=OCR_CLAHE_CLIP, tileGridSize=OCR_CLAHE_GRID)
+        enhanced = clahe.apply(gray)
+
+        reader = get_ocr_reader()
+        results = reader.readtext(enhanced, detail=0, paragraph=True)
+        raw_text = " ".join(results).strip() if results else ""
+        room_matches = re.findall(r"\d+[A-Za-z]?", raw_text)
+        text = " ".join(room_matches) if room_matches else ""
+
+        return {"success": True, "text": text}, 200
+    except Exception as e:
+        print(f"OCR processing error: {e}")
+        traceback.print_exc()
+        return {"success": False, "error": str(e)}, 500
 
 
 def predict_image_bytes(model: YOLO, image_bytes: bytes, content_type: str | None) -> tuple[dict[str, Any], int]:
@@ -174,12 +222,17 @@ def predict_image_bytes(model: YOLO, image_bytes: bytes, content_type: str | Non
                 }
 
                 if class_name == SIGN_CLASS_NAME:
-                    try:
-                        text = _extract_sign_text(image, int(x1), int(y1), int(x2), int(y2))
-                        pred["text"] = text
-                    except Exception as ocr_err:
-                        print(f"OCR failed for sign crop: {ocr_err}")
+                    crop_w = int(x2) - int(x1)
+                    crop_h = int(y2) - int(y1)
+                    if crop_w < OCR_MIN_CROP_PX or crop_h < OCR_MIN_CROP_PX:
                         pred["text"] = ""
+                    else:
+                        try:
+                            text = _extract_sign_text(image, int(x1), int(y1), int(x2), int(y2))
+                            pred["text"] = text
+                        except Exception as ocr_err:
+                            print(f"OCR failed for sign crop: {ocr_err}")
+                            pred["text"] = ""
 
                 predictions.append(pred)
 

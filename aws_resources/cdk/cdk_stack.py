@@ -244,6 +244,10 @@ class CdkStack(Stack):
             route_key="navigation",
             integration=integrations.WebSocketLambdaIntegration("NavigationIntegration", live_navigation_handler)
         )
+        ws_api.add_route(
+            route_key="ocr_crop",
+            integration=integrations.WebSocketLambdaIntegration("OcrCropIntegration", live_navigation_handler)
+        )
         # Add $default route to catch unmatched messages (for debugging)
         ws_api.add_route(
             route_key="$default",

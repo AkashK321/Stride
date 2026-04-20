@@ -31,6 +31,13 @@ export interface NavigationFrameMessage {
   request_id: number;
 }
 
+export interface OcrCropMessage {
+  action: "ocr_crop";
+  session_id: string;
+  crop_base64: string;
+  request_id: number;
+}
+
 /**
  * Response from the backend after processing a navigation frame.
  */
@@ -51,7 +58,11 @@ export interface NavigationResponse {
   error?: string;
   status?: string;
   request_id?: number;
-  latency_ms?: number; // Calculated on frontend, not from backend
+  latency_ms?: number;
+  bbox?: [number, number, number, number];
+  frame_size?: [number, number];
+  text?: string;
+  landmark_found?: boolean;
 }
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
@@ -68,7 +79,9 @@ function isLiveNavigationResponse(data: NavigationResponse): boolean {
   return (
     data.type === "navigation_update" ||
     data.type === "navigation_complete" ||
-    data.type === "navigation_error"
+    data.type === "navigation_error" ||
+    data.type === "ocr_request" ||
+    data.type === "ocr_result"
   );
 }
 
@@ -348,6 +361,38 @@ export class NavigationWebSocket {
       return true;
     } catch (e) {
       console.error("[WebSocket] Failed to send WebSocket message:", e);
+      return false;
+    }
+  }
+
+  /**
+   * Send a high-res OCR crop back to the backend in response to an ocr_request.
+   */
+  sendOcrCrop(message: OcrCropMessage): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN) {
+      console.warn("WebSocket not connected, cannot send OCR crop");
+      return false;
+    }
+
+    try {
+      const payload = JSON.stringify(message);
+      const payloadSizeBytes = typeof TextEncoder !== "undefined"
+        ? new TextEncoder().encode(payload).length
+        : payload.length;
+
+      const MAX_PAYLOAD_SIZE_BYTES = 30 * 1024;
+      if (payloadSizeBytes > MAX_PAYLOAD_SIZE_BYTES) {
+        console.warn(
+          `[WebSocket] OCR crop too large (${Math.round(payloadSizeBytes / 1024)} KB), skipping.`
+        );
+        return false;
+      }
+
+      console.log(`[WS][ocr] → OCR crop ${Math.round(payloadSizeBytes / 1024)} KB for request_id=${message.request_id}`);
+      this.ws.send(payload);
+      return true;
+    } catch (e) {
+      console.error("[WebSocket] Failed to send OCR crop:", e);
       return false;
     }
   }

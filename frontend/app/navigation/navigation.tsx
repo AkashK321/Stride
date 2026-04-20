@@ -26,6 +26,7 @@ import {
   NavigationFrameMessage,
   NavigationResponse,
   NavigationWebSocket,
+  OcrCropMessage,
   getWebSocketUrl,
 } from "../../services/navigationWebSocket";
 import { colors } from "../../theme/colors";
@@ -69,6 +70,8 @@ export default function NavigationSession() {
   const navFrameInFlightRef = React.useRef(false);
   const collisionFrameInFlightRef = React.useRef(false);
   const requestCounterRef = React.useRef(0);
+  const lastFullResUriRef = React.useRef<string | null>(null);
+  const lastFullResSizeRef = React.useRef<{ width: number; height: number } | null>(null);
   const [speakerMode, setSpeakerMode] = React.useState(false);
   const [currentStepIndex, setCurrentStepIndex] = React.useState(0);
   const focalLengthPixels = React.useMemo(() => getFocalLengthPixels(LIVE_NAV_FRAME_WIDTH), []);
@@ -115,6 +118,15 @@ export default function NavigationSession() {
     });
     if (!photo?.uri) return null;
 
+    // Cache the full-res URI for potential high-res OCR crop later
+    lastFullResUriRef.current = photo.uri;
+    try {
+      const fullSize = await getImageSize(photo.uri);
+      lastFullResSizeRef.current = fullSize;
+    } catch {
+      lastFullResSizeRef.current = null;
+    }
+
     const encodeOptions = {
       base64: true,
       compress: 0.4,
@@ -122,10 +134,9 @@ export default function NavigationSession() {
     };
 
     try {
-      // By supplying only width, Expo automatically scales the height to preserve the full frame's aspect ratio.
       const resized = await manipulateAsync(
         photo.uri,
-        [{ resize: { width: LIVE_NAV_FRAME_WIDTH } }], 
+        [{ resize: { width: LIVE_NAV_FRAME_WIDTH } }],
         encodeOptions,
       );
       return resized.base64 ?? null;
@@ -205,7 +216,72 @@ export default function NavigationSession() {
     nextRequestId,
   ]);
 
+  const handleOcrRequest = React.useCallback(async (response: NavigationResponse) => {
+    const ws = wsRef.current;
+    if (!ws || !ws.isConnected()) return;
+    if (!response.bbox || !response.frame_size || !response.session_id) return;
+
+    const fullResUri = lastFullResUriRef.current;
+    const fullResSize = lastFullResSizeRef.current;
+    if (!fullResUri || !fullResSize) {
+      console.warn("[OCR] No cached full-res photo for ocr_request");
+      return;
+    }
+
+    const [bx1, by1, bx2, by2] = response.bbox;
+    const [frameW, frameH] = response.frame_size;
+    if (frameW <= 0 || frameH <= 0) return;
+
+    const scaleX = fullResSize.width / frameW;
+    const scaleY = fullResSize.height / frameH;
+    const padding = 15;
+
+    const originX = Math.max(0, Math.floor(bx1 * scaleX) - padding);
+    const originY = Math.max(0, Math.floor(by1 * scaleY) - padding);
+    const endX = Math.min(fullResSize.width, Math.ceil(bx2 * scaleX) + padding);
+    const endY = Math.min(fullResSize.height, Math.ceil(by2 * scaleY) + padding);
+    const cropWidth = endX - originX;
+    const cropHeight = endY - originY;
+
+    if (cropWidth < 10 || cropHeight < 10) return;
+
+    try {
+      const cropped = await manipulateAsync(
+        fullResUri,
+        [{ crop: { originX, originY, width: cropWidth, height: cropHeight } }],
+        { base64: true, compress: 0.85, format: SaveFormat.JPEG as const },
+      );
+      if (!cropped.base64) return;
+
+      const ocrMsg: OcrCropMessage = {
+        action: "ocr_crop",
+        session_id: response.session_id,
+        crop_base64: cropped.base64,
+        request_id: response.request_id ?? 0,
+      };
+
+      console.log(
+        `[OCR] Sending high-res crop: ${cropWidth}x${cropHeight} px (from ${fullResSize.width}x${fullResSize.height})`
+      );
+      ws.sendOcrCrop(ocrMsg);
+    } catch (e) {
+      console.error("[OCR] Failed to crop/send high-res image:", e);
+    }
+  }, []);
+
   const handleSocketMessage = React.useCallback((response: NavigationResponse) => {
+    if (response.type === "ocr_request") {
+      void handleOcrRequest(response);
+      return;
+    }
+
+    if (response.type === "ocr_result") {
+      if (response.text) {
+        console.log(`[OCR] High-res OCR result: "${response.text}", landmark_found=${response.landmark_found}`);
+      }
+      return;
+    }
+
     if (response.type === "navigation_update") {
       const remaining = response.remaining_instructions as NavigationInstruction[] | undefined;
       if (Array.isArray(remaining) && remaining.length > 0) {
@@ -270,7 +346,7 @@ export default function NavigationSession() {
     } else {
       lastIntervalRef.current = 0; // Reset if no objects detected in frame
     }
-  }, []);
+  }, [handleOcrRequest]);
 
   /** Always latest send fns so WebSocket intervals do not need effect re-runs when sensors/state change. */
   const sendNavigationFrameRef = React.useRef(sendNavigationFrame);
