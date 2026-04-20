@@ -30,7 +30,6 @@ def test_user_credentials():
         "password": "TestPass123!",
         "passwordConfirm": "TestPass123!",
         "email": f"test_{timestamp}_{random_suffix}@example.com",
-        "phoneNumber": f"+1555{timestamp % 10000000:07d}",  # Generate unique phone number
         "firstName": "Test",
         "lastName": "User"
     }
@@ -45,7 +44,6 @@ def test_register_success(api_base_url, test_user_credentials):
             "password": test_user_credentials["password"],
             "passwordConfirm": test_user_credentials["passwordConfirm"],
             "email": test_user_credentials["email"],
-            "phoneNumber": test_user_credentials["phoneNumber"],
             "firstName": test_user_credentials["firstName"],
             "lastName": test_user_credentials["lastName"]
         },
@@ -62,7 +60,6 @@ def test_register_success(api_base_url, test_user_credentials):
 
 def test_register_missing_fields(api_base_url):
     """Test registration with missing required fields."""
-    # Missing email
     response = requests.post(
         f"{api_base_url}/register",
         json={
@@ -77,6 +74,49 @@ def test_register_missing_fields(api_base_url):
     data = response.json()
     assert "error" in data
     assert "required" in data["error"].lower()
+
+
+def test_register_missing_email(api_base_url):
+    """Test registration fails when email is absent."""
+    response = requests.post(
+        f"{api_base_url}/register",
+        json={
+            "username": "testuser_missing_email",
+            "password": "TestPass123!",
+            "passwordConfirm": "TestPass123!",
+            "firstName": "Test",
+            "lastName": "User"
+        },
+        headers={"Content-Type": "application/json"},
+        timeout=10
+    )
+
+    assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert "error" in data
+    assert data["error"] == "Email is required"
+
+
+def test_register_blank_email(api_base_url):
+    """Test registration fails when email is blank."""
+    response = requests.post(
+        f"{api_base_url}/register",
+        json={
+            "username": "testuser_blank_email",
+            "password": "TestPass123!",
+            "passwordConfirm": "TestPass123!",
+            "email": "   ",
+            "firstName": "Test",
+            "lastName": "User"
+        },
+        headers={"Content-Type": "application/json"},
+        timeout=10
+    )
+
+    assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert "error" in data
+    assert data["error"] == "Email is required"
 
 
 def test_register_invalid_json(api_base_url):
@@ -103,7 +143,6 @@ def test_register_duplicate_username(api_base_url, test_user_credentials):
             "password": test_user_credentials["password"],
             "passwordConfirm": test_user_credentials["passwordConfirm"],
             "email": test_user_credentials["email"],
-            "phoneNumber": test_user_credentials["phoneNumber"],
             "firstName": test_user_credentials["firstName"],
             "lastName": test_user_credentials["lastName"]
         },
@@ -121,7 +160,6 @@ def test_register_duplicate_username(api_base_url, test_user_credentials):
             "password": "DifferentPass123!",
             "passwordConfirm": "DifferentPass123!",
             "email": f"different_{timestamp}@example.com",
-            "phoneNumber": f"+1555{timestamp % 10000000:07d}",
             "firstName": "Different",
             "lastName": "User"
         },
@@ -148,7 +186,6 @@ def test_register_email_lowercase_normalization(api_base_url, test_user_credenti
             "password": test_user_credentials["password"],
             "passwordConfirm": test_user_credentials["passwordConfirm"],
             "email": uppercase_email,
-            "phoneNumber": test_user_credentials["phoneNumber"],
             "firstName": test_user_credentials["firstName"],
             "lastName": test_user_credentials["lastName"]
         },
@@ -172,7 +209,6 @@ def test_register_whitespace_normalization(api_base_url, test_user_credentials):
             "password": f"  {test_user_credentials['password']}  ",
             "passwordConfirm": f"  {test_user_credentials['password']}  ",
             "email": f"  {test_user_credentials['email']}  ",
-            "phoneNumber": f"  {test_user_credentials['phoneNumber']}  ",
             "firstName": f"  {test_user_credentials['firstName']}  ",
             "lastName": f"  {test_user_credentials['lastName']}  "
         },
@@ -194,7 +230,6 @@ def test_register_duplicate_email(api_base_url, test_user_credentials):
             "password": test_user_credentials["password"],
             "passwordConfirm": test_user_credentials["passwordConfirm"],
             "email": test_user_credentials["email"],
-            "phoneNumber": test_user_credentials["phoneNumber"],
             "firstName": test_user_credentials["firstName"],
             "lastName": test_user_credentials["lastName"]
         },
@@ -213,7 +248,6 @@ def test_register_duplicate_email(api_base_url, test_user_credentials):
             "password": "DifferentPass123!",
             "passwordConfirm": "DifferentPass123!",
             "email": test_user_credentials["email"],  # Same email
-            "phoneNumber": f"+1555{timestamp % 10000000:07d}",  # Different phone
             "firstName": "Different",
             "lastName": "User"
         },
@@ -230,52 +264,6 @@ def test_register_duplicate_email(api_base_url, test_user_credentials):
     assert data["error"] == "An account with this email already exists"
 
 
-def test_register_duplicate_phone(api_base_url, test_user_credentials):
-    """Test registration with existing phone number."""
-    # Register first time
-    response1 = requests.post(
-        f"{api_base_url}/register",
-        json={
-            "username": test_user_credentials["username"],
-            "password": test_user_credentials["password"],
-            "passwordConfirm": test_user_credentials["passwordConfirm"],
-            "email": test_user_credentials["email"],
-            "phoneNumber": test_user_credentials["phoneNumber"],
-            "firstName": test_user_credentials["firstName"],
-            "lastName": test_user_credentials["lastName"]
-        },
-        headers={"Content-Type": "application/json"},
-        timeout=10
-    )
-    assert response1.status_code == 201, f"First registration failed: {response1.text}"
-
-    # Try to register again with same phone number but different username and email
-    timestamp = int(time.time())
-    random_suffix = ''.join(random.choices(string.ascii_lowercase, k=4))
-    response2 = requests.post(
-        f"{api_base_url}/register",
-        json={
-            "username": f"different_user_{timestamp}_{random_suffix}",
-            "password": "DifferentPass123!",
-            "passwordConfirm": "DifferentPass123!",
-            "email": f"different_{timestamp}_{random_suffix}@example.com",  # Different email
-            "phoneNumber": test_user_credentials["phoneNumber"],  # Same phone
-            "firstName": "Different",
-            "lastName": "User"
-        },
-        headers={"Content-Type": "application/json"},
-        timeout=10
-    )
-
-    assert response2.status_code == 409, f"Expected 409, got {response2.status_code}: {response2.text}"
-    data = response2.json()
-    assert "error" in data
-    assert "phone" in data["error"].lower()
-    assert "already exists" in data["error"].lower()
-    # Verify exact error message
-    assert data["error"] == "An account with this phone number already exists"
-
-
 def test_register_duplicate_email_case_insensitive(api_base_url, test_user_credentials):
     """Test that duplicate email check is case-insensitive (email is normalized to lowercase)."""
     # Register first time with lowercase email
@@ -286,7 +274,6 @@ def test_register_duplicate_email_case_insensitive(api_base_url, test_user_crede
             "password": test_user_credentials["password"],
             "passwordConfirm": test_user_credentials["passwordConfirm"],
             "email": test_user_credentials["email"],
-            "phoneNumber": test_user_credentials["phoneNumber"],
             "firstName": test_user_credentials["firstName"],
             "lastName": test_user_credentials["lastName"]
         },
@@ -306,7 +293,6 @@ def test_register_duplicate_email_case_insensitive(api_base_url, test_user_crede
             "password": "DifferentPass123!",
             "passwordConfirm": "DifferentPass123!",
             "email": uppercase_email,  # Same email, different case
-            "phoneNumber": f"+1555{timestamp % 10000000:07d}",  # Different phone
             "firstName": "Different",
             "lastName": "User"
         },
@@ -320,50 +306,6 @@ def test_register_duplicate_email_case_insensitive(api_base_url, test_user_crede
     assert "error" in data
     assert "email" in data["error"].lower()
     # Verify exact error message (case-insensitive check should work)
-    assert data["error"] == "An account with this email already exists"
-
-
-def test_register_duplicate_email_and_phone(api_base_url, test_user_credentials):
-    """Test that when both email and phone are duplicates, email check happens first."""
-    # Register first time
-    response1 = requests.post(
-        f"{api_base_url}/register",
-        json={
-            "username": test_user_credentials["username"],
-            "password": test_user_credentials["password"],
-            "passwordConfirm": test_user_credentials["passwordConfirm"],
-            "email": test_user_credentials["email"],
-            "phoneNumber": test_user_credentials["phoneNumber"],
-            "firstName": test_user_credentials["firstName"],
-            "lastName": test_user_credentials["lastName"]
-        },
-        headers={"Content-Type": "application/json"},
-        timeout=10
-    )
-    assert response1.status_code == 201, f"First registration failed: {response1.text}"
-
-    # Try to register again with both same email and phone number
-    timestamp = int(time.time())
-    random_suffix = ''.join(random.choices(string.ascii_lowercase, k=4))
-    response2 = requests.post(
-        f"{api_base_url}/register",
-        json={
-            "username": f"different_user_{timestamp}_{random_suffix}",
-            "password": "DifferentPass123!",
-            "passwordConfirm": "DifferentPass123!",
-            "email": test_user_credentials["email"],  # Same email
-            "phoneNumber": test_user_credentials["phoneNumber"],  # Same phone
-            "firstName": "Different",
-            "lastName": "User"
-        },
-        headers={"Content-Type": "application/json"},
-        timeout=10
-    )
-
-    # Should return 409 for email (email is checked first)
-    assert response2.status_code == 409, f"Expected 409, got {response2.status_code}: {response2.text}"
-    data = response2.json()
-    assert "error" in data
     assert data["error"] == "An account with this email already exists"
 
 
@@ -393,7 +335,6 @@ def test_register_invalid_email_format(api_base_url):
                 "password": "TestPass123!",
                 "passwordConfirm": "TestPass123!",
                 "email": invalid_email,
-                "phoneNumber": f"+1555{timestamp % 10000000:07d}",
                 "firstName": "Test",
                 "lastName": "User"
             },
@@ -404,46 +345,6 @@ def test_register_invalid_email_format(api_base_url):
         # Cognito should reject clearly invalid email formats
         # If it returns 201, that means Cognito accepted it (which is fine, we just verify it doesn't crash)
         assert response.status_code in [400, 201], f"Unexpected status {response.status_code} for email '{invalid_email}': {response.text}"
-        
-        if response.status_code == 400:
-            data = response.json()
-            assert "error" in data
-            # Error message should be user-friendly (sanitized by parseCognitoError)
-            assert len(data["error"]) > 0
-
-
-def test_register_invalid_phone_format(api_base_url):
-    """Test registration with invalid phone number format - Cognito will reject or accept based on its validation."""
-    # These are phone numbers that should be rejected by Cognito
-    # Note: Some formats might be normalized and accepted, so we test the ones that should definitely fail
-    invalid_phones = [
-        "123",  # Too short
-        "abc123",  # Contains letters (non-numeric)
-        "+0",  # Invalid country code (starts with 0)
-    ]
-    
-    for idx, invalid_phone in enumerate(invalid_phones):
-        timestamp = int(time.time())
-        random_suffix = ''.join(random.choices(string.ascii_lowercase, k=4))
-        
-        response = requests.post(
-            f"{api_base_url}/register",
-            json={
-                "username": f"testuser_{timestamp}_{random_suffix}_{idx}",
-                "password": "TestPass123!",
-                "passwordConfirm": "TestPass123!",
-                "email": f"test_{timestamp}_{random_suffix}_{idx}@example.com",
-                "phoneNumber": invalid_phone,
-                "firstName": "Test",
-                "lastName": "User"
-            },
-            headers={"Content-Type": "application/json"},
-            timeout=10
-        )
-        
-        # Cognito should reject clearly invalid phone formats
-        # If it returns 201, that means Cognito accepted it (which is fine, we just verify it doesn't crash)
-        assert response.status_code in [400, 201], f"Unexpected status {response.status_code} for phone '{invalid_phone}': {response.text}"
         
         if response.status_code == 400:
             data = response.json()
@@ -475,7 +376,6 @@ def test_register_weak_password_too_short(api_base_url):
                 "password": weak_password,
                 "passwordConfirm": weak_password,
                 "email": f"test_{timestamp}_{random_suffix}_{idx}@example.com",
-                "phoneNumber": f"+1555{timestamp % 10000000:07d}",
                 "firstName": "Test",
                 "lastName": "User"
             },
@@ -513,7 +413,6 @@ def test_register_weak_password_missing_requirements(api_base_url):
                 "password": weak_password,
                 "passwordConfirm": weak_password,
                 "email": f"test_{timestamp}_{random_suffix}_{idx}@example.com",
-                "phoneNumber": f"+1555{timestamp % 10000000:07d}",
                 "firstName": "Test",
                 "lastName": "User"
             },
@@ -590,7 +489,6 @@ def test_register_response_structure_success(api_base_url, test_user_credentials
             "password": test_user_credentials["password"],
             "passwordConfirm": test_user_credentials["passwordConfirm"],
             "email": test_user_credentials["email"],
-            "phoneNumber": test_user_credentials["phoneNumber"],
             "firstName": test_user_credentials["firstName"],
             "lastName": test_user_credentials["lastName"]
         },
@@ -672,7 +570,6 @@ def test_register_response_structure_duplicate(api_base_url, test_user_credentia
             "password": test_user_credentials["password"],
             "passwordConfirm": test_user_credentials["passwordConfirm"],
             "email": test_user_credentials["email"],
-            "phoneNumber": test_user_credentials["phoneNumber"],
             "firstName": test_user_credentials["firstName"],
             "lastName": test_user_credentials["lastName"]
         },
@@ -690,7 +587,6 @@ def test_register_response_structure_duplicate(api_base_url, test_user_credentia
             "password": "DifferentPass123!",
             "passwordConfirm": "DifferentPass123!",
             "email": f"different_{timestamp}@example.com",
-            "phoneNumber": f"+1555{timestamp % 10000000:07d}",
             "firstName": "Different",
             "lastName": "User"
         },

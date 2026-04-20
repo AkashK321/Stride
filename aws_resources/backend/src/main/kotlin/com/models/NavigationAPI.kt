@@ -21,3 +21,14 @@ data class Destination(
 data class StartLocation(
     val node_id: String
 )
+
+data class LiveNavigationRequest(
+    val session_id: String,
+    val request_id: String,
+    val timestamp_ms: Long,
+    val image_base64: String,
+    val focal_length_pixels: Double,
+    val heading_degrees: Double,
+    val distance_traveled: Double,
+    val gps: Map<String, Double>
+)

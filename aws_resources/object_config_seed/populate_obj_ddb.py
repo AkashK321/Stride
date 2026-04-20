@@ -105,6 +105,9 @@ COCO_DATA = [
     {"id": 77, "name": "teddy bear", "h": 0.40},
     {"id": 78, "name": "hair drier", "h": 0.20},
     {"id": 79, "name": "toothbrush", "h": 0.15},
+
+    # --- CUSTOM (Stride-trained) ---
+    {"id": 80, "name": "sign", "h": 0.15},
 ]
 
 dynamodb = boto3.resource("dynamodb")

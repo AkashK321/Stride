@@ -26,16 +26,7 @@ export interface NavigationFrameMessage {
     altitude_accuracy: number | null;
     speed: number | null;
   } | null;
-  accelerometer: {
-    x: number;
-    y: number;
-    z: number;
-  } | null;
-  gyroscope: {
-    x: number;
-    y: number;
-    z: number;
-  } | null;
+  distance_traveled: number;
   timestamp_ms: number;
   request_id: number;
 }
@@ -206,7 +197,8 @@ export class NavigationWebSocket {
             
             // Calculate latency if request_id is present
             if (data.request_id !== undefined) {
-              const sentTime = this._pendingRequests.get(data.request_id);
+              const pendingId = Number(data.request_id);
+              const sentTime = this._pendingRequests.get(pendingId);
               if (sentTime !== undefined) {
                 const latency = Date.now() - sentTime;
                 data.latency_ms = latency;
@@ -328,7 +320,7 @@ export class NavigationWebSocket {
       // - Base64 encoding overhead (already included in image_base64)
       // - JSON metadata (session_id, sensors, etc.)
       // - Any WebSocket frame overhead
-      const MAX_PAYLOAD_SIZE_BYTES = 25 * 1024;
+      const MAX_PAYLOAD_SIZE_BYTES = 30 * 1024;
       
       if (payloadSizeBytes > MAX_PAYLOAD_SIZE_BYTES) {
         console.warn(

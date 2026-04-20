@@ -57,6 +57,13 @@ const DEVICE_CAMERA_SPECS: Record<string, CameraSpec> = {
   "SM-S928B": { focalLengthMm: 6.3, sensorWidthMm: 8.16 }, // S24 Ultra model number
   "SM-S921B": { focalLengthMm: 6.3, sensorWidthMm: 7.0 }, // S24 model number
 
+  // Android Hardware Model Prefixes (modelName returns "model name" instead of "product name" for some devices)
+  "SM-S928": { focalLengthMm: 6.3, sensorWidthMm: 8.16 }, // All S24 Ultra variants
+  "SM-S921": { focalLengthMm: 6.3, sensorWidthMm: 7.0 },  // All S24 variants
+  "SM-S918": { focalLengthMm: 6.3, sensorWidthMm: 8.16 }, // All S23 Ultra variants (Matches SM-S918U1)
+  "SM-S916": { focalLengthMm: 6.3, sensorWidthMm: 7.0 },  // All S23+ variants
+  "SM-S911": { focalLengthMm: 6.3, sensorWidthMm: 7.0 },  // All S23 variants
+
   // Google Pixel models
   "Pixel 8 Pro": { focalLengthMm: 6.9, sensorWidthMm: 8.2 },
   "Pixel 8": { focalLengthMm: 6.81, sensorWidthMm: 7.0 },
@@ -85,14 +92,22 @@ export function getFocalLengthPixels(
     return DEFAULT_FOCAL_LENGTH_PIXELS;
   }
 
-  const spec = DEVICE_CAMERA_SPECS[modelName];
+  var spec = DEVICE_CAMERA_SPECS[modelName];
 
+  // If no exact match, try prefix matching (Works for Androids: "SM-S918U1" -> matches "SM-S918")
   if (!spec) {
-    console.warn(
+    const matchingKey = Object.keys(DEVICE_CAMERA_SPECS).find((key) =>
+      modelName.startsWith(key)
+    );
+    if (matchingKey) {
+      spec = DEVICE_CAMERA_SPECS[matchingKey];
+    } else {
+      console.warn(
       `No camera spec for device "${modelName}", using default focal length:`,
       DEFAULT_FOCAL_LENGTH_PIXELS,
-    );
-    return DEFAULT_FOCAL_LENGTH_PIXELS;
+      );
+      return DEFAULT_FOCAL_LENGTH_PIXELS;
+    }
   }
 
   const focalLengthPixels =

@@ -1,15 +1,14 @@
 /**
- * Register Contact screen - Step 3: Email and Contact information
+ * Register Contact screen - Step 3: Email information
  *
- * This screen collects email and phone number to complete registration.
+ * This screen collects email to complete registration.
  * Users submit the registration from this screen and are automatically logged in.
  */
 
 import * as React from "react";
-import { View, Text, Alert, Pressable, Keyboard, TouchableWithoutFeedback, TextInput, ScrollView } from "react-native";
+import { Text, Alert, Keyboard, TouchableWithoutFeedback, TextInput, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { parsePhoneNumber, AsYouType } from "libphonenumber-js";
 import Button from "../../components/Button";
 import TextField from "../../components/TextField";
 import Label from "../../components/Label";
@@ -30,99 +29,29 @@ export default function RegisterContact() {
   }>();
 
   const emailRef = React.useRef<TextInput>(null);
-  const phoneNumberRef = React.useRef<TextInput>(null);
 
   const [email, setEmail] = React.useState("");
   const [emailError, setEmailError] = React.useState("");
-  const [phoneNumber, setPhoneNumber] = React.useState("");
-  const [phoneNumberError, setPhoneNumberError] = React.useState("");
   const [isLoading, setIsLoading] = React.useState(false);
 
-  // Format phone number as user types (defaults to US format)
-  const handlePhoneNumberChange = (text: string) => {
-    // Extract only digits and + sign (for country codes)
-    // This allows natural deletion without formatting interference
-    // By always extracting digits first, deletion works naturally because:
-    // 1. User types/deletes -> TextInput gives us the new text
-    // 2. We extract digits from that text
-    // 3. We format those digits
-    // This way, deletion of any character (digit or formatting) works correctly
-    const digitsOnly = text.replace(/[^\d+]/g, "");
-    
-    // Use AsYouType formatter for natural formatting
-    // It will automatically format as user types: (812) 294-9840
-    // Pass only the digits to the formatter so it can format correctly
-    const formatter = new AsYouType("US"); // Default to US, but will auto-detect country code if + is present
-    const formatted = formatter.input(digitsOnly);
-    
-    setPhoneNumber(formatted);
-    setPhoneNumberError(""); // Clear error when user starts typing
-  };
-
-  // Convert phone number to E.164 format for API
-  const formatPhoneToE164 = (phone: string): string | null => {
-    if (!phone.trim()) {
-      return null;
-    }
-
-    try {
-      // Try to parse the phone number
-      const phoneNumber = parsePhoneNumber(phone, "US"); // Default to US if no country code
-      
-      if (phoneNumber && phoneNumber.isValid()) {
-        return phoneNumber.number; // Returns E.164 format (e.g., +18122949840)
-      }
-      
-      // If parsing fails, try to add US country code if it's a 10-digit number
-      const digitsOnly = phone.replace(/\D/g, "");
-      if (digitsOnly.length === 10) {
-        return `+1${digitsOnly}`;
-      }
-      
-      // If it starts with +, try to parse it
-      if (phone.startsWith("+")) {
-        const parsed = parsePhoneNumber(phone);
-        if (parsed && parsed.isValid()) {
-          return parsed.number;
-        }
-      }
-      
-      return null;
-    } catch (error) {
-      console.error("Phone number parsing error:", error);
-      return null;
-    }
+  const handleEmailChange = (text: string) => {
+    setEmail(text);
+    setEmailError("");
   };
 
   const handleRegister = async () => {
     // Clear previous errors
     setEmailError("");
-    setPhoneNumberError("");
 
     // Validate inputs
-    let hasErrors = false;
-
-    if (!email.trim()) {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
       setEmailError("Email is required");
-      hasErrors = true;
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
       setEmailError("Please enter a valid email address");
-      hasErrors = true;
-    }
-
-    if (!phoneNumber.trim()) {
-      setPhoneNumberError("Phone number is required");
-      hasErrors = true;
-    } else {
-      // Validate and convert phone number to E.164 format
-      const e164Phone = formatPhoneToE164(phoneNumber);
-      if (!e164Phone) {
-        setPhoneNumberError("Please enter a valid phone number");
-        hasErrors = true;
-      }
-    }
-
-    if (hasErrors) {
       return;
     }
 
@@ -136,24 +65,18 @@ export default function RegisterContact() {
     setIsLoading(true);
 
     try {
-      // Convert phone number to E.164 format
-      const e164Phone = formatPhoneToE164(phoneNumber);
-      if (!e164Phone) {
-        setPhoneNumberError("Please enter a valid phone number");
-        setIsLoading(false);
-        return;
-      }
-
-      // Call register API with all data
-      await register({
+      const trimmedEmail = email.trim();
+      const registrationPayload = {
         username: params.username,
         password: params.password,
         passwordConfirm: params.password,
-        email: email.trim(),
-        phoneNumber: e164Phone, // Use E.164 formatted phone number
         firstName: params.firstName,
         lastName: params.lastName,
-      });
+        email: trimmedEmail,
+      };
+
+      // Call register API with all provided data
+      await register(registrationPayload);
 
       // Automatically log the user in after successful registration
       try {
@@ -208,8 +131,6 @@ export default function RegisterContact() {
         );
       } else if (errorLower.includes("email") || errorLower.includes("already exists")) {
         setEmailError("An account with this email already exists");
-      } else if (errorLower.includes("phone") || errorLower.includes("already exists")) {
-        setPhoneNumberError("An account with this phone number already exists");
       } else if (errorLower.includes("password")) {
         // Password issue - need to go back to step 2
         Alert.alert(
@@ -293,43 +214,24 @@ export default function RegisterContact() {
             },
             accessibilityLabel: "Registration form step 2",
           },
-          "Step 3 of 3: Email & Contact"
+          "Step 3 of 3: Email"
         ),
         React.createElement(TextField, {
           ref: emailRef,
           value: email,
-          onChangeText: setEmail,
+          onChangeText: handleEmailChange,
           error: emailError,
           autoCapitalize: "none",
           autoComplete: "email",
           keyboardType: "email-address",
-          returnKeyType: "next",
-          onSubmitEditing: () => {
-            phoneNumberRef.current?.focus();
-          },
-          placeholder: "Email",
-          accessibilityLabel: "Email",
-          accessibilityHint: "Enter your email address. Press next to move to phone number field.",
-          style: {
-            width: "100%",
-            marginBottom: spacing.md,
-          },
-        }),
-        React.createElement(TextField, {
-          ref: phoneNumberRef,
-          value: phoneNumber,
-          onChangeText: handlePhoneNumberChange,
-          error: phoneNumberError,
-          autoComplete: "tel",
-          keyboardType: "phone-pad",
           returnKeyType: "done",
           onSubmitEditing: handleRegister,
-          placeholder: "Phone Number",
-          accessibilityLabel: "Phone Number",
-          accessibilityHint: "Enter your phone number (e.g., (812) 294-9840). It will be automatically formatted.",
+          placeholder: "Email",
+          accessibilityLabel: "Email",
+          accessibilityHint: "Enter your email address.",
           style: {
             width: "100%",
-            marginBottom: spacing.md,
+            marginBottom: spacing.xs,
           },
         }),
         React.createElement(Button, {

@@ -1,0 +1,13 @@
+train: train/images
+val: valid/images
+test: test/images
+
+nc: 1
+names: ['sign']
+
+roboflow:
+  workspace: stride-workspace
+  project: stride-workspace
+  version: dataset
+  license: Private
+  url: https://app.roboflow.com/stride-workspace/stride-workspace/dataset

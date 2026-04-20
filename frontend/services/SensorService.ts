@@ -725,9 +725,11 @@
  * This service will remain in production, only the dev UI will be removed
  */
 
-import { Accelerometer, Gyroscope, Magnetometer } from 'expo-sensors';
-import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
+import { Accelerometer, Gyroscope, Magnetometer } from "expo-sensors";
+import * as Location from "expo-location";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
+import { headingDegreesFromExpoHeading } from "../utils/locationHeading";
 
 export interface Vector3D {
   x: number;
@@ -744,7 +746,10 @@ export interface SensorReading {
 
 export interface LocalizationData {
   position: Vector3D;
+  /** Smoothed heading from expo-location (true north when available). */
   heading: number;
+  /** Latest single-sample heading from expo-location (same source as navigation payloads). */
+  headingRawDeg: number | null;
   stepCount: number;
   distance: number;
 }
@@ -756,6 +761,9 @@ class SensorService {
   private accelSubscription: any = null;
   private gyroSubscription: any = null;
   private magnetSubscription: any = null;
+  private headingWatchSubscription: Location.LocationSubscription | null = null;
+  /** Bumped in stopMonitoring so a late watchHeadingAsync resolve does not reattach after stop. */
+  private headingWatchGeneration = 0;
   private updateInterval: any = null;
   
   // Current sensor data
@@ -769,16 +777,12 @@ class SensorService {
   private stepCount: number = 0;
   private distance: number = 0;
   
-  // Heading smoothing (increased filter size for stability)
+  // Heading from expo-location (aligned with useSensorData / backend payloads)
+  private lastExpoHeadingRawDeg: number | null = null;
+
+  // Heading smoothing (moving average on expo samples)
   private headingHistory: number[] = [];
-  private readonly HEADING_FILTER_SIZE = 10; // Average last 10 samples for smoother heading
-  
-  // Calibration data
-  private isCalibrated: boolean = false;
-  private accelBaseline: Vector3D = { x: 0, y: 0, z: 0 };
-  private gyroBaseline: Vector3D = { x: 0, y: 0, z: 0 };
-  private magnetBaseline: Vector3D = { x: 0, y: 0, z: 0 };
-  private headingOffset: number = 0;
+  private readonly HEADING_FILTER_SIZE = 10;
   
   // Dev logging (can be disabled in production)
   private isLogging: boolean = false;
@@ -847,10 +851,35 @@ class SensorService {
       this.currentMagnet = { x, y, z };
     });
 
+    void this.startLocationHeadingWatch();
+
     // Use interval to collect data at consistent rate
     this.updateInterval = setInterval(() => {
       this.processUpdate();
     }, this.UPDATE_INTERVAL);
+  }
+
+  private async startLocationHeadingWatch() {
+    const generation = ++this.headingWatchGeneration;
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (generation !== this.headingWatchGeneration) return;
+      if (status !== "granted") {
+        console.warn("SensorService: foreground location permission denied; heading unavailable");
+        return;
+      }
+      this.headingWatchSubscription?.remove();
+      const sub = await Location.watchHeadingAsync((h) => {
+        this.lastExpoHeadingRawDeg = headingDegreesFromExpoHeading(h);
+      });
+      if (generation !== this.headingWatchGeneration) {
+        sub.remove();
+        return;
+      }
+      this.headingWatchSubscription = sub;
+    } catch (e) {
+      console.warn("SensorService: watchHeadingAsync failed", e);
+    }
   }
   
   /**
@@ -873,6 +902,11 @@ class SensorService {
     if (this.magnetSubscription) {
       this.magnetSubscription.remove();
       this.magnetSubscription = null;
+    }
+    this.headingWatchGeneration++;
+    if (this.headingWatchSubscription) {
+      this.headingWatchSubscription.remove();
+      this.headingWatchSubscription = null;
     }
   }
   
@@ -959,9 +993,6 @@ class SensorService {
       timestamp: Date.now(),
     };
     
-    // Apply calibration to get corrected reading
-    const calibratedReading = this.applyCalibratedReading(reading);
-    
     // DEV: Add to log buffer if logging (use RAW data for logging)
     if (this.isLogging) {
       this.logBuffer.push(reading);
@@ -971,51 +1002,18 @@ class SensorService {
       }
     }
     
-    // PRODUCTION: Process localization with CALIBRATED data
-    this.updateLocalization(calibratedReading);
+    this.updateLocalization(reading);
     
-    // Notify subscribers with CALIBRATED data
-    this.updateCallbacks.forEach(callback => callback(calibratedReading));
+    this.updateCallbacks.forEach(callback => callback(reading));
   }
   
   /**
    * Update localization data (used in production)
    */
   private updateLocalization(reading: SensorReading) {
-    // Calculate tilt-compensated heading from magnetometer and accelerometer
-    const { x: ax, y: ay, z: az } = reading.accelerometer;
-    const { x: mx, y: my, z: mz } = reading.magnetometer;
-    
-    // Calculate roll and pitch from accelerometer
-    const roll = Math.atan2(ay, az);
-    const pitch = Math.atan2(-ax, Math.sqrt(ay * ay + az * az));
-    
-    // Tilt compensation for magnetometer
-    // Rotate magnetometer readings to compensate for phone tilt
-    const magX = mx * Math.cos(pitch) + mz * Math.sin(pitch);
-    const magY = mx * Math.sin(roll) * Math.sin(pitch) + 
-                 my * Math.cos(roll) - 
-                 mz * Math.sin(roll) * Math.cos(pitch);
-    
-    // Calculate heading (yaw) - now tilt-compensated
-    let rawHeading = Math.atan2(-magY, magX) * (180 / Math.PI);
-    
-    // Normalize to 0-360
-    if (rawHeading < 0) rawHeading += 360;
-    
-    // Apply heading offset if calibrated
-    let currentHeading: number;
-    if (this.isCalibrated) {
-      currentHeading = rawHeading - this.headingOffset;
-      // Normalize to 0-360
-      if (currentHeading < 0) currentHeading += 360;
-      if (currentHeading >= 360) currentHeading -= 360;
-    } else {
-      currentHeading = rawHeading;
+    if (this.lastExpoHeadingRawDeg !== null) {
+      this.heading = this.smoothHeading(this.lastExpoHeadingRawDeg);
     }
-    
-    // Apply smoothing filter to reduce noise
-    this.heading = this.smoothHeading(currentHeading);
     
     // Simple step detection
     const accelMagnitude = Math.sqrt(
@@ -1036,6 +1034,7 @@ class SensorService {
     const locData: LocalizationData = {
       position: this.position,
       heading: this.heading,
+      headingRawDeg: this.lastExpoHeadingRawDeg,
       stepCount: this.stepCount,
       distance: this.distance,
     };
@@ -1118,6 +1117,7 @@ class SensorService {
     return {
       position: { ...this.position },
       heading: this.heading,
+      headingRawDeg: this.lastExpoHeadingRawDeg,
       stepCount: this.stepCount,
       distance: this.distance,
     };
@@ -1146,178 +1146,6 @@ class SensorService {
    */
   public getSessionId(): string | null {
     return this.sessionId;
-  }
-  
-  /**
-   * Calibrate sensors - captures current state as baseline
-   * User should be stationary with phone in desired reference orientation
-   */
-  public async calibrate(samples: number = 100): Promise<void> {
-    const accelSamples: Vector3D[] = [];
-    const gyroSamples: Vector3D[] = [];
-    const magnetSamples: Vector3D[] = [];
-    
-    // Collect samples over ~1 second
-    for (let i = 0; i < samples; i++) {
-      accelSamples.push({ ...this.currentAccel });
-      gyroSamples.push({ ...this.currentGyro });
-      magnetSamples.push({ ...this.currentMagnet });
-      
-      // Wait 10ms between samples
-      await new Promise(resolve => setTimeout(resolve, 10));
-    }
-    
-    // Calculate averages
-    this.accelBaseline = {
-      x: accelSamples.reduce((sum, s) => sum + s.x, 0) / samples,
-      y: accelSamples.reduce((sum, s) => sum + s.y, 0) / samples,
-      z: accelSamples.reduce((sum, s) => sum + s.z, 0) / samples,
-    };
-    
-    this.gyroBaseline = {
-      x: gyroSamples.reduce((sum, s) => sum + s.x, 0) / samples,
-      y: gyroSamples.reduce((sum, s) => sum + s.y, 0) / samples,
-      z: gyroSamples.reduce((sum, s) => sum + s.z, 0) / samples,
-    };
-    
-    this.magnetBaseline = {
-      x: magnetSamples.reduce((sum, s) => sum + s.x, 0) / samples,
-      y: magnetSamples.reduce((sum, s) => sum + s.y, 0) / samples,
-      z: magnetSamples.reduce((sum, s) => sum + s.z, 0) / samples,
-    };
-    
-    // Calculate initial heading offset using tilt compensation
-    const { x: ax, y: ay, z: az } = this.accelBaseline;
-    const { x: mx, y: my, z: mz } = this.magnetBaseline;
-    
-    // Calculate roll and pitch from accelerometer baseline
-    const roll = Math.atan2(ay, az);
-    const pitch = Math.atan2(-ax, Math.sqrt(ay * ay + az * az));
-    
-    // Tilt-compensated magnetometer
-    const magX = mx * Math.cos(pitch) + mz * Math.sin(pitch);
-    const magY = mx * Math.sin(roll) * Math.sin(pitch) + 
-                 my * Math.cos(roll) - 
-                 mz * Math.sin(roll) * Math.cos(pitch);
-    
-    // Calculate heading offset
-    this.headingOffset = Math.atan2(-magY, magX) * (180 / Math.PI);
-    if (this.headingOffset < 0) this.headingOffset += 360;
-    
-    this.isCalibrated = true;
-    
-    // Save calibration to storage
-    await this.saveCalibration();
-  }
-  
-  /**
-   * Save calibration data to persistent storage
-   */
-  private async saveCalibration(): Promise<void> {
-    const calibrationData = {
-      accelBaseline: this.accelBaseline,
-      gyroBaseline: this.gyroBaseline,
-      magnetBaseline: this.magnetBaseline,
-      headingOffset: this.headingOffset,
-      timestamp: Date.now(),
-    };
-    
-    const calibrationPath = `${FileSystem.documentDirectory}sensor_calibration.json`;
-    await FileSystem.writeAsStringAsync(
-      calibrationPath,
-      JSON.stringify(calibrationData, null, 2)
-    );
-  }
-  
-  /**
-   * Load calibration data from persistent storage
-   */
-  public async loadCalibration(): Promise<boolean> {
-    try {
-      const calibrationPath = `${FileSystem.documentDirectory}sensor_calibration.json`;
-      const fileInfo = await FileSystem.getInfoAsync(calibrationPath);
-      
-      if (!fileInfo.exists) {
-        return false;
-      }
-      
-      const calibrationData = JSON.parse(
-        await FileSystem.readAsStringAsync(calibrationPath)
-      );
-      
-      this.accelBaseline = calibrationData.accelBaseline;
-      this.gyroBaseline = calibrationData.gyroBaseline;
-      this.magnetBaseline = calibrationData.magnetBaseline;
-      this.headingOffset = calibrationData.headingOffset;
-      this.isCalibrated = true;
-      
-      return true;
-    } catch (error) {
-      console.error('Error loading calibration:', error);
-      return false;
-    }
-  }
-  
-  /**
-   * Clear calibration data
-   */
-  public async clearCalibration(): Promise<void> {
-    this.isCalibrated = false;
-    this.accelBaseline = { x: 0, y: 0, z: 0 };
-    this.gyroBaseline = { x: 0, y: 0, z: 0 };
-    this.magnetBaseline = { x: 0, y: 0, z: 0 };
-    this.headingOffset = 0;
-    
-    try {
-      const calibrationPath = `${FileSystem.documentDirectory}sensor_calibration.json`;
-      const fileInfo = await FileSystem.getInfoAsync(calibrationPath);
-      if (fileInfo.exists) {
-        await FileSystem.deleteAsync(calibrationPath);
-      }
-    } catch (error) {
-      console.error('Error clearing calibration:', error);
-    }
-  }
-  
-  /**
-   * Get calibration status
-   */
-  public getCalibrationStatus() {
-    return {
-      isCalibrated: this.isCalibrated,
-      accelBaseline: { ...this.accelBaseline },
-      gyroBaseline: { ...this.gyroBaseline },
-      magnetBaseline: { ...this.magnetBaseline },
-      headingOffset: this.headingOffset,
-    };
-  }
-  
-  /**
-   * Apply calibration to sensor reading
-   */
-  private applyCalibratedReading(reading: SensorReading): SensorReading {
-    if (!this.isCalibrated) {
-      return reading;
-    }
-    
-    return {
-      accelerometer: {
-        x: reading.accelerometer.x - this.accelBaseline.x,
-        y: reading.accelerometer.y - this.accelBaseline.y,
-        z: reading.accelerometer.z - this.accelBaseline.z,
-      },
-      gyroscope: {
-        x: reading.gyroscope.x - this.gyroBaseline.x,
-        y: reading.gyroscope.y - this.gyroBaseline.y,
-        z: reading.gyroscope.z - this.gyroBaseline.z,
-      },
-      magnetometer: {
-        x: reading.magnetometer.x - this.magnetBaseline.x,
-        y: reading.magnetometer.y - this.magnetBaseline.y,
-        z: reading.magnetometer.z - this.magnetBaseline.z,
-      },
-      timestamp: reading.timestamp,
-    };
   }
   
   /**
