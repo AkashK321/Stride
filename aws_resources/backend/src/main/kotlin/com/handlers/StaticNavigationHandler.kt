@@ -31,6 +31,24 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
 
     private val rdsMapClient = RdsMapClient()
 
+    private fun logNavStartTrace(
+        logger: LambdaLogger,
+        event: String,
+        fields: Map<String, Any?>,
+    ) {
+        try {
+            val payload = linkedMapOf<String, Any?>(
+                "event" to event,
+                "source" to "StaticNavigationHandler",
+                "ts_ms" to System.currentTimeMillis(),
+            )
+            payload.putAll(fields)
+            logger.log("[nav-trace] ${mapper.writeValueAsString(payload)}")
+        } catch (e: Exception) {
+            logger.log("[nav-trace] failed_to_serialize event=$event error=${e.message}")
+        }
+    }
+
     override fun handleRequest(
         input: APIGatewayProxyRequestEvent,
         context: Context,
@@ -198,6 +216,22 @@ class StaticNavigationHandler : RequestHandler<APIGatewayProxyRequestEvent, APIG
             } catch (e: Exception) {
                 logger.log("Error initializing session in DynamoDB: ${e.message}")
             }
+            val firstInstruction = instructions.firstOrNull()
+            logNavStartTrace(
+                logger = logger,
+                event = "navigation_start_response_ready",
+                fields = mapOf(
+                    "session_id" to sessionId,
+                    "start_node_id" to startNodeId,
+                    "destination_landmark_id" to destLandmarkId,
+                    "destination_nearest_node_id" to destNodeId,
+                    "path_len" to pathNodes.size,
+                    "instructions_count" to instructions.size,
+                    "first_instruction_step" to firstInstruction?.step,
+                    "first_instruction_distance_feet" to firstInstruction?.distance_feet,
+                    "first_instruction_turn_intent" to firstInstruction?.turn_intent,
+                ),
+            )
 
             return NavigationStartResponse(
                 session_id = sessionId,

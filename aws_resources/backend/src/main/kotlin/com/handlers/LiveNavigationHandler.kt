@@ -38,9 +38,7 @@ import kotlin.math.log
 import kotlin.math.sqrt
 
 private val METERS_TO_FEET = 3.28084
-// Stored map coordinates are in feet (post-upload rotation only), so movement/progress
-// conversions are identity in live navigation.
-private val FEET_TO_PIXELS = 1.0
+private val FEET_TO_PIXELS = 10.0
 private val PIXEL_TO_FEET = 1.0 / FEET_TO_PIXELS
 private val MAX_DISTANCE_FEET = 15.0
 
@@ -65,6 +63,24 @@ class LiveNavigationHandler(
     )
 
     private val rdsMapClient = RdsMapClient()
+
+    private fun logNavTrace(
+        logger: LambdaLogger,
+        event: String,
+        fields: Map<String, Any?>,
+    ) {
+        try {
+            val tracePayload = linkedMapOf<String, Any?>(
+                "event" to event,
+                "source" to "LiveNavigationHandler",
+                "ts_ms" to System.currentTimeMillis(),
+            )
+            tracePayload.putAll(fields)
+            logger.log("[nav-trace] ${mapper.writeValueAsString(tracePayload)}")
+        } catch (e: Exception) {
+            logger.log("[nav-trace] failed_to_serialize event=$event error=${e.message}")
+        }
+    }
 
     private fun estimateUserLocation(payload: Map<String, Any?>, prevX: Double, prevY: Double, prevTimeMs: Long, logger: LambdaLogger): Pair<Double, Double> {
         val heading = (payload["heading_degrees"] as Number).toDouble()
@@ -326,6 +342,19 @@ class LiveNavigationHandler(
         val imageBase64 = payload["image_base64"] as String
         val focalLength = (payload["focal_length_pixels"] as Number).toDouble()
 
+        logNavTrace(
+            logger = logger,
+            event = "navigation_request_received",
+            fields = mapOf(
+                "session_id" to sessionId,
+                "request_id" to requestId,
+                "route_key" to routeKey,
+                "distance_traveled_input_ft" to (payload["distance_traveled"] as? Number)?.toDouble(),
+                "heading_degrees" to (payload["heading_degrees"] as? Number)?.toDouble(),
+                "timestamp_ms" to currentTimestampMs,
+            ),
+        )
+
         val sessionData = sessionTableClient.getItemDetails(sessionId)
         val previousX = sessionData?.get("current_x")?.toDoubleOrNull() ?: 0.0
         val previousY = sessionData?.get("current_y")?.toDoubleOrNull() ?: 0.0
@@ -455,6 +484,31 @@ class LiveNavigationHandler(
             )
             return APIGatewayV2WebSocketResponse().apply { statusCode = 500 }
         }
+
+        val activePath = pathNodesNew.takeIf { it.isNotEmpty() } ?: pathNodes
+        val logicalCurrentNodeId =
+            if (activePath.isNotEmpty() && currentStep < activePath.size) activePath[currentStep] else closestNodeId
+        val firstInstruction = instructions.firstOrNull()
+        logNavTrace(
+            logger = logger,
+            event = "navigation_update_computed",
+            fields = mapOf(
+                "session_id" to sessionId,
+                "request_id" to requestId,
+                "current_step" to currentStep,
+                "path_len" to activePath.size,
+                "closest_node_id" to closestNodeId,
+                "logical_current_node_id" to logicalCurrentNodeId,
+                "path_recalculated" to pathRecalculated,
+                "instructions_count" to instructions.size,
+                "first_instruction_step" to firstInstruction?.step,
+                "first_instruction_distance_feet" to firstInstruction?.distance_feet,
+                "first_instruction_turn_intent" to firstInstruction?.turn_intent,
+                "distance_traveled_input_ft" to (payload["distance_traveled"] as? Number)?.toDouble(),
+                "estimated_x" to estimatedX,
+                "estimated_y" to estimatedY,
+            ),
+        )
 
         // Update state in DynamoDB with new estimated location and timestamp. Set TTL for 2 hours to allow stale session cleanup.
         val ttlSeconds = (System.currentTimeMillis() / 1000) + 7200 // 2 hour expiration
