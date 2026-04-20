@@ -6,5 +6,6 @@ package com.models
 data class MapNode(
     val id: String,
     val coordX: Int,
-    val coordY: Int
+    val coordY: Int,
+    val nodeMeta: Map<String, Any>? = null
 )

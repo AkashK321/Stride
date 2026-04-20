@@ -1,10 +1,6 @@
 """
 Recompute and optionally apply true-compass bearings for existing MapEdges rows.
-
-Usage:
-  python recompute_edge_bearings.py --dry-run
-  python recompute_edge_bearings.py --apply
-  python recompute_edge_bearings.py --apply --floor-id 2
+Invoked by `python cli.py recompute-bearings`.
 """
 
 import argparse
@@ -14,11 +10,7 @@ import ssl
 import pg8000
 from dotenv import load_dotenv
 
-from populate_floor_data import (
-    align_bearing_to_true_north,
-    calculate_bearing,
-    get_db_secret,
-)
+from populate_floor_data import calculate_bearing, get_db_secret
 
 load_dotenv()
 
@@ -68,12 +60,10 @@ def _fetch_edges(cursor, floor_id=None):
 
 def _recompute_bearing(row):
     _, _, _, _, _, start_x, start_y, end_x, end_y = row
-    raw = calculate_bearing(start_x, start_y, end_x, end_y)
-    return align_bearing_to_true_north(raw)
+    return calculate_bearing(start_x, start_y, end_x, end_y)
 
 
-def main():
-    parser = argparse.ArgumentParser()
+def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--floor-id", type=int, default=None, help="Only recompute one floor")
     parser.add_argument("--apply", action="store_true", help="Write recomputed bearings to DB")
     parser.add_argument(
@@ -82,8 +72,9 @@ def main():
         default=0.05,
         help="Only count as changed if abs(delta) exceeds tolerance",
     )
-    args = parser.parse_args()
 
+
+def run_from_args(args: argparse.Namespace) -> int:
     conn = None
     try:
         conn = _connect()
@@ -127,7 +118,16 @@ def main():
     finally:
         if conn:
             conn.close()
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    add_arguments(parser)
+    args = parser.parse_args(argv)
+    return run_from_args(args)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
+

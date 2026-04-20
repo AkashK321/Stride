@@ -6,7 +6,8 @@
 #   Deploys AWS infrastructure: StrideSharedStack (shared RDS) plus the branch
 #   CloudFormation stack (Lambdas from backend-build JAR, API Gateway, DynamoDB, etc.).
 #   After deploy, reads shared RdsSecretArn, initializes the shared DB schema, and
-#   runs floor/map population. Single workflow entry point for AWS deploys.
+#   runs canonical map validation + population. COCO object-config seeding is
+#   handled separately.
 #
 # TRIGGERS:
 #   1. Called by backend-build (workflow_call):
@@ -140,8 +141,7 @@ jobs:
           cache: 'pip'
           cache-dependency-path: |
             aws_resources/requirements.txt
-            aws_resources/schema_initializer/requirements.txt
-            aws_resources/data_population/requirements.txt
+            aws_resources/map_population/requirements.txt
       
       # Step 5: Install Python dependencies
       - name: Install Python dependencies
@@ -149,9 +149,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          # Keep schema initializer deps in its own folder for runtime imports.
-          pip install --upgrade --target schema_initializer -r schema_initializer/requirements.txt
-          pip install -r data_population/requirements.txt
+          pip install -r map_population/requirements.txt
 
       # Step 6: Install jq (required for parsing stack outputs)
       - name: Install jq
@@ -289,7 +287,6 @@ jobs:
             jq -r 'keys[]' cdk-outputs.json
             echo "Debug: will fall back to CloudFormation for RdsSecretArn"
           fi
-
           # Branch stack: API, WebSocket, DynamoDB (per-environment)
           STACK_NAME=$(jq -r ".\"$BRANCH_STACK_KEY\".StackName // empty" cdk-outputs.json 2>/dev/null || echo "")
           if [ -z "$STACK_NAME" ] || [ "$STACK_NAME" == "null" ]; then
@@ -312,7 +309,8 @@ jobs:
             echo "Warning: Could not extract CocoConfigTableName from branch stack outputs"
           fi
 
-          # Shared RDS: single secret for schema + map seed (not emitted on branch stack)
+          # Shared RDS: resolve from outputs file first, then fallback to CloudFormation.
+          # cdk-outputs.json may only include stacks that emitted fresh outputs in this deploy run.
           STRIDE_DB_ARN=$(jq -r ".\"$SHARED_STACK_KEY\".RdsSecretArn // empty" cdk-outputs.json 2>/dev/null || echo "")
           if [ -z "$STRIDE_DB_ARN" ] || [ "$STRIDE_DB_ARN" == "null" ]; then
             echo "Warning: Could not extract RdsSecretArn from cdk-outputs.json for $SHARED_STACK_KEY"
@@ -396,39 +394,33 @@ jobs:
           echo "📋 Shared stack outputs ($SHARED_STACK_KEY):"
           jq ".\"$SHARED_STACK_KEY\"" cdk-outputs.json
 
-      # Step 14: Populate COCO Config DynamoDB Table
-      - name: Populate COCO Config DynamoDB Table
-        if: steps.stack-outputs.outputs.coco_config_table != ''
-        working-directory: aws_resources/schema_initializer
-        env:
-          TABLE_NAME: ${{ steps.stack-outputs.outputs.coco_config_table }}
-          AWS_REGION: us-east-1
-        run: |
-          echo "Running schema population script..."
-          python populate_obj_ddb.py
-
-      # Step 15: Initialize shared RDS schema (idempotent)
+      # Step 14: Initialize shared RDS schema (idempotent)
       - name: Initialize RDS Database Schema
-        working-directory: aws_resources/schema_initializer
+        working-directory: aws_resources/map_population
         env:
           DB_SECRET_ARN: ${{ steps.stack-outputs.outputs.stride_db_secret_arn }}
           AWS_REGION: us-east-1
+          SCHEMA_INIT_ALLOW_DESTRUCTIVE_RESET: "true"
         run: |
           echo "Running RDS schema initialization script..."
           python populate_rds.py
 
+      # Step 15: Validate map definitions before population
+      - name: Validate map definitions
+        working-directory: aws_resources/map_population
+        run: |
+          echo "Running map validation..."
+          python cli.py validate
+
       # Step 16: Populate shared RDS floor / map data (idempotent)
       - name: Populate shared RDS floor data
-        working-directory: aws_resources/data_population
+        working-directory: aws_resources/map_population
         env:
           DB_SECRET_ARN: ${{ steps.stack-outputs.outputs.stride_db_secret_arn }}
           AWS_REGION: us-east-1
-          TRUE_NORTH_OFFSET_DEGREES: "51"
-          BEARING_HORIZONTAL_FLIP: "true"
-          BEARING_HORIZONTAL_MODE: "bands"
         run: |
           echo "Running floor / map population..."
-          python run_population.py
+          python cli.py populate --coordinate-angle-offset 141 --side-by-bearing-offset 51
 
   integration-tests:
     name: Run Integration Tests

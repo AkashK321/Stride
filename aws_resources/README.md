@@ -77,31 +77,63 @@ cdk -a "python3 app.py" deploy StrideSharedStack "$STACK_NAME" --require-approva
 
 - **Infrastructure Deploy** (`.github/workflows/infrastructure-deploy.yaml`), when run after a successful backend build:
   - Deploys **`StrideSharedStack` and the branch stack** in one `cdk deploy` (shared RDS secret and branch API outputs are both written to `cdk-outputs.json`).
-  - Runs shared **RDS schema** and **floor/map population** using `RdsSecretArn` from the shared stack (idempotent).
+  - Runs shared **RDS schema** and canonical map seed sequence using `RdsSecretArn` from the shared stack (idempotent):
+    1. `python cli.py validate`
+    2. `python cli.py populate`
+- **Object Config Seed** (`.github/workflows/object-config-seed.yaml`): dedicated workflow for COCO class metadata seeding into DynamoDB; provide a table directly or resolve it from stack outputs.
 - **Shared Stack Deploy** (manual `workflow_dispatch`): optional path to deploy or repair **only** `StrideSharedStack` and initialize/populate the shared DB—see that workflow for one-off maintenance.
 - **Cleanup** workflow: deletes branch stacks after merge; **does not** delete `StrideSharedStack`.
 
-### Bearing alignment calibration (Issue 171)
+### Canonical CI/deploy command sequence
 
-`aws_resources/data_population/populate_floor_data.py` writes true-compass `MapEdges.Bearing` values using:
+Use this sequence across CI and operational workflows:
 
-- `TRUE_NORTH_OFFSET_DEGREES` (default `51`)
-- `BEARING_HORIZONTAL_FLIP` (default `true`)
-- `BEARING_HORIZONTAL_MODE` (`bands` or `cones`, default `bands`)
+1. Map validation: `python cli.py validate`
+2. Backend unit tests (`./gradlew test` in `aws_resources/backend`)
+3. Map population tests (`pytest tests/test_populate.py tests/test_data_validation.py`)
+4. Shared DB schema init (`python populate_rds.py` in `aws_resources/map_population`)
+5. Shared map seed (`python cli.py populate` in `aws_resources/map_population`)
 
-CI workflows set these variables on the floor-data population step so production values are reproducible. For existing deployed data, use:
+## Schema vs map tooling boundary
+
+- `schema_initializer` owns relational DDL only (table/index creation and schema reset safety controls).
+- `map_population` owns map-definition validation plus RDS map seed data writes (`Buildings`, `Floors`, `MapNodes`, `MapEdges`, `Landmarks`).
+- `object_config_seed` owns DynamoDB COCO class config seeding and is intentionally separate from map population.
+
+The current schema path is still drop/recreate. To prevent accidental destructive runs, schema init requires explicit opt-in:
 
 ```bash
-cd aws_resources/data_population
-python recompute_edge_bearings.py --dry-run
-python recompute_edge_bearings.py --apply
+cd aws_resources/map_population
+SCHEMA_INIT_ALLOW_DESTRUCTIVE_RESET=true python populate_rds.py
 ```
 
-For on-site validation checklist generation:
+Then run map seeding separately through the unified CLI:
 
 ```bash
-cd aws_resources/data_population
-python list_edges_for_bearing_check.py --all
+cd aws_resources/map_population
+python cli.py validate
+python cli.py populate
+```
+
+Run COCO config seeding through the dedicated tool/workflow, separately from map seeding:
+
+```bash
+cd aws_resources/object_config_seed
+TABLE_NAME=<coco-config-table-name> python populate_obj_ddb.py
+```
+
+### Map tooling commands
+
+Use the unified CLI:
+
+```bash
+cd aws_resources/map_population
+python cli.py validate
+python cli.py populate
+python cli.py plot-local --module floor_data.floor2_v2 --var FLOOR2_DATA_V2 --floor-number 2
+python cli.py plot-db --floor-number 2 --building-id B01 --show-edge-bearings
+python cli.py audit-bearings --all
+python cli.py recompute-bearings
 ```
 
 ## Verify deployments

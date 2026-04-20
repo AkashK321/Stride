@@ -5,8 +5,9 @@ Converts physical measurements (feet) to map coordinates and creates nodes, edge
 FIXED: All table/column names are CamelCase to match teammate's schema.
 """
 
-import os
+import copy
 import json
+import os
 import pg8000
 import boto3
 import logging
@@ -16,77 +17,9 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # Configuration
-FEET_TO_PIXELS = 10  # 1 foot = 10 pixels
-ORIGIN_X = 0
-ORIGIN_Y = 0
-
-# True-north alignment (ISSUE-171). Set via env so bearings match real compass.
-# TRUE_NORTH_OFFSET_DEGREES: angle to add to map bearings so 0° = true North.
-# BEARING_HORIZONTAL_FLIP: if "true"/"1", add 180° to horizontal segments before offset.
-# BEARING_HORIZONTAL_MODE:
-#   - "bands": horizontal if 45° <= bearing < 135° or 225° <= bearing < 315° (default)
-#   - "cones": horizontal if within 45° of exactly 90° or 270°
-# COORDINATE_MIRROR_X:
-#   - if true, persist map X coordinates mirrored (x := -x) before feet->pixels conversion
-#   - default true to match current deployment orientation expectation
-def _get_true_north_offset():
-    val = os.environ.get("TRUE_NORTH_OFFSET_DEGREES", "51")
-    try:
-        return float(val)
-    except ValueError:
-        return 0.0
-
-
-def _get_bearing_horizontal_flip():
-    v = os.environ.get("BEARING_HORIZONTAL_FLIP", "true").strip().lower()
-    return v in ("1", "true", "yes")
-
-
-def _get_bearing_horizontal_mode():
-    mode = os.environ.get("BEARING_HORIZONTAL_MODE", "bands").strip().lower()
-    if mode in ("bands", "cones"):
-        return mode
-    return "bands"
-
-
-def _get_coordinate_mirror_x():
-    v = os.environ.get("COORDINATE_MIRROR_X", "true").strip().lower()
-    return v in ("1", "true", "yes")
-
-
-def _is_horizontal_bearing(normalized_bearing_deg, flip_mode):
-    if flip_mode == "cones":
-        return abs(normalized_bearing_deg - 90) < 45 or abs(normalized_bearing_deg - 270) < 45
-    # Default mode: flip broad east/west bands.
-    return (45 <= normalized_bearing_deg < 135) or (225 <= normalized_bearing_deg < 315)
-
-
-def align_bearing_to_true_north(
-    raw_bearing_deg,
-    offset_deg=None,
-    apply_horizontal_flip=None,
-    horizontal_mode=None,
-):
-    """
-    Align a bearing (from map geometry) to true compass.
-    raw_bearing_deg: 0=map North, 90=map East, etc.
-    offset_deg: angle from map north to true north (e.g. 55 if map north is 55° W of true north).
-    apply_horizontal_flip: if True, add 180° to horizontal segments first.
-    horizontal_mode: "bands" (45-135,225-315) or "cones" (within 45° of 90/270).
-    Returns bearing in 0-360, 0 = true North. Must be validated on-site (see ISSUE-171).
-    """
-    if offset_deg is None:
-        offset_deg = _get_true_north_offset()
-    if apply_horizontal_flip is None:
-        apply_horizontal_flip = _get_bearing_horizontal_flip()
-    if horizontal_mode is None:
-        horizontal_mode = _get_bearing_horizontal_mode()
-
-    normalized = (raw_bearing_deg + 360) % 360
-    if apply_horizontal_flip and _is_horizontal_bearing(normalized, horizontal_mode):
-        normalized = (normalized + 180) % 360
-    aligned = (normalized + offset_deg + 360) % 360
-    return aligned
+FEET_TO_METERS = 0.3048
+DEFAULT_COORDINATE_ANGLE_OFFSET_DEG = 51.0
+DEFAULT_SIDE_BY_BEARING_OFFSET_DEG = 0.0
 
 
 def get_db_secret():
@@ -111,24 +44,72 @@ def calculate_bearing(x1, y1, x2, y2):
 
 
 def calculate_distance(x1, y1, x2, y2):
-    """Calculate Euclidean distance in pixels, then convert to meters."""
-    pixel_distance = math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
-    feet_distance = pixel_distance / FEET_TO_PIXELS
-    meters_distance = feet_distance * 0.3048  # 1 foot = 0.3048 meters
-    return meters_distance
+    """Calculate Euclidean distance in feet, then convert to meters."""
+    feet_distance = math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+    return feet_distance * FEET_TO_METERS
 
 
-def feet_to_pixels(feet):
-    """Convert feet to pixel coordinates."""
-    return int(feet * FEET_TO_PIXELS)
+def rotate_coords_for_storage(x_feet, y_feet, angle_offset_deg):
+    """
+    Rotate authored screen-style feet coordinates into DB storage frame.
+    This is the only coordinate transform applied during upload.
+    """
+    angle = math.radians(-angle_offset_deg)
+    x_math = float(x_feet)
+    y_math = -float(y_feet)
+    x_rot_math = (x_math * math.cos(angle)) - (y_math * math.sin(angle))
+    y_rot_math = (x_math * math.sin(angle)) + (y_math * math.cos(angle))
+    return int(round(x_rot_math)), int(round(-y_rot_math))
 
 
-def map_x_feet_for_storage(x_feet):
-    """Apply deploy-time X mirroring policy before converting to pixels."""
-    return -x_feet if _get_coordinate_mirror_x() else x_feet
+def build_node_meta_for_storage(node):
+    """
+    Normalize per-node metadata payload for DB storage.
+
+    Supports both legacy `node_meta` and v2 top-level semantic fields.
+    """
+    if node.get("node_meta") is not None:
+        return node["node_meta"]
+
+    semantic_meta = {}
+    if "doors" in node:
+        semantic_meta["doors"] = node.get("doors", [])
+    if "intersections" in node:
+        semantic_meta["intersections"] = node.get("intersections", [])
+    return semantic_meta or None
 
 
-def populate_database(conn, building_data):
+def transform_node_meta_bearings_for_storage(
+    node_meta,
+    side_by_bearing_offset_deg: float,
+):
+    """
+    Add an optional calibration to door side_by_bearing.bearing_deg in stored NodeMeta.
+
+    Coordinate rotation (--coordinate-angle-offset) already moves node positions; MapEdges
+    bearings are derived from stored geometry. This offset is an extra knob for aligning
+    authored door approach bearings with the deployed frame when needed (e.g. CI passes
+    --side-by-bearing-offset 51). When zero, door bearings are stored as-authored.
+    """
+    if not node_meta:
+        return node_meta
+    extra = float(side_by_bearing_offset_deg)
+    if extra == 0.0:
+        return node_meta
+    meta = copy.deepcopy(node_meta)
+    for door in meta.get("doors", []):
+        for entry in door.get("side_by_bearing", []):
+            if "bearing_deg" in entry:
+                entry["bearing_deg"] = (float(entry["bearing_deg"]) + extra) % 360.0
+    return meta
+
+
+def populate_database(
+    conn,
+    building_data,
+    coordinate_angle_offset_deg=DEFAULT_COORDINATE_ANGLE_OFFSET_DEG,
+    side_by_bearing_offset_deg=DEFAULT_SIDE_BY_BEARING_OFFSET_DEG,
+):
     """Main function to populate all tables with building data."""
     cursor = conn.cursor()
     
@@ -153,6 +134,11 @@ def populate_database(conn, building_data):
         logger.info(f"Inserted building: {building_data['building_name']}")
         
         # 2. Process each floor
+        angle_offset_deg = float(coordinate_angle_offset_deg)
+        side_bearing_offset = float(side_by_bearing_offset_deg)
+        logger.info("Applying coordinate angle offset: %.2f deg", angle_offset_deg)
+        if side_bearing_offset != 0.0:
+            logger.info("Applying door side_by_bearing offset: %.2f deg", side_bearing_offset)
         for floor_data in building_data['floors']:
             # Insert Floor (CamelCase)
             cursor.execute(
@@ -182,31 +168,42 @@ def populate_database(conn, building_data):
             node_coords = {}  # Map from custom node IDs to their pixel coordinates
             
             for node in floor_data.get('nodes', []):
-                x_pixels = feet_to_pixels(map_x_feet_for_storage(node['x_feet']))
-                y_pixels = feet_to_pixels(node['y_feet'])
-                
+                x_stored, y_stored = rotate_coords_for_storage(
+                    node['x_feet'],
+                    node['y_feet'],
+                    angle_offset_deg,
+                )
+                node_meta = build_node_meta_for_storage(node)
+                if node_meta is not None:
+                    node_meta = transform_node_meta_bearings_for_storage(
+                        node_meta,
+                        side_bearing_offset,
+                    )
+
                 cursor.execute(
                     """
-                    INSERT INTO MapNodes (NodeIDString, FloorID, BuildingID, CoordinateX, CoordinateY, NodeType)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO MapNodes (NodeIDString, FloorID, BuildingID, CoordinateX, CoordinateY, NodeType, NodeMeta)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
                     ON CONFLICT (NodeIDString) DO UPDATE SET
                         FloorID = EXCLUDED.FloorID,
                         BuildingID = EXCLUDED.BuildingID,
                         CoordinateX = EXCLUDED.CoordinateX,
                         CoordinateY = EXCLUDED.CoordinateY,
-                        NodeType = EXCLUDED.NodeType
+                        NodeType = EXCLUDED.NodeType,
+                        NodeMeta = EXCLUDED.NodeMeta
                     """,
                     (
                         node['id'],
                         floor_id,
                         building_data['building_id'],
-                        x_pixels,
-                        y_pixels,
+                        x_stored,
+                        y_stored,
                         node['type'],
+                        json.dumps(node_meta) if node_meta is not None else None,
                     )
                 )
-                node_coords[node['id']] = (x_pixels, y_pixels)
-                logger.info(f"Upserted node {node['id']} at ({x_pixels}, {y_pixels})")
+                node_coords[node['id']] = (x_stored, y_stored)
+                logger.info(f"Upserted node {node['id']} at ({x_stored}, {y_stored})")
             
             # 4. Insert MapEdges (CamelCase)
             for edge in floor_data.get('edges', []):
@@ -216,8 +213,9 @@ def populate_database(conn, building_data):
                 x2, y2 = node_coords[end_node_key]
                 
                 distance = calculate_distance(x1, y1, x2, y2)
-                raw_bearing = calculate_bearing(x1, y1, x2, y2)
-                bearing = align_bearing_to_true_north(raw_bearing)
+                # Always derive DB bearing from stored (already-rotated) coordinates
+                # so geometry and persisted heading remain in the same frame.
+                bearing = calculate_bearing(x1, y1, x2, y2)
                 cursor.execute(
                     """
                     INSERT INTO MapEdges (FloorID, StartNodeID, EndNodeID, DistanceMeters, Bearing, IsBidirectional)
@@ -239,8 +237,11 @@ def populate_database(conn, building_data):
             landmarks_list = floor_data.get('landmarks', [])
             for idx, landmark in enumerate(landmarks_list):
                 landmark_id = floor_id * 10000 + (idx + 1)
-                x_pixels = feet_to_pixels(map_x_feet_for_storage(landmark['x_feet']))
-                y_pixels = feet_to_pixels(landmark['y_feet'])
+                x_stored, y_stored = rotate_coords_for_storage(
+                    landmark['x_feet'],
+                    landmark['y_feet'],
+                    angle_offset_deg,
+                )
                 
                 nearest_node_key = landmark.get('nearest_node')
                 distance_to_node = None
@@ -248,8 +249,11 @@ def populate_database(conn, building_data):
                 if nearest_node_key and nearest_node_key in node_coords:
                     # Calculate distance from landmark to nearest node using cached coordinates
                     nx, ny = node_coords[nearest_node_key]
-                    pixel_dist = math.sqrt((x_pixels - nx)**2 + (y_pixels - ny)**2)
-                    distance_to_node = (pixel_dist / FEET_TO_PIXELS) * 0.3048  # Convert to meters
+                    feet_dist = math.sqrt((x_stored - nx)**2 + (y_stored - ny)**2)
+                    distance_to_node = feet_dist * FEET_TO_METERS
+                # Landmark cardinal bearings are no longer part of map authoring contract.
+                # Keep DB column as nullable/legacy for backend compatibility.
+                bearing_from_node = landmark.get("bearing_from_node")
                 
                 cursor.execute(
                     """
@@ -270,12 +274,12 @@ def populate_database(conn, building_data):
                         landmark['name'],
                         nearest_node_key,
                         distance_to_node,
-                        landmark.get('bearing'),
-                        x_pixels,
-                        y_pixels
+                        bearing_from_node,
+                        x_stored,
+                        y_stored
                     )
                 )
-                logger.info(f"Upserted landmark {landmark_id} {landmark['name']} at ({x_pixels}, {y_pixels})")
+                logger.info(f"Upserted landmark {landmark_id} {landmark['name']} at ({x_stored}, {y_stored})")
             
             # Advance the LandmarkID sequence so future SERIAL inserts don't reuse our explicit IDs
             # Use lowercase identifiers: PostgreSQL folds unquoted names to lowercase
@@ -313,7 +317,7 @@ def main():
                     {'start': 'n1', 'end': 'n2', 'bidirectional': True},
                 ],
                 'landmarks': [
-                    {'name': 'Room 101', 'x_feet': 50, 'y_feet': 0, 'nearest_node': 'n1', 'bearing': 'East'},
+                    {'name': 'Room 101', 'x_feet': 50, 'y_feet': 0, 'nearest_node': 'n1', 'door_id': 'room_101'},
                 ]
             }
         ]
