@@ -77,6 +77,7 @@ class LiveNavigationHandlerTest {
         // Return a mock path to prevent the pathNodes.isEmpty() Exception from throwing
         every { anyConstructed<RdsMapClient>().calculateShortestPath(any(), any(), any(), any()) } returns Pair(listOf("1", "2"), 10.0)
         every { anyConstructed<RdsMapClient>().buildInstructions(any(), any(), any()) } returns emptyList()
+        every { anyConstructed<RdsMapClient>().getEdgeDistanceFeet(any(), any(), any()) } returns null
 
         every {
             mockObjectDetectionHandler.detectObjectsFromImage(any(), any(), any())
@@ -596,5 +597,81 @@ class LiveNavigationHandlerTest {
         val remainingInstructions = payload["remaining_instructions"] as List<Map<String, Any?>>
         assertEquals(strictInstructions.size, remainingInstructions.size)
         remainingInstructions.forEach { assertStrictInstructionSchema(it) }
+    }
+            "current_x" to "0.0",
+            "current_y" to "0.0",
+            "currentStep" to "0",
+            "last_updated_ms" to "1670000000000",
+            "destLandmarkId" to "1",
+            "path" to "node1,node2,node3"
+        )
+        every { anyConstructed<DynamoDbTableClient>().getItemDetails(any()) } returns mockSessionData
+
+        every { anyConstructed<RdsMapClient>().getClosestMapNode(any(), any(), any()) } returns mapOf("NodeID" to "node1")
+        every { anyConstructed<RdsMapClient>().getNode("node2", any()) } returns MapNode("node2", 100, 0)
+        every { anyConstructed<RdsMapClient>().getEdgeDistanceFeet(any(), "node1", "node2") } returns 30.0
+
+        val mockLandmark = mockk<LandmarkDetails>(relaxed = true)
+        every { anyConstructed<RdsMapClient>().getLandmark(any(), any()) } returns mockLandmark
+
+        val strictInstructions = listOf(
+            NavigationInstruction(
+                step = 1,
+                step_type = NavigationStepType.segment,
+                distance_feet = 60.0,
+                direction = "Head East",
+                start_node_id = "node1",
+                end_node_id = "node3",
+                node_id = "node1",
+                coordinates = NavigationCoordinates(x = 10.0, y = 20.0),
+                heading_degrees = 90.0,
+                turn_intent = "right"
+            ),
+            NavigationInstruction(
+                step = 2,
+                step_type = NavigationStepType.arrival,
+                distance_feet = 0.0,
+                direction = "Arrived, destination on your right",
+                start_node_id = "node3",
+                end_node_id = "node3",
+                node_id = "Room 205",
+                coordinates = NavigationCoordinates(x = 15.0, y = 20.0),
+                heading_degrees = null,
+                turn_intent = null
+            )
+        )
+        every { anyConstructed<RdsMapClient>().buildInstructions(any(), any(), any()) } returns strictInstructions
+
+        val validBase64 = Base64.getEncoder().encodeToString("dummy_image".toByteArray())
+        val event = APIGatewayV2WebSocketEvent().apply {
+            requestContext = RequestContext().apply {
+                connectionId = "test-conn-id"
+                domainName = "test.api"
+                stage = "prod"
+                routeKey = "navigation"
+            }
+            body = """{
+                "session_id": "session123",
+                "image_base64": "$validBase64",
+                "focal_length_pixels": 800.0,
+                "heading_degrees": 90.0,
+                "distance_traveled": 0.0,
+                "request_id": 88,
+                "timestamp_ms": 1670000000001
+            }"""
+        }
+
+        val response = handler.handleRequest(event, mockContext)
+        assertEquals(200, response.statusCode)
+
+        val apiSlot = slot<PostToConnectionRequest>()
+        verify(exactly = 1) { mockApiGateway.postToConnection(capture(apiSlot)) }
+        val resultJson = apiSlot.captured.data().asUtf8String()
+        val payload = mapper.readValue<Map<String, Any?>>(resultJson)
+
+        @Suppress("UNCHECKED_CAST")
+        val remainingInstructions = payload["remaining_instructions"] as List<Map<String, Any?>>
+        val firstDistance = (remainingInstructions.first()["distance_feet"] as Number).toDouble()
+        assertEquals(40.0, firstDistance, 0.001)
     }
 }
