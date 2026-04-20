@@ -19,7 +19,7 @@ NODES = [
                 id="room_206",
                 label="Room 206",
                 side_by_bearing=[
-                    DoorSideByBearing(bearing_deg=180, side="left"),
+                    DoorSideByBearing(bearing_deg=0, side="left"),
                     DoorSideByBearing(bearing_deg=0, side="right"),
                 ],
             ),
@@ -28,8 +28,7 @@ NODES = [
                 label="Room 207",
                 side_by_bearing=[
                     DoorSideByBearing(bearing_deg=0, side="left"),
-                    DoorSideByBearing(bearing_deg=180, side="right"),
-
+                    DoorSideByBearing(bearing_deg=0, side="right"),
                 ],
             ),
         ],
@@ -223,7 +222,7 @@ NODES = [
             label="Room 220",
             side_by_bearing=[
                 DoorSideByBearing(bearing_deg=180, side="left"),
-                DoorSideByBearing(bearing_deg=0, side="right"),
+                DoorSideByBearing(bearing_deg=270, side="right"),
             ],
         ),
         # TODO: HOW TO MAP THIS? 
@@ -232,7 +231,7 @@ NODES = [
             id="room_222", 
             label="Room 220",
             side_by_bearing=[
-                DoorSideByBearing(bearing_deg=0, side="left"),
+                DoorSideByBearing(bearing_deg=270, side="left"),
                 DoorSideByBearing(bearing_deg=180, side="right"),
             ],
         ),
@@ -382,9 +381,9 @@ NODES = [
                 id="room_238",
                 label="Room 238",
                 side_by_bearing=[
-                    #TODO: fix the directions, 238 is straight from this hallway angle no turn
-                    DoorSideByBearing(bearing_deg=270, side="right"), 
-                    DoorSideByBearing(bearing_deg=90, side="left"), 
+                    # Incident hall bearings: 90° (E–W spine) and 180° (N–S spine)
+                    DoorSideByBearing(bearing_deg=90, side="left"),
+                    DoorSideByBearing(bearing_deg=180, side="right"),
                 ],
             ),
         ],
@@ -552,7 +551,7 @@ NODES = [
                 label="Offices wing",
                 side_by_bearing=[
                     DoorSideByBearing(bearing_deg=0, side="left"),
-                    DoorSideByBearing(bearing_deg=180, side="right"),
+                    DoorSideByBearing(bearing_deg=0, side="right"),
                 ],
             ),
         ],

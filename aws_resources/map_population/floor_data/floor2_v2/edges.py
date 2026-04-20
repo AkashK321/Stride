@@ -35,10 +35,11 @@ EDGES = [
     # hall_vend_215 -> hall_2s03_211 (North, 0°)
     edge(start="hall_vend_215", end="hall_2s03_211", bearing_deg=0, bidirectional=True),
     
-    # hall_2s03_211 -> room_208_209 (North, 0°)
-    edge(start="hall_2s03_211", end="hall_208_209", bearing_deg=0, bidirectional=True),
+    # hall_2s03_211 -> hall_Bside -> hall_208_209 (North, 0°); hall_Bside is on the spine
+    edge(start="hall_2s03_211", end="hall_Bside", bearing_deg=0, bidirectional=True),
+    edge(start="hall_Bside", end="hall_208_209", bearing_deg=0, bidirectional=True),
     
-    # room_208_209 -> room_206_207 (North, 0°)
+    # hall_208_209 -> hall_206_207 (North, 0°)
     edge(start="hall_208_209", end="hall_206_207", bearing_deg=0, bidirectional=True),
     
     
