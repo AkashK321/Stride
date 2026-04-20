@@ -19,6 +19,8 @@ import com.models.NavigationInstruction
 import com.models.NavigationCoordinates
 import com.models.NavigationUpdatePosition
 import com.models.NavigationUpdateResponse
+import com.models.MapNode
+import com.models.NavigationStepType
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest
@@ -33,9 +35,11 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.max
 import kotlin.math.log
+import kotlin.math.sqrt
 
 private val METERS_TO_FEET = 3.28084
 private val FEET_TO_PIXELS = 10.0
+private val PIXEL_TO_FEET = 1.0 / FEET_TO_PIXELS
 private val MAX_DISTANCE_FEET = 15.0
 
 class LiveNavigationHandler(
@@ -108,6 +112,53 @@ class LiveNavigationHandler(
         }
         
         return Pair(currentX, currentY)
+    }
+
+    private fun getNavigationProgress(nextNode: MapNode?, currX: Double, currY: Double): Double {
+        if (nextNode == null) return 0.0
+        val dx = currX - nextNode.coordX
+        val dy = currY - nextNode.coordY
+        return sqrt(dx * dx + dy * dy) * PIXEL_TO_FEET
+    }
+
+    /**
+     * Applies live progress to the active instruction by subtracting traveled distance on the
+     * current edge from the first aggregated instruction's remaining distance.
+     */
+    private fun applyProgressToCurrentInstruction(
+        conn: Connection,
+        instructions: List<NavigationInstruction>,
+        remainingPath: List<String>,
+        distToNextNodeFeet: Double,
+        logger: LambdaLogger,
+    ): List<NavigationInstruction> {
+        if (instructions.isEmpty()) return instructions
+        val firstInstruction = instructions.first()
+        if (firstInstruction.step_type != NavigationStepType.segment) return instructions
+        if (remainingPath.size < 2) return instructions
+        if (!distToNextNodeFeet.isFinite()) return instructions
+
+        val currentNodeId = remainingPath[0]
+        val nextNodeId = remainingPath[1]
+        val currentEdgeFeet = rdsMapClient.getEdgeDistanceFeet(conn, currentNodeId, nextNodeId)
+            ?: return instructions
+
+        val clampedDistanceToNext = distToNextNodeFeet.coerceIn(0.0, currentEdgeFeet)
+        val traveledOnCurrentEdge = (currentEdgeFeet - clampedDistanceToNext).coerceAtLeast(0.0)
+        val adjustedDistanceFeet = (firstInstruction.distance_feet - traveledOnCurrentEdge).coerceAtLeast(0.0)
+        logger.log(
+            String.format(
+                "Instruction progress | edge %s->%s: edge=%.2f ft, to_next=%.2f ft, first_step %.2f -> %.2f ft",
+                currentNodeId,
+                nextNodeId,
+                currentEdgeFeet,
+                clampedDistanceToNext,
+                firstInstruction.distance_feet,
+                adjustedDistanceFeet
+            )
+        )
+
+        return listOf(firstInstruction.copy(distance_feet = adjustedDistanceFeet)) + instructions.drop(1)
     }
 
     private fun fuseLocationWithLandmarks(
@@ -317,7 +368,7 @@ class LiveNavigationHandler(
             logger.log("Database error resolving closest map node: ${e.message}")
         }
 
-        val instructions: List<NavigationInstruction>
+        var instructions: List<NavigationInstruction> = emptyList()
         var pathNodesNew: List<String> = emptyList()
         var pathRecalculated = false
         try {
@@ -346,11 +397,23 @@ class LiveNavigationHandler(
                     logger.log("Calculated path: ${pathNodesNew.joinToString(" -> ")}")
 
                     // 4. Transform Path into Instructions
-                    instructions = rdsMapClient.buildInstructions(conn, pathNodesNew, landmark)
+                    var builtInstructions = rdsMapClient.buildInstructions(conn, pathNodesNew, landmark)
+                    var progressFeet = 0.0
+                    if (pathNodesNew.size > 1) {
+                        val newNextNode = rdsMapClient.getNode(pathNodesNew[1], conn)
+                        progressFeet = getNavigationProgress(newNextNode, estimatedX, estimatedY)
+                    }
+                    instructions = applyProgressToCurrentInstruction(
+                        conn = conn,
+                        instructions = builtInstructions,
+                        remainingPath = pathNodesNew,
+                        distToNextNodeFeet = progressFeet,
+                        logger = logger,
+                    )
                     logger.log("Translated instructions")
-                    instructions.forEach({inst -> 
+                    instructions.forEach { inst ->
                         logger.log("Instruction: $inst")
-                    })
+                    }
                 }
             } else {
                 logger.log("Closest node $closestNodeId is on the original path. No need to recalculate.")
@@ -361,7 +424,19 @@ class LiveNavigationHandler(
                 instructions = rdsMapClient.getDbConnection().use { conn ->
                     val landmark = rdsMapClient.getLandmark(destLandmarkId.toInt(), conn)
                         ?: throw IllegalArgumentException("Landmark not found or has no associated node.")
-                    rdsMapClient.buildInstructions(conn, pathNodesNew, landmark)
+                    var builtInstructions = rdsMapClient.buildInstructions(conn, pathNodesNew, landmark)
+                    var progressFeet = 0.0
+                    if (pathNodesNew.size > 1) {
+                        val nextNode = rdsMapClient.getNode(pathNodesNew[1], conn)
+                        progressFeet = getNavigationProgress(nextNode, estimatedX, estimatedY)
+                    }
+                    applyProgressToCurrentInstruction(
+                        conn = conn,
+                        instructions = builtInstructions,
+                        remainingPath = pathNodesNew,
+                        distToNextNodeFeet = progressFeet,
+                        logger = logger,
+                    )
                 }
             }
         } catch (e: Exception) {
