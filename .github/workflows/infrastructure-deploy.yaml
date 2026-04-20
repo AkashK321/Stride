@@ -287,7 +287,6 @@ jobs:
             jq -r 'keys[]' cdk-outputs.json
             echo "Debug: will fall back to CloudFormation for RdsSecretArn"
           fi
-
           # Branch stack: API, WebSocket, DynamoDB (per-environment)
           STACK_NAME=$(jq -r ".\"$BRANCH_STACK_KEY\".StackName // empty" cdk-outputs.json 2>/dev/null || echo "")
           if [ -z "$STACK_NAME" ] || [ "$STACK_NAME" == "null" ]; then
@@ -310,7 +309,8 @@ jobs:
             echo "Warning: Could not extract CocoConfigTableName from branch stack outputs"
           fi
 
-          # Shared RDS: single secret for schema + map seed (not emitted on branch stack)
+          # Shared RDS: resolve from outputs file first, then fallback to CloudFormation.
+          # cdk-outputs.json may only include stacks that emitted fresh outputs in this deploy run.
           STRIDE_DB_ARN=$(jq -r ".\"$SHARED_STACK_KEY\".RdsSecretArn // empty" cdk-outputs.json 2>/dev/null || echo "")
           if [ -z "$STRIDE_DB_ARN" ] || [ "$STRIDE_DB_ARN" == "null" ]; then
             echo "Warning: Could not extract RdsSecretArn from cdk-outputs.json for $SHARED_STACK_KEY"
@@ -420,7 +420,7 @@ jobs:
           AWS_REGION: us-east-1
         run: |
           echo "Running floor / map population..."
-          python cli.py populate --coordinate-angle-offset 51
+          python cli.py populate --coordinate-angle-offset 141 --side-by-bearing-offset 51
 
   integration-tests:
     name: Run Integration Tests
