@@ -14,11 +14,13 @@ import { colors } from "../../theme/colors";
 import { typography } from "../../theme/typography";
 import { spacing } from "../../theme/spacing";
 import NavigationInstructionItem, {
+  formatDoorSideCue,
+  formatHeadingBadge,
   formatInstruction,
 } from "./NavigationInstructionItem";
 
 const MAX_DROPDOWN_HEIGHT = Dimensions.get("window").height * 0.45;
-const ROW_HEIGHT = 80; // approximate height per instruction row
+const ROW_HEIGHT = 120; // approximate height per instruction row
 
 export interface NavigationInstructionsDropdownProps {
   instructions: NavigationInstruction[];
@@ -102,6 +104,10 @@ export default function NavigationInstructionsDropdown({
     safeSelectedIndex + 1 < instructions.length
       ? instructions[safeSelectedIndex + 1]
       : null;
+  const currentHeadingBadge = formatHeadingBadge(
+    currentInstruction.heading_degrees,
+  );
+  const currentDoorCue = formatDoorSideCue(currentInstruction.direction);
 
   let headerIconName: React.ComponentProps<typeof Ionicons>["name"] =
     "arrow-up-outline";
@@ -154,6 +160,23 @@ export default function NavigationInstructionsDropdown({
             { style: styles.primaryInstruction },
             formatInstruction(currentInstruction),
           ),
+          (currentHeadingBadge || currentDoorCue) &&
+            React.createElement(
+              View,
+              { style: styles.primaryMetaRow },
+              currentHeadingBadge &&
+                React.createElement(
+                  Text,
+                  { style: styles.primaryMetaBadge },
+                  currentHeadingBadge,
+                ),
+              currentDoorCue &&
+                React.createElement(
+                  Text,
+                  { style: styles.primaryMetaBadge },
+                  currentDoorCue,
+                ),
+            ),
         ),
       ),
     ),
@@ -262,6 +285,21 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  primaryMetaRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginTop: spacing.xs,
+    gap: spacing.xs,
+  },
+  primaryMetaBadge: {
+    ...typography.label,
+    color: colors.textSecondary,
+    fontSize: 13,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: 999,
   },
   animatedContainer: {
     overflow: "hidden",

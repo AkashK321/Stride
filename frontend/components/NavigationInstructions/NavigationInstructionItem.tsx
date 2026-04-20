@@ -11,16 +11,54 @@ export interface NavigationInstructionItemProps {
   nextInstruction?: NavigationInstruction | null;
 }
 
+type DoorSide = "left" | "right";
+
+function normalizeHeadingDegrees(value: number): number {
+  const normalized = value % 360;
+  return normalized < 0 ? normalized + 360 : normalized;
+}
+
+function headingToCompassLabel(headingDegrees: number): string {
+  const normalized = normalizeHeadingDegrees(headingDegrees);
+  const directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"] as const;
+  const index = Math.round(normalized / 45) % directions.length;
+  return directions[index];
+}
+
+function getDoorSideFromDirection(direction: string | null): DoorSide | null {
+  if (!direction) return null;
+  const lowered = direction.toLowerCase();
+  if (lowered.includes("on your left")) return "left";
+  if (lowered.includes("on your right")) return "right";
+  return null;
+}
+
+export function formatHeadingBadge(headingDegrees: number | null): string | null {
+  if (headingDegrees === null) return null;
+  const normalized = Math.round(normalizeHeadingDegrees(headingDegrees));
+  return `${normalized}° ${headingToCompassLabel(normalized)}`;
+}
+
+export function formatDoorSideCue(direction: string | null): string | null {
+  const doorSide = getDoorSideFromDirection(direction);
+  if (doorSide === "left") return "Destination on your left";
+  if (doorSide === "right") return "Destination on your right";
+  return null;
+}
+
 export function formatInstruction(
   current: NavigationInstruction,
 ): string {
   const { distance_feet, step_type, turn_intent } = current;
   const roundedDistance = Math.round(distance_feet / 5) * 5;
   const distanceText = `${roundedDistance} ft`;
+  const doorCue = formatDoorSideCue(current.direction);
 
   // Arrival handling
   if (step_type === "arrival") {
-    return `In ${distanceText}, you will arrive`;
+    return doorCue
+      ? `In ${distanceText}, you will arrive. ${doorCue}.`
+      : `In ${distanceText}, you will arrive`;
   }
 
   if (turn_intent === "straight") {
@@ -38,14 +76,19 @@ export function formatInstruction(
 
 export default function NavigationInstructionItem({
   instruction,
-  nextInstruction,
 }: NavigationInstructionItemProps) {
-  const { distance_feet, step_type, turn_intent } = instruction;
+  const { distance_feet, step_type, turn_intent, direction, heading_degrees } =
+    instruction;
   const roundedDistance = Math.round(distance_feet / 5) * 5;
   const distanceText = `${roundedDistance} ft`;
+  const doorCue = formatDoorSideCue(direction);
+  const headingBadge = formatHeadingBadge(heading_degrees);
+  const doorSide = getDoorSideFromDirection(direction);
 
   let iconName: React.ComponentProps<typeof Ionicons>["name"] = "arrow-up";
   let turnLabel = "Continue";
+  let doorIconName: React.ComponentProps<typeof Ionicons>["name"] =
+    "location-outline";
 
   if (step_type === "arrival") {
     iconName = "flag-outline";
@@ -62,6 +105,11 @@ export default function NavigationInstructionItem({
   } else if (turn_intent === "straight") {
     iconName = "arrow-up-outline";
     turnLabel = "Continue straight";
+  }
+  if (doorSide === "left") {
+    doorIconName = "arrow-back-circle-outline";
+  } else if (doorSide === "right") {
+    doorIconName = "arrow-forward-circle-outline";
   }
 
   return React.createElement(
@@ -94,6 +142,49 @@ export default function NavigationInstructionItem({
           ),
         ),
       ),
+      (headingBadge || doorCue) &&
+        React.createElement(
+          View,
+          { style: styles.metaRow },
+          headingBadge &&
+            React.createElement(
+              View,
+              {
+                style: styles.metaBadge,
+                accessibilityLabel: `Heading ${headingBadge}`,
+              },
+              React.createElement(Ionicons, {
+                name: "compass-outline",
+                size: 16,
+                color: colors.textSecondary,
+                style: styles.metaIcon,
+              }),
+              React.createElement(
+                Text,
+                { style: styles.metaBadgeText },
+                headingBadge,
+              ),
+            ),
+          doorCue &&
+            React.createElement(
+              View,
+              {
+                style: styles.metaBadge,
+                accessibilityLabel: doorCue,
+              },
+              React.createElement(Ionicons, {
+                name: doorIconName,
+                size: 16,
+                color: colors.textSecondary,
+                style: styles.metaIcon,
+              }),
+              React.createElement(
+                Text,
+                { style: styles.metaBadgeText },
+                doorCue,
+              ),
+            ),
+        ),
       React.createElement(View, { style: styles.divider }),
     ),
   );
@@ -119,6 +210,28 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+  },
+  metaRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginTop: spacing.sm,
+    gap: spacing.xs,
+  },
+  metaBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 999,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    backgroundColor: colors.backgroundSecondary,
+  },
+  metaIcon: {
+    marginRight: 4,
+  },
+  metaBadgeText: {
+    ...typography.label,
+    color: colors.textSecondary,
+    fontSize: 14,
   },
   turnLabel: {
     ...typography.body,

@@ -134,6 +134,29 @@ class RdsMapClient {
         return null
     }
 
+    fun getEdgeDistanceFeet(conn: Connection, startNodeId: String, endNodeId: String): Double? {
+        val edgeQuery = """
+            SELECT DistanceMeters
+            FROM MapEdges
+            WHERE
+                (StartNodeID = ? AND EndNodeID = ?)
+                OR
+                (IsBidirectional = TRUE AND StartNodeID = ? AND EndNodeID = ?)
+            LIMIT 1
+        """
+        conn.prepareStatement(edgeQuery).use { stmt ->
+            stmt.setString(1, startNodeId)
+            stmt.setString(2, endNodeId)
+            stmt.setString(3, endNodeId)
+            stmt.setString(4, startNodeId)
+            val rs = stmt.executeQuery()
+            if (rs.next()) {
+                return rs.getDouble("DistanceMeters") * 3.28084
+            }
+        }
+        return null
+    }
+
 
     fun getLandmarkByName(name: String, conn: Connection): LandmarkDetails? {
         val query = """
