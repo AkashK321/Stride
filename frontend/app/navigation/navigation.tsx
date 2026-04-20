@@ -36,8 +36,15 @@ import { useHeading } from "../../hooks/useHeading";
 import { useSensorData } from "../../hooks/useSensorData";
 import { getFocalLengthPixels } from "../../services/focalLength";
 
-/** After centered square crop, resize to this width (output is square, e.g. 360×360). */
-const LIVE_NAV_FRAME_WIDTH = 360;
+/** Primary navigation frame encode settings tuned to stay under WebSocket payload limits. */
+const LIVE_NAV_FRAME_WIDTH = 320;
+const LIVE_NAV_FRAME_COMPRESS = 0.3;
+/** One-step fallback when primary nav frame still exceeds the payload limit. */
+const LIVE_NAV_FRAME_FALLBACK_WIDTH = 256;
+const LIVE_NAV_FRAME_FALLBACK_COMPRESS = 0.22;
+// Debug payload to disable real camera image transmission while keeping schema valid.
+const DEBUG_PLACEHOLDER_IMAGE_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO0f0R8AAAAASUVORK5CYII=";
 
 /** How often to send `action: "navigation"` on the WebSocket (live nav updates). */
 const LIVE_NAV_WS_INTERVAL_MS = 1000;
@@ -134,8 +141,20 @@ export default function NavigationSession() {
   const requestCounterRef = React.useRef(0);
   const [speakerMode, setSpeakerMode] = React.useState(false);
   const [currentStepIndex, setCurrentStepIndex] = React.useState(0);
-  const focalLengthPixels = React.useMemo(() => getFocalLengthPixels(LIVE_NAV_FRAME_WIDTH), []);
-  const { getSnapshot, start: startSensors, stop: stopSensors } = useSensorData();
+  const focalLengthPixels = React.useMemo(
+    () => getFocalLengthPixels(LIVE_NAV_FRAME_WIDTH),
+    [],
+  );
+  const fallbackFocalLengthPixels = React.useMemo(
+    () => getFocalLengthPixels(LIVE_NAV_FRAME_FALLBACK_WIDTH),
+    [],
+  );
+  const {
+    getSnapshot,
+    consumeDistanceSnapshot,
+    start: startSensors,
+    stop: stopSensors,
+  } = useSensorData();
 
   const { getAlignment } = useHeading();
   const activeInstruction = navigationInstructions?.[currentStepIndex] ?? null;
@@ -165,7 +184,9 @@ export default function NavigationSession() {
     return requestCounterRef.current;
   }, []);
 
-  const captureBase64Frame = React.useCallback(async (): Promise<string | null> => {
+  const captureBase64Frame = React.useCallback(async (
+    options?: { width?: number; compress?: number },
+  ): Promise<string | null> => {
     if (!cameraRef.current) {
       return null;
     }
@@ -179,7 +200,7 @@ export default function NavigationSession() {
 
     const encodeOptions = {
       base64: true,
-      compress: 0.4,
+      compress: options?.compress ?? LIVE_NAV_FRAME_COMPRESS,
       format: SaveFormat.JPEG as const,
     };
 
@@ -187,7 +208,7 @@ export default function NavigationSession() {
       // By supplying only width, Expo automatically scales the height to preserve the full frame's aspect ratio.
       const resized = await manipulateAsync(
         photo.uri,
-        [{ resize: { width: LIVE_NAV_FRAME_WIDTH } }], 
+        [{ resize: { width: options?.width ?? LIVE_NAV_FRAME_WIDTH } }],
         encodeOptions,
       );
       return resized.base64 ?? null;
@@ -204,10 +225,14 @@ export default function NavigationSession() {
     }
     navFrameInFlightRef.current = true;
     try {
-      const imageBase64 = await captureBase64Frame();
-      if (!imageBase64) return;
-      const snapshot = getSnapshot();
-      const message: NavigationFrameMessage = {
+      // const imageBase64 = await captureBase64Frame({
+      //   width: LIVE_NAV_FRAME_WIDTH,
+      //   compress: LIVE_NAV_FRAME_COMPRESS,
+      // });
+      // if (!imageBase64) return;
+      const imageBase64 = DEBUG_PLACEHOLDER_IMAGE_BASE64;
+      const snapshot = getSnapshot({ consumeDistance: false });
+      let message: NavigationFrameMessage = {
         action: "navigation",
         session_id: navigationSessionId,
         image_base64: imageBase64,
@@ -218,14 +243,32 @@ export default function NavigationSession() {
         timestamp_ms: Date.now(),
         request_id: nextRequestId(),
       };
-      ws.sendFrame(message);
+      let didSend = ws.sendFrame(message);
+      if (!didSend) {
+        // Fallback recapture intentionally disabled while image frames are disabled.
+        // const fallbackImageBase64 = await captureBase64Frame({
+        //   width: LIVE_NAV_FRAME_FALLBACK_WIDTH,
+        //   compress: LIVE_NAV_FRAME_FALLBACK_COMPRESS,
+        // });
+        // if (fallbackImageBase64) {
+        //   message = {
+        //     ...message,
+        //     image_base64: fallbackImageBase64,
+        //     focal_length_pixels: fallbackFocalLengthPixels,
+        //   };
+        //   didSend = ws.sendFrame(message);
+        // }
+      }
+      if (didSend) {
+        consumeDistanceSnapshot(snapshot.estimatedTotalSteps);
+      }
     } catch (e) {
       setNavigationError(e instanceof Error ? e.message : "Failed to send navigation frame");
     } finally {
       navFrameInFlightRef.current = false;
     }
   }, [
-    captureBase64Frame,
+    consumeDistanceSnapshot,
     focalLengthPixels,
     getSnapshot,
     navigationSessionId,
@@ -239,14 +282,18 @@ export default function NavigationSession() {
     }
     collisionFrameInFlightRef.current = true;
     try {
-      const imageBase64 = await captureBase64Frame();
-      if (!imageBase64) return;
-      const snapshot = getSnapshot();
+      // const imageBase64 = await captureBase64Frame({
+      //   width: LIVE_NAV_FRAME_FALLBACK_WIDTH,
+      //   compress: LIVE_NAV_FRAME_FALLBACK_COMPRESS,
+      // });
+      // if (!imageBase64) return;
+      const imageBase64 = DEBUG_PLACEHOLDER_IMAGE_BASE64;
+      const snapshot = getSnapshot({ consumeDistance: false });
       const message: NavigationFrameMessage = {
         action: "frame",
         session_id: navigationSessionId,
         image_base64: imageBase64,
-        focal_length_pixels: focalLengthPixels,
+        focal_length_pixels: fallbackFocalLengthPixels,
         heading_degrees: snapshot.heading,
         distance_traveled: 0,
         gps: snapshot.gps,
@@ -260,8 +307,7 @@ export default function NavigationSession() {
       collisionFrameInFlightRef.current = false;
     }
   }, [
-    captureBase64Frame,
-    focalLengthPixels,
+    fallbackFocalLengthPixels,
     getSnapshot,
     navigationSessionId,
     nextRequestId,
