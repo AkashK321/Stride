@@ -120,12 +120,15 @@ class LiveNavigationHandler(
             return Pair(pdrX, pdrY)
         }
 
-        // Get Landmark Object from RDS
+        // Use OCR text (room number) as the landmark name when available; fall back to class name
+        val ocrText = primaryLandmark.obj.text
+        val landmarkName = if (!ocrText.isNullOrBlank()) ocrText else primaryLandmark.obj.className
+
         val dbLandmark = rdsMapClient.getDbConnection().use { conn -> 
-                rdsMapClient.getLandmarkByName(primaryLandmark.obj.className, conn)
+                rdsMapClient.getLandmarkByName(landmarkName, conn)
             }
         if (dbLandmark == null) {
-            logger.log("Detected landmark '${primaryLandmark.obj.className}' not found in RDS database.")
+            logger.log("Detected landmark '$landmarkName' not found in RDS database.")
             return Pair(pdrX, pdrY)
         }
 
@@ -151,8 +154,8 @@ class LiveNavigationHandler(
 
         logger.log(
             String.format(
-                "Fusion Applied | Landmark: %s | Dist: %.2f ft | Alpha: %.2f | PDR: (%.1f, %.1f) | CV: (%.1f, %.1f) | Fused: (%.1f, %.1f)",
-                primaryLandmark.obj.className, distanceFeet, alpha, pdrX, pdrY, cvEstimatedX, cvEstimatedY, fusedX, fusedY
+                "Fusion Applied | Landmark: %s (class=%s) | Dist: %.2f ft | Alpha: %.2f | PDR: (%.1f, %.1f) | CV: (%.1f, %.1f) | Fused: (%.1f, %.1f)",
+                landmarkName, primaryLandmark.obj.className, distanceFeet, alpha, pdrX, pdrY, cvEstimatedX, cvEstimatedY, fusedX, fusedY
             )
         )
 
