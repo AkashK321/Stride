@@ -185,18 +185,18 @@ class LiveNavigationHandlerTest {
          * PDR is at (120, 120)
          * Heading is 0.0 (Looking North/Up)
          * Landmark is at (100, 0)
-         * Distance is 10 ft -> 100 pixels.
-         * CV Estimate X: 100 - (100 * sin(0)) = 100
-         * CV Estimate Y: 0 + (100 * cos(0)) = 100
+         * Distance is 10 ft -> 10 coordinate units (stored coords are feet).
+         * CV Estimate X: 100 - (10 * sin(0)) = 100
+         * CV Estimate Y: 0 + (10 * cos(0)) = 10
          * Alpha calc: maxAlpha(0.9) * (1 - (10ft / 15ft)) = 0.9 * 0.3333 = 0.30
          * Fused X: (0.3 * 100) + (0.7 * 120) = 30 + 84 = 114.0
-         * Fused Y: (0.3 * 100) + (0.7 * 120) = 30 + 84 = 114.0
+         * Fused Y: (0.3 * 10) + (0.7 * 120) = 3 + 84 = 87.0
          */
         val result = invokeFuseLocationWithLandmarks(120.0, 120.0, 0.0, listOf(detectedObj), mockLogger)
         
         // Asserting with a delta to handle floating point imprecision
         assertEquals(114.0, result.first, 0.01)
-        assertEquals(114.0, result.second, 0.01)
+        assertEquals(87.0, result.second, 0.01)
     }
 
     @Test
@@ -642,7 +642,7 @@ class LiveNavigationHandlerTest {
         every { anyConstructed<DynamoDbTableClient>().getItemDetails(any()) } returns mockSessionData
 
         every { anyConstructed<RdsMapClient>().getClosestMapNode(any(), any(), any()) } returns mapOf("NodeID" to "node1")
-        every { anyConstructed<RdsMapClient>().getNode("node2", any()) } returns MapNode("node2", 100, 0)
+        every { anyConstructed<RdsMapClient>().getNode("node2", any()) } returns MapNode("node2", 10, 0)
         every { anyConstructed<RdsMapClient>().getEdgeDistanceFeet(any(), "node1", "node2") } returns 30.0
 
         val mockLandmark = mockk<LandmarkDetails>(relaxed = true)

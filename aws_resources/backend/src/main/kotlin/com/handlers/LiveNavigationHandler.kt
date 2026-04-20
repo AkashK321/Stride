@@ -38,7 +38,9 @@ import kotlin.math.log
 import kotlin.math.sqrt
 
 private val METERS_TO_FEET = 3.28084
-private val FEET_TO_PIXELS = 10.0
+// Stored map coordinates are in feet (post-upload rotation only), so movement/progress
+// conversions are identity in live navigation.
+private val FEET_TO_PIXELS = 1.0
 private val PIXEL_TO_FEET = 1.0 / FEET_TO_PIXELS
 private val MAX_DISTANCE_FEET = 15.0
 
