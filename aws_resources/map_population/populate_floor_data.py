@@ -5,6 +5,7 @@ Converts physical measurements (feet) to map coordinates and creates nodes, edge
 FIXED: All table/column names are CamelCase to match teammate's schema.
 """
 
+import copy
 import json
 import os
 import pg8000
@@ -18,6 +19,7 @@ logger.setLevel(logging.INFO)
 # Configuration
 FEET_TO_METERS = 0.3048
 DEFAULT_COORDINATE_ANGLE_OFFSET_DEG = 51.0
+DEFAULT_SIDE_BY_BEARING_OFFSET_DEG = 0.0
 
 
 def get_db_secret():
@@ -77,7 +79,37 @@ def build_node_meta_for_storage(node):
     return semantic_meta or None
 
 
-def populate_database(conn, building_data, coordinate_angle_offset_deg=DEFAULT_COORDINATE_ANGLE_OFFSET_DEG):
+def transform_node_meta_bearings_for_storage(
+    node_meta,
+    side_by_bearing_offset_deg: float,
+):
+    """
+    Add an optional calibration to door side_by_bearing.bearing_deg in stored NodeMeta.
+
+    Coordinate rotation (--coordinate-angle-offset) already moves node positions; MapEdges
+    bearings are derived from stored geometry. This offset is an extra knob for aligning
+    authored door approach bearings with the deployed frame when needed (e.g. CI passes
+    --side-by-bearing-offset 51). When zero, door bearings are stored as-authored.
+    """
+    if not node_meta:
+        return node_meta
+    extra = float(side_by_bearing_offset_deg)
+    if extra == 0.0:
+        return node_meta
+    meta = copy.deepcopy(node_meta)
+    for door in meta.get("doors", []):
+        for entry in door.get("side_by_bearing", []):
+            if "bearing_deg" in entry:
+                entry["bearing_deg"] = (float(entry["bearing_deg"]) + extra) % 360.0
+    return meta
+
+
+def populate_database(
+    conn,
+    building_data,
+    coordinate_angle_offset_deg=DEFAULT_COORDINATE_ANGLE_OFFSET_DEG,
+    side_by_bearing_offset_deg=DEFAULT_SIDE_BY_BEARING_OFFSET_DEG,
+):
     """Main function to populate all tables with building data."""
     cursor = conn.cursor()
     
@@ -103,7 +135,10 @@ def populate_database(conn, building_data, coordinate_angle_offset_deg=DEFAULT_C
         
         # 2. Process each floor
         angle_offset_deg = float(coordinate_angle_offset_deg)
+        side_bearing_offset = float(side_by_bearing_offset_deg)
         logger.info("Applying coordinate angle offset: %.2f deg", angle_offset_deg)
+        if side_bearing_offset != 0.0:
+            logger.info("Applying door side_by_bearing offset: %.2f deg", side_bearing_offset)
         for floor_data in building_data['floors']:
             # Insert Floor (CamelCase)
             cursor.execute(
@@ -139,7 +174,12 @@ def populate_database(conn, building_data, coordinate_angle_offset_deg=DEFAULT_C
                     angle_offset_deg,
                 )
                 node_meta = build_node_meta_for_storage(node)
-                
+                if node_meta is not None:
+                    node_meta = transform_node_meta_bearings_for_storage(
+                        node_meta,
+                        side_bearing_offset,
+                    )
+
                 cursor.execute(
                     """
                     INSERT INTO MapNodes (NodeIDString, FloorID, BuildingID, CoordinateX, CoordinateY, NodeType, NodeMeta)
