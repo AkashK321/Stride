@@ -6,7 +6,6 @@ import {
   ActivityIndicator,
   Pressable,
   PanResponder,
-  Image,
   Vibration
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -23,6 +22,7 @@ import {
   startNavigation,
 } from "../../services/api";
 import {
+  CollisionDetectionResponse,
   NavigationFrameMessage,
   NavigationSocketResponse,
   NavigationUpdateResponse,
@@ -33,27 +33,14 @@ import { colors } from "../../theme/colors";
 import { typography } from "../../theme/typography";
 import { spacing } from "../../theme/spacing";
 import { useHeading } from "../../hooks/useHeading";
-import { useSensorData } from "../../hooks/useSensorData";
+import { SensorSnapshot, useSensorData } from "../../hooks/useSensorData";
 import { getFocalLengthPixels } from "../../services/focalLength";
 
-/** Primary navigation frame encode settings tuned to stay under WebSocket payload limits. */
-const LIVE_NAV_FRAME_WIDTH = 320;
-const LIVE_NAV_FRAME_COMPRESS = 0.3;
-/** One-step fallback when primary nav frame still exceeds the payload limit. */
-const LIVE_NAV_FRAME_FALLBACK_WIDTH = 256;
-const LIVE_NAV_FRAME_FALLBACK_COMPRESS = 0.22;
-// Debug payload to disable real camera image transmission while keeping schema valid.
-const DEBUG_PLACEHOLDER_IMAGE_BASE64 =
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO0f0R8AAAAASUVORK5CYII=";
-
-/** How often to send `action: "navigation"` on the WebSocket (live nav updates). */
-const LIVE_NAV_WS_INTERVAL_MS = 1000;
-
-function getImageSize(uri: string): Promise<{ width: number; height: number }> {
-  return new Promise((resolve, reject) => {
-    Image.getSize(uri, (width, height) => resolve({ width, height }), reject);
-  });
-}
+/** Collision frame encode settings. */
+const COLLISION_FRAME_WIDTH = 256;
+const COLLISION_FRAME_COMPRESS = 0.22;
+/** How often to tick local progression from pedometer deltas. */
+const LOCAL_PROGRESS_TICK_MS = 500;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -117,6 +104,12 @@ function isNavigationUpdateResponse(
   return response.type === "navigation_update";
 }
 
+function isCollisionDetectionResponse(
+  response: NavigationSocketResponse,
+): response is CollisionDetectionResponse {
+  return "estimatedDistances" in response;
+}
+
 export default function NavigationSession() {
   const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
@@ -129,29 +122,30 @@ export default function NavigationSession() {
     null,
   );
   const [navigationLoading, setNavigationLoading] = React.useState(false);
-  const collisionPersonDetectedRef = React.useRef(false);
   const wsRef = React.useRef<NavigationWebSocket | null>(null);
-  const navLoopRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const collisionLoopRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const localProgressLoopRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const lastVibrationTimeRef = React.useRef(0);
   const lastIntervalRef = React.useRef(0); // 0 = Safe, 1 = Low, 2 = Med, 3 = High
-  // const frameInFlightRef = React.useRef(false);
-  const navFrameInFlightRef = React.useRef(false);
   const collisionFrameInFlightRef = React.useRef(false);
   const requestCounterRef = React.useRef(0);
   const [speakerMode, setSpeakerMode] = React.useState(false);
   const [currentStepIndex, setCurrentStepIndex] = React.useState(0);
-  const focalLengthPixels = React.useMemo(
-    () => getFocalLengthPixels(LIVE_NAV_FRAME_WIDTH),
-    [],
-  );
+  const [distanceConsumedFeet, setDistanceConsumedFeet] = React.useState(0);
+  const [latestProgressDeltaFeet, setLatestProgressDeltaFeet] = React.useState(0);
+  const [lastProgressTickMs, setLastProgressTickMs] = React.useState<number | null>(null);
+  const [lastSensorSnapshot, setLastSensorSnapshot] = React.useState<SensorSnapshot | null>(null);
+  const [wsStatus, setWsStatus] = React.useState<"disconnected" | "connecting" | "connected" | "error">("disconnected");
+  const [collisionFramesSent, setCollisionFramesSent] = React.useState(0);
+  const [collisionFramesDropped, setCollisionFramesDropped] = React.useState(0);
+  const [lastCollisionSendAtMs, setLastCollisionSendAtMs] = React.useState<number | null>(null);
   const fallbackFocalLengthPixels = React.useMemo(
-    () => getFocalLengthPixels(LIVE_NAV_FRAME_FALLBACK_WIDTH),
+    () => getFocalLengthPixels(COLLISION_FRAME_WIDTH),
     [],
   );
   const {
     getSnapshot,
-    consumeDistanceSnapshot,
+    getProgressSnapshot,
     start: startSensors,
     stop: stopSensors,
   } = useSensorData();
@@ -165,17 +159,18 @@ export default function NavigationSession() {
   }, []);
 
   const handleSelectedIndexChange = React.useCallback((index: number) => {
+    currentStepIndexRef.current = index;
     setCurrentStepIndex(index);
   }, []);
 
   const stopStreamingLoops = React.useCallback(() => {
-    if (navLoopRef.current) {
-      clearInterval(navLoopRef.current);
-      navLoopRef.current = null;
-    }
     if (collisionLoopRef.current) {
       clearInterval(collisionLoopRef.current);
       collisionLoopRef.current = null;
+    }
+    if (localProgressLoopRef.current) {
+      clearInterval(localProgressLoopRef.current);
+      localProgressLoopRef.current = null;
     }
   }, []);
 
@@ -200,7 +195,7 @@ export default function NavigationSession() {
 
     const encodeOptions = {
       base64: true,
-      compress: options?.compress ?? LIVE_NAV_FRAME_COMPRESS,
+      compress: options?.compress ?? COLLISION_FRAME_COMPRESS,
       format: SaveFormat.JPEG as const,
     };
 
@@ -208,7 +203,7 @@ export default function NavigationSession() {
       // By supplying only width, Expo automatically scales the height to preserve the full frame's aspect ratio.
       const resized = await manipulateAsync(
         photo.uri,
-        [{ resize: { width: options?.width ?? LIVE_NAV_FRAME_WIDTH } }],
+        [{ resize: { width: options?.width ?? COLLISION_FRAME_WIDTH } }],
         encodeOptions,
       );
       return resized.base64 ?? null;
@@ -218,63 +213,6 @@ export default function NavigationSession() {
     }
   }, []);
 
-  const sendNavigationFrame = React.useCallback(async () => {
-    const ws = wsRef.current;
-    if (!ws || !ws.isConnected() || !navigationSessionId || navFrameInFlightRef.current) {
-      return;
-    }
-    navFrameInFlightRef.current = true;
-    try {
-      // const imageBase64 = await captureBase64Frame({
-      //   width: LIVE_NAV_FRAME_WIDTH,
-      //   compress: LIVE_NAV_FRAME_COMPRESS,
-      // });
-      // if (!imageBase64) return;
-      const imageBase64 = DEBUG_PLACEHOLDER_IMAGE_BASE64;
-      const snapshot = getSnapshot({ consumeDistance: false });
-      let message: NavigationFrameMessage = {
-        action: "navigation",
-        session_id: navigationSessionId,
-        image_base64: imageBase64,
-        focal_length_pixels: focalLengthPixels,
-        heading_degrees: snapshot.heading ?? 0,
-        gps: snapshot.gps,
-        distance_traveled: snapshot.distanceDeltaFeet,
-        timestamp_ms: Date.now(),
-        request_id: nextRequestId(),
-      };
-      let didSend = ws.sendFrame(message);
-      if (!didSend) {
-        // Fallback recapture intentionally disabled while image frames are disabled.
-        // const fallbackImageBase64 = await captureBase64Frame({
-        //   width: LIVE_NAV_FRAME_FALLBACK_WIDTH,
-        //   compress: LIVE_NAV_FRAME_FALLBACK_COMPRESS,
-        // });
-        // if (fallbackImageBase64) {
-        //   message = {
-        //     ...message,
-        //     image_base64: fallbackImageBase64,
-        //     focal_length_pixels: fallbackFocalLengthPixels,
-        //   };
-        //   didSend = ws.sendFrame(message);
-        // }
-      }
-      if (didSend) {
-        consumeDistanceSnapshot(snapshot.estimatedTotalSteps);
-      }
-    } catch (e) {
-      setNavigationError(e instanceof Error ? e.message : "Failed to send navigation frame");
-    } finally {
-      navFrameInFlightRef.current = false;
-    }
-  }, [
-    consumeDistanceSnapshot,
-    focalLengthPixels,
-    getSnapshot,
-    navigationSessionId,
-    nextRequestId,
-  ]);
-
   const sendCollisionFrame = React.useCallback(async () => {
     const ws = wsRef.current;
     if (!ws || !ws.isConnected() || !navigationSessionId || collisionFrameInFlightRef.current) {
@@ -282,13 +220,13 @@ export default function NavigationSession() {
     }
     collisionFrameInFlightRef.current = true;
     try {
-      // const imageBase64 = await captureBase64Frame({
-      //   width: LIVE_NAV_FRAME_FALLBACK_WIDTH,
-      //   compress: LIVE_NAV_FRAME_FALLBACK_COMPRESS,
-      // });
-      // if (!imageBase64) return;
-      const imageBase64 = DEBUG_PLACEHOLDER_IMAGE_BASE64;
+      const imageBase64 = await captureBase64Frame({
+        width: COLLISION_FRAME_WIDTH,
+        compress: COLLISION_FRAME_COMPRESS,
+      });
+      if (!imageBase64) return;
       const snapshot = getSnapshot({ consumeDistance: false });
+      setLastSensorSnapshot(snapshot);
       const message: NavigationFrameMessage = {
         action: "frame",
         session_id: navigationSessionId,
@@ -300,13 +238,20 @@ export default function NavigationSession() {
         timestamp_ms: Date.now(),
         request_id: nextRequestId(),
       };
-      ws.sendFrame(message);
+      const didSend = ws.sendFrame(message);
+      if (didSend) {
+        setCollisionFramesSent((prev) => prev + 1);
+        setLastCollisionSendAtMs(Date.now());
+      } else {
+        setCollisionFramesDropped((prev) => prev + 1);
+      }
     } catch (e) {
       setNavigationError(e instanceof Error ? e.message : "Failed to send collision frame");
     } finally {
       collisionFrameInFlightRef.current = false;
     }
   }, [
+    captureBase64Frame,
     fallbackFocalLengthPixels,
     getSnapshot,
     navigationSessionId,
@@ -315,13 +260,7 @@ export default function NavigationSession() {
 
   const handleSocketMessage = React.useCallback((response: NavigationSocketResponse) => {
     if (isNavigationUpdateResponse(response)) {
-      const remaining = normalizeNavigationInstructions(response.remaining_instructions);
-      if (remaining.length > 0) {
-        setNavigationInstructions(remaining);
-      }
-      if (typeof response.current_step === "number") {
-        setCurrentStepIndex(Math.max(0, response.current_step - 1));
-      }
+      // Static navigation mode: ignore backend instruction updates.
       setNavigationError(null);
       return;
     }
@@ -331,7 +270,11 @@ export default function NavigationSession() {
       return;
     }
 
-    if (Array.isArray(response.estimatedDistances) && response.estimatedDistances.length > 0) {
+    if (
+      isCollisionDetectionResponse(response) &&
+      Array.isArray(response.estimatedDistances) &&
+      response.estimatedDistances.length > 0
+    ) {
       
       console.log("Received collision update with distances (meters):", response.estimatedDistances);
       // The backend returns distances in meters, convert to feet and find the closest object
@@ -381,9 +324,7 @@ export default function NavigationSession() {
   }, []);
 
   /** Always latest send fns so WebSocket intervals do not need effect re-runs when sensors/state change. */
-  const sendNavigationFrameRef = React.useRef(sendNavigationFrame);
   const sendCollisionFrameRef = React.useRef(sendCollisionFrame);
-  sendNavigationFrameRef.current = sendNavigationFrame;
   sendCollisionFrameRef.current = sendCollisionFrame;
 
   const handleSocketMessageRef = React.useRef(handleSocketMessage);
@@ -396,6 +337,8 @@ export default function NavigationSession() {
 
   const instructionCountRef = React.useRef(0);
   instructionCountRef.current = navigationInstructions?.length ?? 0;
+  const currentStepIndexRef = React.useRef(currentStepIndex);
+  currentStepIndexRef.current = currentStepIndex;
 
   const panResponder = React.useRef(
     PanResponder.create({
@@ -421,11 +364,6 @@ export default function NavigationSession() {
       },
     }),
   ).current;
-
-  // Reset selected step when the instruction list is replaced (e.g. from API or later from WebSocket).
-  React.useEffect(() => {
-    setCurrentStepIndex(0);
-  }, [navigationInstructions]);
 
   // Speak whenever the selected instruction changes (from dropdown, or later from other sources).
   React.useEffect(() => {
@@ -471,6 +409,15 @@ export default function NavigationSession() {
           throw new Error("Navigation response contained no valid instructions");
         }
         setNavigationSessionId(response.session_id);
+        setCurrentStepIndex(0);
+        currentStepIndexRef.current = 0;
+        setDistanceConsumedFeet(0);
+        setLatestProgressDeltaFeet(0);
+        setLastProgressTickMs(null);
+        setLastSensorSnapshot(null);
+        setCollisionFramesSent(0);
+        setCollisionFramesDropped(0);
+        setLastCollisionSendAtMs(null);
         setNavigationInstructions(normalizedInstructions);
       } catch (err) {
         if (cancelled) return;
@@ -511,6 +458,7 @@ export default function NavigationSession() {
         const ws = new NavigationWebSocket(wsUrl);
         ws.autoReconnect = true;
         ws.setStatusHandler((status) => {
+          setWsStatus(status);
           if (status === "error") {
             setNavigationError("WebSocket connection error");
           }
@@ -525,14 +473,10 @@ export default function NavigationSession() {
         await startSensorsRef.current();
         if (cancelled) return;
 
-        navLoopRef.current = setInterval(() => {
-          void sendNavigationFrameRef.current();
-        }, LIVE_NAV_WS_INTERVAL_MS);
         collisionLoopRef.current = setInterval(() => {
           void sendCollisionFrameRef.current();
         }, 500);
 
-        void sendNavigationFrameRef.current();
         void sendCollisionFrameRef.current();
       } catch (e) {
         if (!cancelled) {
@@ -554,6 +498,55 @@ export default function NavigationSession() {
     };
   }, [navigationSessionId, stopStreamingLoops]);
 
+  React.useEffect(() => {
+    if (!navigationSessionId) {
+      return;
+    }
+    localProgressLoopRef.current = setInterval(() => {
+      if (instructionCountRef.current === 0) return;
+      const snapshot = getProgressSnapshot();
+      setLastSensorSnapshot(snapshot);
+      setLatestProgressDeltaFeet(snapshot.distanceDeltaFeet);
+      setLastProgressTickMs(Date.now());
+      if (snapshot.distanceDeltaFeet <= 0) return;
+      setDistanceConsumedFeet((prev) => prev + snapshot.distanceDeltaFeet);
+      setNavigationInstructions((prev) => {
+        if (!prev || prev.length === 0) return prev;
+        const updated = prev.map((instruction) => ({ ...instruction }));
+        let step = currentStepIndexRef.current;
+        let remainingDelta = snapshot.distanceDeltaFeet;
+        while (remainingDelta > 0 && step < updated.length) {
+          const current = updated[step];
+          if (current.step_type === "arrival") break;
+          if (current.distance_feet > remainingDelta) {
+            current.distance_feet -= remainingDelta;
+            remainingDelta = 0;
+            break;
+          }
+          remainingDelta -= Math.max(current.distance_feet, 0);
+          current.distance_feet = 0;
+          if (step < updated.length - 1) {
+            step += 1;
+          } else {
+            break;
+          }
+        }
+        if (step !== currentStepIndexRef.current) {
+          currentStepIndexRef.current = step;
+          setCurrentStepIndex(step);
+        }
+        return updated;
+      });
+    }, LOCAL_PROGRESS_TICK_MS);
+
+    return () => {
+      if (localProgressLoopRef.current) {
+        clearInterval(localProgressLoopRef.current);
+        localProgressLoopRef.current = null;
+      }
+    };
+  }, [getProgressSnapshot, navigationSessionId]);
+
   const handleExitNavigation = React.useCallback(() => {
     stopStreamingLoops();
     wsRef.current?.disconnect();
@@ -572,6 +565,21 @@ export default function NavigationSession() {
     );
     return Math.round(rawTotal / 5) * 5;
   }, [navigationInstructions]);
+  const roundedConsumedFeet = Math.round(distanceConsumedFeet * 10) / 10;
+  const roundedLatestDeltaFeet = Math.round(latestProgressDeltaFeet * 100) / 100;
+  const roundedRemainingFeet = activeInstruction
+    ? Math.round(Math.max(activeInstruction.distance_feet, 0) * 10) / 10
+    : null;
+  const headingLabel =
+    lastSensorSnapshot?.heading === null || lastSensorSnapshot?.heading === undefined
+      ? "n/a"
+      : `${Math.round(lastSensorSnapshot.heading)}°`;
+  const speedLabel = lastSensorSnapshot
+    ? `${(lastSensorSnapshot.effectiveSpeedStepsPerMs * 1000).toFixed(2)} steps/s`
+    : "n/a";
+  const progressTickLabel = lastProgressTickMs
+    ? `${Math.round((Date.now() - lastProgressTickMs) / 100) / 10}s ago`
+    : "n/a";
 
   if (!cameraPermission) {
     return React.createElement(
@@ -614,7 +622,7 @@ export default function NavigationSession() {
 
     React.createElement(CameraView, {
       ref: cameraRef,
-      style: StyleSheet.absoluteFill,
+      style: styles.hiddenCamera,
       facing: "back",
     }),
 
@@ -655,6 +663,53 @@ export default function NavigationSession() {
               Text,
               { style: styles.errorText },
               navigationError,
+            ),
+          ),
+
+        navigationInstructions &&
+          React.createElement(
+            View,
+            { style: styles.debugPanel },
+            React.createElement(
+              Text,
+              { style: styles.debugTitle },
+              "Navigation Debug",
+            ),
+            React.createElement(
+              Text,
+              { style: styles.debugLine },
+              `WS: ${wsStatus} | collision sent: ${collisionFramesSent} | dropped: ${collisionFramesDropped}`,
+            ),
+            React.createElement(
+              Text,
+              { style: styles.debugLine },
+              `Heading: ${headingLabel} | alignment: ${alignment}`,
+            ),
+            React.createElement(
+              Text,
+              { style: styles.debugLine },
+              `Step ${currentStepIndex + 1}/${navigationInstructions.length} | remaining: ${roundedRemainingFeet ?? "n/a"} ft`,
+            ),
+            activeInstruction &&
+              React.createElement(
+                Text,
+                { style: styles.debugLine },
+                `Instruction: ${formatInstruction(activeInstruction)}`,
+              ),
+            React.createElement(
+              Text,
+              { style: styles.debugLine },
+              `Progress consumed: ${roundedConsumedFeet} ft | latest tick: +${roundedLatestDeltaFeet} ft (${progressTickLabel})`,
+            ),
+            React.createElement(
+              Text,
+              { style: styles.debugLine },
+              `Pedometer steps: ${lastSensorSnapshot?.lastPedometerSteps ?? "n/a"} | speed: ${speedLabel}`,
+            ),
+            React.createElement(
+              Text,
+              { style: styles.debugLine },
+              `Interpolation: ${lastSensorSnapshot?.interpolationApplied ? "on" : "off"} | age: ${lastSensorSnapshot?.timeSincePedoMs ?? "n/a"} ms | last collision send: ${lastCollisionSendAtMs ? `${Math.round((Date.now() - lastCollisionSendAtMs) / 100) / 10}s ago` : "n/a"}`,
             ),
           ),
 
@@ -762,13 +817,20 @@ export default function NavigationSession() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: "#000",
+    backgroundColor: colors.background,
+  },
+  hiddenCamera: {
+    position: "absolute",
+    width: 1,
+    height: 1,
+    opacity: 0,
   },
   overlay: {
     flex: 1,
   },
   swipeableOverlay: {
     flex: 1,
+    backgroundColor: colors.background,
   },
   centered: {
     flex: 1,
@@ -808,6 +870,28 @@ const styles = StyleSheet.create({
   errorText: {
     ...typography.label,
     color: colors.danger,
+  },
+  debugPanel: {
+    marginHorizontal: spacing.md,
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 14,
+    backgroundColor: colors.backgroundSecondary,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.secondary,
+    gap: 4,
+  },
+  debugTitle: {
+    ...typography.h3,
+    fontSize: 18,
+    color: colors.text,
+    marginBottom: 2,
+  },
+  debugLine: {
+    ...typography.label,
+    color: colors.textSecondary,
   },
   bottomNavContainer: {
     position: "absolute",

@@ -41,7 +41,11 @@ export interface SensorSnapshot {
   accelerometer: AccelerometerData | null;
   gyroscope: GyroscopeData | null;
   distanceDeltaFeet: number;
-  /** Internal cursor used to commit consumed pedometer distance after successful send. */
+  timeSincePedoMs: number;
+  lastPedometerSteps: number;
+  effectiveSpeedStepsPerMs: number;
+  interpolationApplied: boolean;
+  /** Internal cursor for delta bookkeeping between snapshots. */
   estimatedTotalSteps: number;
 }
 
@@ -56,8 +60,8 @@ export interface GetSnapshotOptions {
 export interface UseSensorDataReturn {
   /** Get a snapshot of the current sensor readings */
   getSnapshot: (options?: GetSnapshotOptions) => SensorSnapshot;
-  /** Commit pedometer distance consumption after a successful navigation-frame send. */
-  consumeDistanceSnapshot: (estimatedTotalSteps: number) => void;
+  /** Get a snapshot that consumes distance for local progression ticks. */
+  getProgressSnapshot: () => SensorSnapshot;
   /** Whether location permission has been granted */
   hasLocationPermission: boolean;
   /** Whether pedometer permission has been granted */
@@ -251,12 +255,6 @@ export function useSensorData(): UseSensorDataReturn {
     };
   }, [stop]);
 
-  const consumeDistanceSnapshot = React.useCallback((estimatedTotalSteps: number) => {
-    // Commit exactly what was sent so the next delta is measured from that same point.
-    // This allows the baseline to correct downward if interpolation previously overshot.
-    lastSnapshotStepsRef.current = estimatedTotalSteps;
-  }, []);
-
   const getSnapshot = React.useCallback((options?: GetSnapshotOptions): SensorSnapshot => {
     const now = Date.now();
     const speedAgeMs = now - lastSpeedUpdateTimeRef.current;
@@ -277,6 +275,11 @@ export function useSensorData(): UseSensorDataReturn {
     ) {
       estimatedTotalSteps += currentSpeed * timeSincePedo;
     }
+    const interpolationApplied =
+      DISTANCE_INTERPOLATION_ENABLED &&
+      lastPedometerTimeRef.current > 0 &&
+      timeSincePedo <= MAX_INTERPOLATION_WINDOW_MS &&
+      currentSpeed > 0;
 
     let deltaSteps = estimatedTotalSteps - lastSnapshotStepsRef.current;
     if (deltaSteps < 0) deltaSteps = 0;
@@ -293,13 +296,20 @@ export function useSensorData(): UseSensorDataReturn {
       accelerometer: accelerometerRef.current,
       gyroscope: gyroscopeRef.current,
       distanceDeltaFeet,
+      timeSincePedoMs: timeSincePedo,
+      lastPedometerSteps: lastPedometerStepsRef.current,
+      effectiveSpeedStepsPerMs: currentSpeed,
+      interpolationApplied,
       estimatedTotalSteps,
     };
   }, []);
+  const getProgressSnapshot = React.useCallback(() => {
+    return getSnapshot({ consumeDistance: true });
+  }, [getSnapshot]);
 
   return {
     getSnapshot,
-    consumeDistanceSnapshot,
+    getProgressSnapshot,
     hasLocationPermission,
     hasPedometerPermission,
     start,
