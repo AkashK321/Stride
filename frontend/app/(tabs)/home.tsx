@@ -16,6 +16,10 @@ import { Ionicons } from "@expo/vector-icons";
 import SearchInput from "../../components/SearchSheet/SearchInput";
 import SearchResultItem from "../../components/SearchSheet/SearchResultItem";
 import { searchLandmarks, type LandmarkResult } from "../../services/api";
+import {
+  loadRecentDestinations,
+  upsertRecentDestination,
+} from "../../services/recentDestinationsStorage";
 import { colors } from "../../theme/colors";
 import { radii } from "../../theme/radius";
 import { spacing } from "../../theme/spacing";
@@ -78,6 +82,23 @@ export default function Home() {
     };
   }, []);
 
+  React.useEffect(() => {
+    let isMounted = true;
+
+    const hydrateRecentDestinations = async () => {
+      const storedRecents = await loadRecentDestinations();
+      if (isMounted) {
+        setRecentDestinations(storedRecents);
+      }
+    };
+
+    void hydrateRecentDestinations();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const updateRecentDestinations = React.useCallback((landmark: LandmarkResult) => {
     setRecentDestinations((current) => {
       const withoutCurrent = current.filter(
@@ -85,7 +106,18 @@ export default function Home() {
       );
       return [landmark, ...withoutCurrent].slice(0, 10);
     });
+    void upsertRecentDestination(landmark).then((persistedRecents) => {
+      setRecentDestinations(persistedRecents);
+    });
   }, []);
+
+  const handleSelectRecentDestination = React.useCallback(
+    (landmark: LandmarkResult) => {
+      setSelectedDestination(landmark);
+      updateRecentDestinations(landmark);
+    },
+    [updateRecentDestinations],
+  );
 
   const closePicker = React.useCallback(() => {
     setPickerVisible(false);
@@ -304,7 +336,7 @@ export default function Home() {
                 { key: `recent-${landmark.landmark_id}` },
                 React.createElement(SearchResultItem, {
                   landmark,
-                  onPress: setSelectedDestination,
+                  onPress: handleSelectRecentDestination,
                 }),
                 index < Math.min(recentDestinations.length, 5) - 1 &&
                   React.createElement(View, { style: styles.separator }),
