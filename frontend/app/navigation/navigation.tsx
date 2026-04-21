@@ -33,6 +33,7 @@ import { colors } from "../../theme/colors";
 import { typography } from "../../theme/typography";
 import { spacing } from "../../theme/spacing";
 import { useHeading } from "../../hooks/useHeading";
+import { useOrientationFeedback } from "../../hooks/useOrientationFeedback";
 import { SensorSnapshot, useSensorData } from "../../hooks/useSensorData";
 import { getFocalLengthPixels } from "../../services/focalLength";
 
@@ -43,6 +44,8 @@ const COLLISION_FRAME_COMPRESS = 0.22;
 const LOCAL_PROGRESS_TICK_MS = 500;
 const SPEECH_MILESTONE_FEET = [50, 10] as const;
 const SPEECH_DUPLICATE_WINDOW_MS = 4000;
+const ORIENTATION_ALIGN_HOLD_MS = 1500;
+const ORIENTATION_PROGRESS_TICK_MS = 50;
 
 type StepSpeechState = {
   hasStepAnnouncement: boolean;
@@ -156,6 +159,10 @@ export default function NavigationSession() {
   const requestCounterRef = React.useRef(0);
   const [speakerMode, setSpeakerMode] = React.useState(false);
   const [showDebugBackground, setShowDebugBackground] = React.useState(false);
+  const [navigationMode, setNavigationMode] = React.useState<"orienting" | "navigating">(
+    "navigating",
+  );
+  const [orientationHoldProgress, setOrientationHoldProgress] = React.useState(0);
   const [currentStepIndex, setCurrentStepIndex] = React.useState(0);
   const [distanceConsumedFeet, setDistanceConsumedFeet] = React.useState(0);
   const [latestProgressDeltaFeet, setLatestProgressDeltaFeet] = React.useState(0);
@@ -176,9 +183,21 @@ export default function NavigationSession() {
     stop: stopSensors,
   } = useSensorData();
 
-  const { getAlignment } = useHeading();
+  const { smoothedHeading, getAlignment, getHeadingDelta } = useHeading();
+  const {
+    start: startOrientationFeedback,
+    stop: stopOrientationFeedback,
+    update: updateOrientationFeedback,
+    playAlignedCompletionDing,
+  } = useOrientationFeedback();
   const activeInstruction = navigationInstructions?.[currentStepIndex] ?? null;
   const alignment = getAlignment(activeInstruction?.heading_degrees ?? null);
+  const orientationTargetHeading = navigationInstructions?.[0]?.heading_degrees ?? null;
+  const orientationAlignment = getAlignment(orientationTargetHeading);
+  const orientationHeadingDelta = getHeadingDelta(orientationTargetHeading);
+  const orientationAbsErrorDeg =
+    orientationHeadingDelta === null ? 180 : Math.abs(orientationHeadingDelta);
+  const isOrienting = navigationMode === "orienting";
 
   const toggleSpeakerMode = React.useCallback(() => {
     setSpeakerMode((prev) => !prev);
@@ -371,6 +390,9 @@ export default function NavigationSession() {
   const stepSpeechStateRef = React.useRef(new Map<number, StepSpeechState>());
   const previousStepForSpeechRef = React.useRef<number | null>(null);
   const previousRemainingFeetRef = React.useRef<number | null>(null);
+  const orientationAlignedStartedAtMsRef = React.useRef<number | null>(null);
+  const orientationProgressLoopRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const orientationCompletionInFlightRef = React.useRef(false);
   const lastSpeechMetaRef = React.useRef<{
     message: string;
     spokenAtMs: number;
@@ -435,6 +457,110 @@ export default function NavigationSession() {
     [speakerMode],
   );
 
+  const stopOrientationProgressLoop = React.useCallback(() => {
+    if (orientationProgressLoopRef.current) {
+      clearInterval(orientationProgressLoopRef.current);
+      orientationProgressLoopRef.current = null;
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (!isOrienting) {
+      stopOrientationProgressLoop();
+      orientationAlignedStartedAtMsRef.current = null;
+      setOrientationHoldProgress(0);
+      void stopOrientationFeedback();
+      return;
+    }
+    void startOrientationFeedback();
+    return () => {
+      stopOrientationProgressLoop();
+      void stopOrientationFeedback();
+    };
+  }, [isOrienting, startOrientationFeedback, stopOrientationFeedback, stopOrientationProgressLoop]);
+
+  React.useEffect(() => {
+    if (!isOrienting) {
+      return;
+    }
+
+    const hasOrientationHeading = typeof orientationTargetHeading === "number";
+    if (!hasOrientationHeading) {
+      setNavigationMode("navigating");
+      return;
+    }
+
+    const isAligned = orientationAlignment === "aligned";
+    updateOrientationFeedback({
+      alignment: orientationAlignment,
+      absErrorDeg: orientationAbsErrorDeg,
+      isAligned,
+    });
+
+    if (!isAligned) {
+      stopOrientationProgressLoop();
+      orientationAlignedStartedAtMsRef.current = null;
+      setOrientationHoldProgress(0);
+      return;
+    }
+
+    const now = Date.now();
+    if (orientationAlignedStartedAtMsRef.current === null) {
+      orientationAlignedStartedAtMsRef.current = now;
+      setOrientationHoldProgress(0);
+    }
+  }, [
+    isOrienting,
+    orientationAbsErrorDeg,
+    orientationAlignment,
+    orientationTargetHeading,
+    stopOrientationProgressLoop,
+    updateOrientationFeedback,
+  ]);
+
+  React.useEffect(() => {
+    if (!isOrienting || orientationAlignment !== "aligned") {
+      stopOrientationProgressLoop();
+      return;
+    }
+
+    if (orientationAlignedStartedAtMsRef.current === null) {
+      return;
+    }
+
+    stopOrientationProgressLoop();
+    orientationProgressLoopRef.current = setInterval(() => {
+      if (orientationAlignedStartedAtMsRef.current === null) {
+        return;
+      }
+      const elapsedMs = Date.now() - orientationAlignedStartedAtMsRef.current;
+      const nextProgress = Math.min(elapsedMs / ORIENTATION_ALIGN_HOLD_MS, 1);
+      setOrientationHoldProgress(nextProgress);
+      if (nextProgress >= 1) {
+        stopOrientationProgressLoop();
+        if (!orientationCompletionInFlightRef.current) {
+          orientationCompletionInFlightRef.current = true;
+          void (async () => {
+            await playAlignedCompletionDing();
+            setNavigationMode("navigating");
+            setOrientationHoldProgress(0);
+            orientationAlignedStartedAtMsRef.current = null;
+            orientationCompletionInFlightRef.current = false;
+          })();
+        }
+      }
+    }, ORIENTATION_PROGRESS_TICK_MS);
+
+    return () => {
+      stopOrientationProgressLoop();
+    };
+  }, [
+    isOrienting,
+    orientationAlignment,
+    playAlignedCompletionDing,
+    stopOrientationProgressLoop,
+  ]);
+
   const panResponder = React.useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
@@ -462,7 +588,13 @@ export default function NavigationSession() {
 
   // Speak instruction with per-step milestones instead of every incremental update.
   React.useEffect(() => {
-    if (!speakerMode || !navigationInstructions || navigationInstructions.length === 0 || !activeInstruction) {
+    if (
+      isOrienting ||
+      !speakerMode ||
+      !navigationInstructions ||
+      navigationInstructions.length === 0 ||
+      !activeInstruction
+    ) {
       return;
     }
 
@@ -522,6 +654,7 @@ export default function NavigationSession() {
     activeInstruction,
     currentStepIndex,
     getStepSpeechState,
+    isOrienting,
     navigationInstructions,
     speakerMode,
     speakWithGuards,
@@ -576,6 +709,10 @@ export default function NavigationSession() {
         setCollisionFramesDropped(0);
         setLastCollisionSendAtMs(null);
         setNavigationInstructions(normalizedInstructions);
+        const firstInstructionHeading = normalizedInstructions[0]?.heading_degrees;
+        setNavigationMode(
+          typeof firstInstructionHeading === "number" ? "orienting" : "navigating",
+        );
       } catch (err) {
         if (cancelled) return;
         setNavigationInstructions(null);
@@ -599,7 +736,7 @@ export default function NavigationSession() {
   // WebSocket + loops: run only when session id appears or changes — not when send callbacks
   // or sensorsActive change (that was causing disconnect/reconnect churn).
   React.useEffect(() => {
-    if (!navigationSessionId) {
+    if (!navigationSessionId || isOrienting) {
       return;
     }
 
@@ -653,10 +790,10 @@ export default function NavigationSession() {
       wsRef.current = null;
       stopSensorsRef.current();
     };
-  }, [navigationSessionId, stopStreamingLoops]);
+  }, [isOrienting, navigationSessionId, stopStreamingLoops]);
 
   React.useEffect(() => {
-    if (!navigationSessionId) {
+    if (!navigationSessionId || isOrienting) {
       return;
     }
     localProgressLoopRef.current = setInterval(() => {
@@ -702,7 +839,7 @@ export default function NavigationSession() {
         localProgressLoopRef.current = null;
       }
     };
-  }, [getProgressSnapshot, navigationSessionId]);
+  }, [getProgressSnapshot, isOrienting, navigationSessionId]);
 
   const handleExitNavigation = React.useCallback(() => {
     stopStreamingLoops();
@@ -792,7 +929,11 @@ export default function NavigationSession() {
       React.createElement(
         View,
         {
-          style: [styles.swipeableOverlay, styles.swipeableOverlayCamera],
+          style: [
+            styles.swipeableOverlay,
+            styles.swipeableOverlayCamera,
+            isOrienting ? styles.swipeableOverlayOrientation : null,
+          ],
           ...(navigationInstructions && navigationInstructions.length > 0
             ? panResponder.panHandlers
             : {}),
@@ -824,6 +965,7 @@ export default function NavigationSession() {
           ),
 
         navigationInstructions &&
+          !isOrienting &&
           React.createElement(NavigationInstructionsDropdown, {
             instructions: navigationInstructions,
             onExit: handleExitNavigation,
@@ -877,10 +1019,61 @@ export default function NavigationSession() {
             ),
           ),
       ),
+      isOrienting &&
+        React.createElement(View, { style: styles.orientationDimmer }),
+      isOrienting &&
+        React.createElement(
+          View,
+          { style: styles.orientationCardContainer, pointerEvents: "none" },
+          React.createElement(
+            View,
+            { style: styles.orientationCard },
+            React.createElement(Text, { style: styles.orientationTitle }, "Orient Yourself"),
+            React.createElement(
+              Text,
+              { style: styles.orientationBody },
+              orientationAlignment === "aligned"
+                ? "Hold steady. You're facing the correct direction."
+                : orientationAlignment === "turn_left"
+                ? "Turn left to match the first instruction direction."
+                : orientationAlignment === "turn_right"
+                ? "Turn right to match the first instruction direction."
+                : "Rotate slowly to calibrate your heading.",
+            ),
+            React.createElement(
+              Text,
+              { style: styles.orientationMetric },
+              `Target heading: ${orientationTargetHeading == null ? "n/a" : `${Math.round(orientationTargetHeading)}°`}`,
+            ),
+            React.createElement(
+              Text,
+              { style: styles.orientationMetric },
+              `Current heading: ${smoothedHeading == null ? "n/a" : `${Math.round(smoothedHeading)}°`} | Delta: ${orientationHeadingDelta == null ? "n/a" : `${Math.round(orientationHeadingDelta)}°`}`,
+            ),
+            React.createElement(
+              View,
+              { style: styles.orientationProgressTrack },
+              React.createElement(View, {
+                style: [
+                  styles.orientationProgressFill,
+                  { width: `${Math.round(orientationHoldProgress * 100)}%` },
+                ],
+              }),
+            ),
+            React.createElement(
+              Text,
+              { style: styles.orientationProgressLabel },
+              orientationAlignment === "aligned"
+                ? `Hold alignment ${(orientationHoldProgress * 1.5).toFixed(1)} / 1.5s`
+                : "Align with target heading to continue",
+            ),
+          ),
+        ),
     ),
 
     params.name &&
       navigationInstructions &&
+      !isOrienting &&
       React.createElement(
         View,
         { style: styles.bottomNavContainer },
@@ -1011,6 +1204,66 @@ const styles = StyleSheet.create({
   },
   swipeableOverlayCamera: {
     backgroundColor: "transparent",
+  },
+  swipeableOverlayOrientation: {
+    opacity: 0.72,
+  },
+  orientationBackgroundDisabled: {
+    opacity: 0.62,
+  },
+  orientationDimmer: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "#11111166",
+  },
+  orientationCardContainer: {
+    position: "absolute",
+    left: spacing.md,
+    right: spacing.md,
+    top: "28%",
+    zIndex: 12,
+  },
+  orientationCard: {
+    borderRadius: 16,
+    backgroundColor: "#FFFFFFF2",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.secondary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    shadowColor: "#000",
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 5,
+    gap: spacing.xs,
+  },
+  orientationTitle: {
+    ...typography.h3,
+    color: colors.text,
+  },
+  orientationBody: {
+    ...typography.body,
+    color: colors.textSecondary,
+  },
+  orientationMetric: {
+    ...typography.label,
+    color: colors.textSecondary,
+  },
+  orientationProgressTrack: {
+    marginTop: spacing.xs,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: colors.backgroundSecondary,
+    overflow: "hidden",
+  },
+  orientationProgressFill: {
+    height: "100%",
+    borderRadius: 999,
+    backgroundColor: colors.primary,
+  },
+  orientationProgressLabel: {
+    ...typography.label,
+    color: colors.text,
+    marginTop: spacing.xs,
   },
   debugToggleButton: {
     width: 56,

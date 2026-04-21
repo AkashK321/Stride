@@ -45,6 +45,24 @@ jest.mock("expo-haptics", () => ({
   selectionAsync: jest.fn(),
 }));
 
+// expo-av: mock audio playback for orientation feedback
+jest.mock("expo-av", () => ({
+  Audio: {
+    setAudioModeAsync: jest.fn(() => Promise.resolve()),
+    Sound: {
+      createAsync: jest.fn(() =>
+        Promise.resolve({
+          sound: {
+            replayAsync: jest.fn(() => Promise.resolve()),
+            stopAsync: jest.fn(() => Promise.resolve()),
+            unloadAsync: jest.fn(() => Promise.resolve()),
+          },
+        })
+      ),
+    },
+  },
+}));
+
 // expo-font: mock font loading
 jest.mock("expo-font", () => ({
   loadAsync: jest.fn(() => Promise.resolve()),
