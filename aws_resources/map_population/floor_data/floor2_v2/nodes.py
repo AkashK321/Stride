@@ -373,7 +373,7 @@ NODES = [
     ).asdict(),
     
     HallwayPointNode(
-        id="corner_southeast", # room 218 at the same time
+        id="corner_southeast_f2", # room 218 at the same time
         x_feet=83.0,
         y_feet=4.5,
         doors=[
