@@ -98,16 +98,27 @@ function isLiveNavigationResponse(data: NavigationSocketResponse): boolean {
   );
 }
 
-/** Logs live-nav `action: "navigation"` sends without image bytes. */
-function logLiveNavigationRequest(message: NavigationFrameMessage): void {
-  if (message.action !== "navigation") return;
-  console.log(
-    `[WS][nav] → REQ\n${formatJq({
-      timestamp_ms: message.timestamp_ms,
-      timestamp_iso: new Date(message.timestamp_ms).toISOString(),
-      distance_traveled: message.distance_traveled,
-    })}`,
-  );
+/** Logs outbound frame requests without image bytes. */
+function logFrameRequest(message: NavigationFrameMessage): void {
+  const baseFields = {
+    request_id: message.request_id,
+    timestamp_ms: message.timestamp_ms,
+    timestamp_iso: new Date(message.timestamp_ms).toISOString(),
+  };
+  if (message.action === "navigation") {
+    console.log(
+      `[WS][nav] → REQ\n${formatJq({
+        ...baseFields,
+        distance_traveled: message.distance_traveled,
+      })}`,
+    );
+    return;
+  }
+  if (message.action === "frame") {
+    console.log(
+      `[WS][collision] → REQ\n${formatJq(baseFields)}`,
+    );
+  }
 }
 
 /** Logs live navigation responses (no image payload on this route). */
@@ -235,9 +246,8 @@ export class NavigationWebSocket {
 
             // In development mode, send response to local CSV logger server
             if (__DEV__ && typeof fetch !== "undefined") {
-              this.logResponseToDevServer(data).catch((err) => {
-                // Silently fail - dev logger is optional
-                console.debug("[WebSocket] Failed to log to dev server:", err);
+              this.logResponseToDevServer(data).catch((_err) => {
+                // Dev logger is optional in local debugging.
               });
             }
             
@@ -365,7 +375,7 @@ export class NavigationWebSocket {
         this._currentSessionId = message.session_id;
       }
 
-      logLiveNavigationRequest(message);
+      logFrameRequest(message);
 
       this.ws.send(payload);
       return true;
