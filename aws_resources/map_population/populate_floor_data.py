@@ -18,7 +18,7 @@ logger.setLevel(logging.INFO)
 # Configuration
 FEET_TO_METERS = 0.3048
 DEFAULT_COORDINATE_ANGLE_OFFSET_DEG = 141.0
-DEFAULT_SIDE_BY_BEARING_OFFSET_DEG = 0.0
+DEFAULT_SIDE_BY_BEARING_OFFSET_DEG = 51.0
 
 
 def ensure_landmarks_doorid_column(cursor):
@@ -102,7 +102,7 @@ def rotate_bearing_for_storage(bearing_deg, bearing_offset_deg):
     Rotate authored edge bearing into DB storage frame.
     Uses the bearing offset calibration used for directional metadata.
     """
-    return (float(bearing_deg) + float(bearing_offset_deg) + 180.0) % 360.0
+    return (float(bearing_deg) + float(bearing_offset_deg) + 90.0) % 360.0
 
 
 def _apply_angle_offset_to_doors(doors, side_by_bearing_offset_deg):
@@ -276,8 +276,8 @@ def populate_database(
                 # Source of truth: authored edge bearing (bearing_deg) from floor data.
                 # Rotate into DB frame using the bearing offset calibration.
                 bearing = rotate_bearing_for_storage(
-                    edge['bearing_deg'],
-                    side_offset_deg,
+                    edge["bearing_deg"],
+                    angle_offset_deg,
                 )
                 cursor.execute(
                     """
