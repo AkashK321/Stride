@@ -52,7 +52,7 @@ def main() -> int:
     populate.add_argument(
         "--side-by-bearing-offset",
         type=float,
-        default=0.0,
+        default=51.0,
         help=(
             "Extra degrees added to each door side_by_bearing.bearing_deg in stored NodeMeta "
             "(default: 0). MapEdges bearings still come from stored geometry; use this when "
