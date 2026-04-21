@@ -8,12 +8,18 @@ export interface SearchInputProps {
   value: string;
   onChangeText: (text: string) => void;
   onFocus?: () => void;
+  placeholder?: string;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
 }
 
 export default function SearchInput({
   value,
   onChangeText,
   onFocus,
+  placeholder = "Search rooms, facilities...",
+  accessibilityLabel = "Search destinations",
+  accessibilityHint = "Type to search for rooms or facilities",
 }: SearchInputProps) {
   return React.createElement(
     View,
@@ -30,13 +36,13 @@ export default function SearchInput({
       value,
       onChangeText,
       onFocus,
-      placeholder: "Search rooms, facilities\u2026",
+      placeholder,
       placeholderTextColor: colors.placeholder,
       returnKeyType: "search",
       autoCapitalize: "none",
       autoCorrect: false,
-      accessibilityLabel: "Search destinations",
-      accessibilityHint: "Type to search for rooms or facilities",
+      accessibilityLabel,
+      accessibilityHint,
       style: styles.input,
     }),
 

@@ -110,6 +110,23 @@ function isCollisionDetectionResponse(
   return "estimatedDistances" in response;
 }
 
+function getSingleParam(value: string | string[] | undefined): string | null {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (Array.isArray(value) && value.length > 0) {
+    const first = value[0];
+    if (typeof first === "string") {
+      const trimmed = first.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+  }
+
+  return null;
+}
+
 export default function NavigationSession() {
   const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
@@ -388,8 +405,14 @@ export default function NavigationSession() {
 
   // Kick off navigation when the screen mounts
   React.useEffect(() => {
-    if (!params.landmark_id) {
+    const landmarkId = getSingleParam(params.landmark_id);
+    if (!landmarkId) {
       setNavigationError("No destination provided.");
+      return;
+    }
+    const startNodeId = getSingleParam(params.start_node_id);
+    if (!startNodeId) {
+      setNavigationError("No start location provided.");
       return;
     }
 
@@ -400,8 +423,8 @@ export default function NavigationSession() {
       setNavigationError(null);
       try {
         const response = await startNavigation({
-          destination: { landmark_id: String(params.landmark_id) },
-          start_location: { node_id: "hall_061" },
+          destination: { landmark_id: landmarkId },
+          start_location: { node_id: startNodeId },
         });
         if (cancelled) return;
         const normalizedInstructions = normalizeNavigationInstructions(response.instructions);
@@ -437,7 +460,7 @@ export default function NavigationSession() {
     return () => {
       cancelled = true;
     };
-  }, [params.landmark_id]);
+  }, [params.landmark_id, params.start_node_id]);
 
   // WebSocket + loops: run only when session id appears or changes — not when send callbacks
   // or sensorsActive change (that was causing disconnect/reconnect churn).
