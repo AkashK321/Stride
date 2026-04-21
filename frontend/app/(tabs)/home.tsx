@@ -1,362 +1,600 @@
 import * as React from "react";
-import { View, Text, StyleSheet, ActivityIndicator, Pressable } from "react-native";
-import { useNavigation, router } from "expo-router";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { CameraView, useCameraPermissions } from "expo-camera";
-import * as Speech from "expo-speech";
-import { Ionicons } from "@expo/vector-icons";
-import SearchSheet from "../../components/SearchSheet";
-import type { SearchSheetRef } from "../../components/SearchSheet";
-import NavigationInstructionsDropdown from "../../components/NavigationInstructions/NavigationInstructionsDropdown";
-import { formatInstruction } from "../../components/NavigationInstructions/NavigationInstructionItem";
 import {
-  LandmarkResult,
-  NavigationInstruction,
-  startNavigation,
-} from "../../services/api";
+  ActivityIndicator,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { router } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
+import SearchInput from "../../components/SearchSheet/SearchInput";
+import SearchResultItem from "../../components/SearchSheet/SearchResultItem";
+import { searchLandmarks, type LandmarkResult } from "../../services/api";
 import { colors } from "../../theme/colors";
-import { typography } from "../../theme/typography";
+import { radii } from "../../theme/radius";
 import { spacing } from "../../theme/spacing";
+import { typography } from "../../theme/typography";
+
+const DEBOUNCE_MS = 300;
+const QUICK_ACTIONS = [
+  { id: "restroom", label: "Restrooms", query: "restroom", icon: "water-outline" },
+  { id: "elevator", label: "Elevators", query: "elevator", icon: "swap-vertical-outline" },
+  { id: "exit", label: "Exit", query: "exit", icon: "exit-outline" },
+] as const;
+
+type PickerContext = "start" | "destination";
 
 export default function Home() {
-  const sheetRef = React.useRef<SearchSheetRef>(null);
-  const navigation = useNavigation();
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-  const [selectedDestination, setSelectedDestination] =
-    React.useState<LandmarkResult | null>(null);
-  const [navigationInstructions, setNavigationInstructions] =
-    React.useState<NavigationInstruction[] | null>(null);
-  const [navigationError, setNavigationError] = React.useState<string | null>(
-    null,
-  );
-  const [navigationLoading, setNavigationLoading] = React.useState(false);
-  const [speakerMode, setSpeakerMode] = React.useState(false);
+  const [selectedStart, setSelectedStart] = React.useState<LandmarkResult | null>(null);
+  const [selectedDestination, setSelectedDestination] = React.useState<LandmarkResult | null>(null);
+  const [recentDestinations, setRecentDestinations] = React.useState<LandmarkResult[]>([]);
+  const [pickerVisible, setPickerVisible] = React.useState(false);
+  const [pickerContext, setPickerContext] = React.useState<PickerContext>("destination");
+  const [query, setQuery] = React.useState("");
+  const [results, setResults] = React.useState<LandmarkResult[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [searched, setSearched] = React.useState(false);
+  const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const toggleSpeakerMode = React.useCallback(() => {
-    setSpeakerMode((prev) => !prev);
+  const performSearch = React.useCallback(async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      setResults([]);
+      setError(null);
+      setSearched(false);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await searchLandmarks(trimmed);
+      setResults(response.results);
+      setSearched(true);
+    } catch (searchError) {
+      setResults([]);
+      setSearched(true);
+      setError(
+        searchError instanceof Error ? searchError.message : "Failed to search landmarks.",
+      );
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   React.useEffect(() => {
-    if (!speakerMode || !navigationInstructions || navigationInstructions.length === 0) {
-      return;
-    }
-    const current = navigationInstructions[0];
-    const text = formatInstruction(current);
-    console.log("[Home] Speaking instruction:", text);
-    Speech.speak(text, { language: "en" });
     return () => {
-      Speech.stop();
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
     };
-  }, [speakerMode, navigationInstructions]);
-
-  React.useEffect(() => {
-    if (!speakerMode) {
-      Speech.stop();
-    }
-  }, [speakerMode]);
-
-  const handleSelectDestination = React.useCallback(
-    (landmark: LandmarkResult) => {
-      router.push({
-        pathname: "/navigation/navigation",
-        params: {
-          landmark_id: String(landmark.landmark_id),
-          name: landmark.name,
-          floor_number: String(landmark.floor_number),
-        },
-      });
-    },
-    [],
-  );
-
-  const handleExitNavigation = React.useCallback(() => {
-    setNavigationInstructions(null);
-    setNavigationError(null);
-    setSelectedDestination(null);
-    sheetRef.current?.collapse?.();
   }, []);
 
-  React.useEffect(() => {
-    const parent = navigation.getParent?.();
-    if (!parent) {
+  const updateRecentDestinations = React.useCallback((landmark: LandmarkResult) => {
+    setRecentDestinations((current) => {
+      const withoutCurrent = current.filter(
+        (item) => item.landmark_id !== landmark.landmark_id,
+      );
+      return [landmark, ...withoutCurrent].slice(0, 10);
+    });
+  }, []);
+
+  const closePicker = React.useCallback(() => {
+    setPickerVisible(false);
+    setQuery("");
+    setResults([]);
+    setError(null);
+    setSearched(false);
+  }, []);
+
+  const openPicker = React.useCallback(
+    (context: PickerContext, presetQuery?: string) => {
+      setPickerContext(context);
+      setPickerVisible(true);
+      const nextQuery = presetQuery ?? "";
+      setQuery(nextQuery);
+      setError(null);
+
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+
+      if (nextQuery.trim().length > 0) {
+        void performSearch(nextQuery);
+      } else {
+        setResults([]);
+        setSearched(false);
+      }
+    },
+    [performSearch],
+  );
+
+  const handleQueryChange = React.useCallback(
+    (text: string) => {
+      setQuery(text);
+      setError(null);
+
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+
+      if (text.trim().length === 0) {
+        setResults([]);
+        setSearched(false);
+        return;
+      }
+
+      debounceRef.current = setTimeout(() => {
+        void performSearch(text);
+      }, DEBOUNCE_MS);
+    },
+    [performSearch],
+  );
+
+  const handleSelectLandmark = React.useCallback(
+    (landmark: LandmarkResult) => {
+      if (pickerContext === "start") {
+        setSelectedStart(landmark);
+      } else {
+        setSelectedDestination(landmark);
+        updateRecentDestinations(landmark);
+      }
+      closePicker();
+    },
+    [closePicker, pickerContext, updateRecentDestinations],
+  );
+
+  const handleStartWayfinding = React.useCallback(() => {
+    if (!selectedStart || !selectedDestination) {
       return;
     }
 
-    if (navigationInstructions && navigationInstructions.length > 0) {
-      parent.setOptions({
-        tabBarStyle: { display: "none" },
-      });
-    } else {
-      // Restore default tab bar style from layout by clearing override
-      parent.setOptions({
-        tabBarStyle: undefined,
-      });
-    }
-  }, [navigation, navigationInstructions]);
+    router.push({
+      pathname: "/navigation/navigation",
+      params: {
+        landmark_id: String(selectedDestination.landmark_id),
+        name: selectedDestination.name,
+        floor_number: String(selectedDestination.floor_number),
+        start_node_id: selectedStart.nearest_node,
+      },
+    });
+  }, [selectedDestination, selectedStart]);
 
-  const totalDistanceFeet = React.useMemo(() => {
-    if (!navigationInstructions || navigationInstructions.length === 0) {
-      return null;
-    }
-    const rawTotal = navigationInstructions.reduce(
-      (sum, inst) => sum + inst.distance_feet,
-      0,
-    );
-    return Math.round(rawTotal / 5) * 5;
-  }, [navigationInstructions]);
-
-  if (!cameraPermission) {
-    return React.createElement(
-      View,
-      { style: styles.centered },
-      React.createElement(ActivityIndicator, {
-        size: "large",
-        color: colors.primary,
-      }),
-    );
-  }
-
-  if (!cameraPermission.granted) {
-    return React.createElement(
-      GestureHandlerRootView,
-      { style: styles.root },
-      React.createElement(
-        View,
-        { style: styles.centered },
-        React.createElement(
-          Text,
-          { style: styles.permissionText },
-          "Camera permission is required to use the home screen.",
-        ),
-        React.createElement(
-          Text,
-          {
-            style: styles.permissionLink,
-            onPress: requestCameraPermission,
-          },
-          "Grant Camera Permission",
-        ),
-      ),
-    );
-  }
+  const showRecentSuggestions =
+    pickerContext === "destination" && query.trim().length === 0 && recentDestinations.length > 0;
+  const canStartWayfinding = Boolean(selectedStart && selectedDestination);
 
   return React.createElement(
-    GestureHandlerRootView,
-    { style: styles.root },
-
-    React.createElement(CameraView, {
-      style: StyleSheet.absoluteFill,
-      facing: "back",
-    }),
-
+    SafeAreaView,
+    { style: styles.root, edges: ["top"] as const },
     React.createElement(
-      SafeAreaView,
-      {
-        style: styles.overlay,
-        edges: ["top"] as const,
-      },
-
-      navigationLoading &&
-        React.createElement(
-          View,
-          { style: styles.loadingBanner },
-          React.createElement(ActivityIndicator, {
-            size: "small",
-            color: colors.buttonPrimaryText,
-          }),
-          React.createElement(
-            Text,
-            { style: styles.loadingText },
-            "Calculating route…",
-          ),
-        ),
-
-      navigationError &&
-        React.createElement(
-          View,
-          { style: styles.errorBanner },
-          React.createElement(
-            Text,
-            { style: styles.errorText },
-            navigationError,
-          ),
-        ),
-
-      navigationInstructions &&
-        React.createElement(NavigationInstructionsDropdown, {
-          instructions: navigationInstructions,
-          onExit: handleExitNavigation,
-          // style: styles.navigationInstructionsDropdown,
-        }),
-    ),
-
-    selectedDestination &&
-      navigationInstructions &&
+      ScrollView,
+      { contentContainerStyle: styles.content, keyboardShouldPersistTaps: "handled" },
+      React.createElement(Text, { style: styles.screenTitle }, "Where are you heading?"),
       React.createElement(
         View,
-        { style: styles.bottomNavContainer },
+        { style: styles.card },
+        React.createElement(Text, { style: styles.sectionLabel }, "Start location"),
         React.createElement(
           Pressable,
           {
-            style: styles.speakerButton,
-            onPress: toggleSpeakerMode,
+            style: styles.selectorField,
+            onPress: () => openPicker("start"),
             accessibilityRole: "button",
-            accessibilityLabel: speakerMode ? "Speaker on, tap to turn off" : "Speaker off, tap to turn on",
+            accessibilityLabel: "Select start location",
           },
           React.createElement(Ionicons, {
-            name: speakerMode ? "volume-high" : "volume-mute-outline",
-            size: 28,
-            color: speakerMode ? colors.primary : colors.textSecondary,
+            name: "navigate-circle-outline",
+            size: 20,
+            color: colors.textSecondary,
+            style: styles.selectorIcon,
           }),
+          React.createElement(
+            Text,
+            {
+              style: [
+                styles.selectorText,
+                !selectedStart ? styles.selectorPlaceholder : null,
+              ],
+              numberOfLines: 1,
+            },
+            selectedStart ? selectedStart.name : "Choose your start location",
+          ),
+        ),
+        React.createElement(Text, { style: styles.sectionLabel }, "Destination"),
+        React.createElement(
+          Pressable,
+          {
+            style: styles.selectorField,
+            onPress: () => openPicker("destination"),
+            accessibilityRole: "button",
+            accessibilityLabel: "Select destination",
+          },
+          React.createElement(Ionicons, {
+            name: "location-outline",
+            size: 20,
+            color: colors.textSecondary,
+            style: styles.selectorIcon,
+          }),
+          React.createElement(
+            Text,
+            {
+              style: [
+                styles.selectorText,
+                !selectedDestination ? styles.selectorPlaceholder : null,
+              ],
+              numberOfLines: 1,
+            },
+            selectedDestination ? selectedDestination.name : "Choose a destination",
+          ),
         ),
         React.createElement(
-          View,
-          { style: styles.bottomNavBar },
+          Pressable,
+          {
+            style: [
+              styles.startButton,
+              !canStartWayfinding ? styles.startButtonDisabled : null,
+            ],
+            disabled: !canStartWayfinding,
+            onPress: handleStartWayfinding,
+            accessibilityRole: "button",
+            accessibilityLabel: "Start",
+          },
           React.createElement(
-            View,
-            { style: styles.bottomNavTextContainer },
-            React.createElement(
-              Text,
-              { style: styles.bottomNavDestination },
-              selectedDestination.name,
-            ),
-            totalDistanceFeet !== null &&
-              React.createElement(
-                Text,
-                { style: styles.bottomNavDistance },
-                `${totalDistanceFeet} ft remaining`,
-              ),
-          ),
-          React.createElement(
-            Pressable,
+            Text,
             {
-              style: styles.bottomNavEndButton,
-              onPress: handleExitNavigation,
-              accessibilityRole: "button",
-              accessibilityLabel: "End navigation",
+              style: [
+                styles.startButtonText,
+                !canStartWayfinding ? styles.startButtonTextDisabled : null,
+              ],
             },
+            "Start",
+          ),
+        ),
+      ),
+      React.createElement(
+        View,
+        { style: styles.card },
+        React.createElement(Text, { style: styles.sectionTitle }, "Quick actions"),
+        React.createElement(
+          View,
+          { style: styles.quickActionRow },
+          QUICK_ACTIONS.map((action) =>
             React.createElement(
-              Text,
-              { style: styles.bottomNavEndButtonText },
-              "End",
+              Pressable,
+              {
+                key: action.id,
+                style: styles.quickActionButton,
+                onPress: () => openPicker("destination", action.query),
+                accessibilityRole: "button",
+                accessibilityLabel: `Find ${action.label.toLowerCase()}`,
+              },
+              React.createElement(Ionicons, {
+                // Ionicons type includes these names; explicit string keeps this file createElement-only.
+                name: action.icon as "water-outline",
+                size: 18,
+                color: colors.primary,
+              }),
+              React.createElement(Text, { style: styles.quickActionLabel }, action.label),
             ),
           ),
         ),
       ),
-
-    !navigationInstructions &&
-      React.createElement(SearchSheet, {
-        ref: sheetRef,
-        onSelectDestination: handleSelectDestination,
-      }),
+      React.createElement(
+        View,
+        { style: styles.card },
+        React.createElement(Text, { style: styles.sectionTitle }, "Recent destinations"),
+        recentDestinations.length === 0
+          ? React.createElement(
+              Text,
+              { style: styles.emptyRecentsText },
+              "Your recent destination selections will appear here.",
+            )
+          : recentDestinations.slice(0, 5).map((landmark, index) =>
+              React.createElement(
+                View,
+                { key: `recent-${landmark.landmark_id}` },
+                React.createElement(SearchResultItem, {
+                  landmark,
+                  onPress: setSelectedDestination,
+                }),
+                index < Math.min(recentDestinations.length, 5) - 1 &&
+                  React.createElement(View, { style: styles.separator }),
+              ),
+            ),
+      ),
+    ),
+    pickerVisible &&
+      React.createElement(
+        KeyboardAvoidingView,
+        {
+          style: styles.modalOverlay,
+          behavior: Platform.OS === "ios" ? "padding" : "height",
+          keyboardVerticalOffset: 0,
+        },
+        React.createElement(
+          View,
+          { style: styles.modalCard },
+          React.createElement(
+            View,
+            { style: styles.modalHeader },
+            React.createElement(
+              Text,
+              { style: styles.modalTitle },
+              pickerContext === "start" ? "Select start location" : "Select destination",
+            ),
+            React.createElement(
+              Pressable,
+              {
+                onPress: closePicker,
+                hitSlop: 8,
+                accessibilityRole: "button",
+                accessibilityLabel: "Close search",
+              },
+              React.createElement(Ionicons, {
+                name: "close",
+                size: 22,
+                color: colors.textSecondary,
+              }),
+            ),
+          ),
+          React.createElement(SearchInput, {
+            value: query,
+            onChangeText: handleQueryChange,
+          }),
+          React.createElement(
+            View,
+            { style: styles.modalBody },
+            loading &&
+              React.createElement(
+                View,
+                { style: styles.centeredFeedback },
+                React.createElement(ActivityIndicator, {
+                  size: "large",
+                  color: colors.primary,
+                }),
+              ),
+            !loading &&
+              error &&
+              React.createElement(
+                View,
+                { style: styles.centeredFeedback },
+                React.createElement(Text, { style: styles.errorText }, error),
+                React.createElement(
+                  Pressable,
+                  {
+                    onPress: () => void performSearch(query),
+                    accessibilityRole: "button",
+                    accessibilityLabel: "Retry search",
+                  },
+                  React.createElement(Text, { style: styles.retryText }, "Tap to retry"),
+                ),
+              ),
+            !loading &&
+              !error &&
+              showRecentSuggestions &&
+              React.createElement(
+                ScrollView,
+                {
+                  style: styles.suggestionsContainer,
+                  keyboardShouldPersistTaps: "handled",
+                },
+                React.createElement(
+                  Text,
+                  { style: styles.suggestionsHeader },
+                  "Recent destinations",
+                ),
+                recentDestinations.slice(0, 5).map((landmark, index) =>
+                  React.createElement(
+                    View,
+                    { key: `picker-recent-${landmark.landmark_id}` },
+                    React.createElement(SearchResultItem, {
+                      landmark,
+                      onPress: handleSelectLandmark,
+                    }),
+                    index < Math.min(recentDestinations.length, 5) - 1 &&
+                      React.createElement(View, { style: styles.separator }),
+                  ),
+                ),
+              ),
+            !loading &&
+              !error &&
+              !showRecentSuggestions &&
+              results.length > 0 &&
+              React.createElement(FlatList<LandmarkResult>, {
+                data: results,
+                keyExtractor: (item) => `result-${item.landmark_id}-${item.nearest_node}`,
+                keyboardShouldPersistTaps: "handled",
+                ItemSeparatorComponent: () => React.createElement(View, { style: styles.separator }),
+                renderItem: ({ item }) =>
+                  React.createElement(SearchResultItem, {
+                    landmark: item,
+                    onPress: handleSelectLandmark,
+                  }),
+              }),
+            !loading &&
+              !error &&
+              query.trim().length > 0 &&
+              searched &&
+              results.length === 0 &&
+              React.createElement(
+                View,
+                { style: styles.centeredFeedback },
+                React.createElement(Text, { style: styles.emptyText }, "No results found."),
+              ),
+          ),
+        ),
+      ),
   );
 }
 
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: "#000",
+    backgroundColor: colors.backgroundSecondary,
   },
-  overlay: {
-    flex: 1,
+  content: {
+    padding: spacing.md,
+    paddingBottom: spacing.xl,
   },
-  centered: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: spacing.xl,
-    backgroundColor: colors.background,
-  },
-  permissionText: {
-    ...typography.body,
-    textAlign: "center",
-    marginBottom: spacing.md,
+  screenTitle: {
+    ...typography.h2,
     color: colors.text,
+    marginBottom: spacing.md,
   },
-  permissionLink: {
-    ...typography.body,
-    color: colors.primary,
-    fontWeight: "700",
+  card: {
+    backgroundColor: colors.background,
+    borderRadius: radii.large,
+    padding: spacing.md,
+    marginBottom: spacing.md,
   },
-  loadingBanner: {
+  sectionTitle: {
+    ...typography.h3,
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  sectionLabel: {
+    ...typography.label,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  selectorField: {
+    minHeight: 48,
+    borderRadius: radii.medium,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.secondary,
+    backgroundColor: colors.backgroundSecondary,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.sm + 4,
+    marginBottom: spacing.md,
+  },
+  selectorIcon: {
+    marginRight: spacing.sm,
+  },
+  selectorText: {
+    ...typography.body,
+    color: colors.text,
+    flexShrink: 1,
+  },
+  selectorPlaceholder: {
+    color: colors.placeholder,
+  },
+  startButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 999,
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.sm + 2,
+  },
+  startButtonDisabled: {
+    backgroundColor: colors.secondary,
+    opacity: 0.6,
+  },
+  startButtonText: {
+    ...typography.button,
+    color: colors.buttonPrimaryText,
+  },
+  startButtonTextDisabled: {
+    color: colors.buttonPrimaryTextDisabled,
+  },
+  quickActionRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
+  quickActionButton: {
+    flex: 1,
+    minHeight: 72,
+    borderRadius: radii.medium,
+    backgroundColor: colors.backgroundSecondary,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.xs,
     paddingVertical: spacing.sm,
+  },
+  quickActionLabel: {
+    ...typography.label,
+    color: colors.text,
+    marginTop: spacing.xs,
+  },
+  emptyRecentsText: {
+    ...typography.body,
+    color: colors.textSecondary,
+  },
+  separator: {
+    marginHorizontal: spacing.md,
+    height: StyleSheet.hairlineWidth,
     backgroundColor: colors.secondary,
   },
-  loadingText: {
-    ...typography.label,
-    color: colors.buttonPrimaryText,
-    marginLeft: spacing.sm,
+  modalOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "#00000055",
+    justifyContent: "flex-end",
   },
-  errorBanner: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: "#FEF2F2",
-  },
-  errorText: {
-    ...typography.label,
-    color: colors.danger,
-  },
-  bottomNavContainer: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: "center",
-  },
-  speakerButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+  modalCard: {
     backgroundColor: colors.background,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.backgroundSecondary,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: spacing.sm,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    borderTopLeftRadius: radii.large,
+    borderTopRightRadius: radii.large,
+    maxHeight: "78%",
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
+    minHeight: 320,
   },
-  bottomNavBar: {
-    left: 0,
-    right: 0,
+  modalBody: {
+    flex: 1,
+  },
+  modalHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.background,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.backgroundSecondary,
+    marginBottom: spacing.sm,
   },
-  bottomNavTextContainer: {
-    flex: 1,
-    marginRight: spacing.sm,
-  },
-  bottomNavDestination: {
+  modalTitle: {
     ...typography.h3,
-    fontSize: 18,
     color: colors.text,
   },
-  bottomNavDistance: {
-    ...typography.label,
-    marginTop: 2,
+  centeredFeedback: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xl,
+  },
+  emptyText: {
+    ...typography.body,
     color: colors.textSecondary,
   },
-  bottomNavEndButton: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: 999,
-    backgroundColor: colors.danger,
+  errorText: {
+    ...typography.body,
+    color: colors.danger,
+    textAlign: "center",
+    marginBottom: spacing.sm,
   },
-  bottomNavEndButtonText: {
+  retryText: {
     ...typography.button,
-    color: colors.buttonPrimaryText,
+    color: colors.primary,
+  },
+  suggestionsContainer: {
+    marginHorizontal: spacing.md,
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: radii.medium,
+    overflow: "hidden",
+    marginBottom: spacing.md,
+  },
+  suggestionsHeader: {
+    ...typography.label,
+    color: colors.textSecondary,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
   },
 });
