@@ -41,6 +41,14 @@ const COLLISION_FRAME_WIDTH = 256;
 const COLLISION_FRAME_COMPRESS = 0.22;
 /** How often to tick local progression from pedometer deltas. */
 const LOCAL_PROGRESS_TICK_MS = 500;
+const SPEECH_MILESTONE_FEET = [50, 10] as const;
+const SPEECH_DUPLICATE_WINDOW_MS = 4000;
+
+type StepSpeechState = {
+  hasStepAnnouncement: boolean;
+  hasArrivalAnnouncement: boolean;
+  spokenMilestones: Set<number>;
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -147,6 +155,7 @@ export default function NavigationSession() {
   const collisionFrameInFlightRef = React.useRef(false);
   const requestCounterRef = React.useRef(0);
   const [speakerMode, setSpeakerMode] = React.useState(false);
+  const [showDebugBackground, setShowDebugBackground] = React.useState(false);
   const [currentStepIndex, setCurrentStepIndex] = React.useState(0);
   const [distanceConsumedFeet, setDistanceConsumedFeet] = React.useState(0);
   const [latestProgressDeltaFeet, setLatestProgressDeltaFeet] = React.useState(0);
@@ -173,6 +182,9 @@ export default function NavigationSession() {
 
   const toggleSpeakerMode = React.useCallback(() => {
     setSpeakerMode((prev) => !prev);
+  }, []);
+  const toggleDebugBackground = React.useCallback(() => {
+    setShowDebugBackground((prev) => !prev);
   }, []);
 
   const handleSelectedIndexChange = React.useCallback((index: number) => {
@@ -356,6 +368,72 @@ export default function NavigationSession() {
   instructionCountRef.current = navigationInstructions?.length ?? 0;
   const currentStepIndexRef = React.useRef(currentStepIndex);
   currentStepIndexRef.current = currentStepIndex;
+  const stepSpeechStateRef = React.useRef(new Map<number, StepSpeechState>());
+  const previousStepForSpeechRef = React.useRef<number | null>(null);
+  const previousRemainingFeetRef = React.useRef<number | null>(null);
+  const lastSpeechMetaRef = React.useRef<{
+    message: string;
+    spokenAtMs: number;
+    priority: number;
+  } | null>(null);
+
+  const getStepSpeechState = React.useCallback((stepIndex: number): StepSpeechState => {
+    const existing = stepSpeechStateRef.current.get(stepIndex);
+    if (existing) {
+      return existing;
+    }
+    const created: StepSpeechState = {
+      hasStepAnnouncement: false,
+      hasArrivalAnnouncement: false,
+      spokenMilestones: new Set<number>(),
+    };
+    stepSpeechStateRef.current.set(stepIndex, created);
+    return created;
+  }, []);
+
+  const speakWithGuards = React.useCallback(
+    async (
+      message: string,
+      priority: number,
+      options?: { duplicateWindowMs?: number },
+    ): Promise<void> => {
+      if (!speakerMode) return;
+
+      const duplicateWindowMs = options?.duplicateWindowMs ?? SPEECH_DUPLICATE_WINDOW_MS;
+      const now = Date.now();
+      const lastSpeech = lastSpeechMetaRef.current;
+      if (
+        lastSpeech &&
+        lastSpeech.message === message &&
+        now - lastSpeech.spokenAtMs < duplicateWindowMs
+      ) {
+        return;
+      }
+
+      let isSpeaking = false;
+      try {
+        isSpeaking = await Speech.isSpeakingAsync();
+      } catch {
+        isSpeaking = false;
+      }
+
+      if (isSpeaking) {
+        const lastPriority = lastSpeech?.priority ?? -1;
+        if (priority <= lastPriority) {
+          return;
+        }
+        Speech.stop();
+      }
+
+      Speech.speak(message, { language: "en" });
+      lastSpeechMetaRef.current = {
+        message,
+        spokenAtMs: now,
+        priority,
+      };
+    },
+    [speakerMode],
+  );
 
   const panResponder = React.useRef(
     PanResponder.create({
@@ -382,24 +460,80 @@ export default function NavigationSession() {
     }),
   ).current;
 
-  // Speak whenever the selected instruction changes (from dropdown, or later from other sources).
+  // Speak instruction with per-step milestones instead of every incremental update.
   React.useEffect(() => {
-    if (!speakerMode || !navigationInstructions || navigationInstructions.length === 0) {
+    if (!speakerMode || !navigationInstructions || navigationInstructions.length === 0 || !activeInstruction) {
       return;
     }
+
     const safeIndex = Math.max(0, Math.min(currentStepIndex, navigationInstructions.length - 1));
     const current = navigationInstructions[safeIndex];
-    const text = formatInstruction(current);
-    console.log("[NavigationSession] Speaking instruction:", text);
-    Speech.speak(text, { language: "en" });
-    return () => {
-      Speech.stop();
-    };
-  }, [speakerMode, navigationInstructions, currentStepIndex]);
+    const stepSpeechState = getStepSpeechState(safeIndex);
+    const previousStepIndex = previousStepForSpeechRef.current;
+    const isNewStep = previousStepIndex !== safeIndex;
+    const currentRemainingFeet =
+      typeof current.distance_feet === "number" && Number.isFinite(current.distance_feet)
+        ? Math.max(current.distance_feet, 0)
+        : null;
+
+    if (isNewStep) {
+      previousStepForSpeechRef.current = safeIndex;
+      previousRemainingFeetRef.current = currentRemainingFeet;
+      if (current.step_type === "arrival") {
+        if (!stepSpeechState.hasArrivalAnnouncement) {
+          stepSpeechState.hasArrivalAnnouncement = true;
+          void speakWithGuards(formatInstruction(current), 100, { duplicateWindowMs: 0 });
+        }
+      } else if (!stepSpeechState.hasStepAnnouncement) {
+        stepSpeechState.hasStepAnnouncement = true;
+        void speakWithGuards(formatInstruction(current), 85, { duplicateWindowMs: 0 });
+      }
+      return;
+    }
+
+    const previousRemainingFeet = previousRemainingFeetRef.current;
+    previousRemainingFeetRef.current = currentRemainingFeet;
+
+    if (current.step_type === "arrival") {
+      if (!stepSpeechState.hasArrivalAnnouncement) {
+        stepSpeechState.hasArrivalAnnouncement = true;
+        void speakWithGuards(formatInstruction(current), 100);
+      }
+      return;
+    }
+
+    if (previousRemainingFeet === null || currentRemainingFeet === null) {
+      return;
+    }
+
+    for (const milestoneFeet of SPEECH_MILESTONE_FEET) {
+      if (stepSpeechState.spokenMilestones.has(milestoneFeet)) {
+        continue;
+      }
+      if (previousRemainingFeet > milestoneFeet && currentRemainingFeet <= milestoneFeet) {
+        stepSpeechState.spokenMilestones.add(milestoneFeet);
+        const message = `${milestoneFeet} feet remaining. ${formatInstruction(current)}`;
+        const priority = milestoneFeet <= 10 ? 95 : 70;
+        void speakWithGuards(message, priority);
+        break;
+      }
+    }
+  }, [
+    activeInstruction,
+    currentStepIndex,
+    getStepSpeechState,
+    navigationInstructions,
+    speakerMode,
+    speakWithGuards,
+  ]);
 
   React.useEffect(() => {
     if (!speakerMode) {
       Speech.stop();
+      stepSpeechStateRef.current.clear();
+      previousStepForSpeechRef.current = null;
+      previousRemainingFeetRef.current = null;
+      lastSpeechMetaRef.current = null;
     }
   }, [speakerMode]);
 
@@ -645,7 +779,7 @@ export default function NavigationSession() {
 
     React.createElement(CameraView, {
       ref: cameraRef,
-      style: styles.hiddenCamera,
+      style: styles.cameraBackground,
       facing: "back",
     }),
 
@@ -658,7 +792,7 @@ export default function NavigationSession() {
       React.createElement(
         View,
         {
-          style: styles.swipeableOverlay,
+          style: [styles.swipeableOverlay, styles.swipeableOverlayCamera],
           ...(navigationInstructions && navigationInstructions.length > 0
             ? panResponder.panHandlers
             : {}),
@@ -690,6 +824,13 @@ export default function NavigationSession() {
           ),
 
         navigationInstructions &&
+          React.createElement(NavigationInstructionsDropdown, {
+            instructions: navigationInstructions,
+            onExit: handleExitNavigation,
+            selectedIndex: currentStepIndex,
+            onSelectedIndexChange: handleSelectedIndexChange,
+          }),
+        showDebugBackground &&
           React.createElement(
             View,
             { style: styles.debugPanel },
@@ -711,7 +852,7 @@ export default function NavigationSession() {
             React.createElement(
               Text,
               { style: styles.debugLine },
-              `Step ${currentStepIndex + 1}/${navigationInstructions.length} | remaining: ${roundedRemainingFeet ?? "n/a"} ft`,
+              `Step ${navigationInstructions ? currentStepIndex + 1 : "n/a"}/${navigationInstructions?.length ?? "n/a"} | remaining: ${roundedRemainingFeet ?? "n/a"} ft`,
             ),
             activeInstruction &&
               React.createElement(
@@ -735,14 +876,6 @@ export default function NavigationSession() {
               `Interpolation: ${lastSensorSnapshot?.interpolationApplied ? "on" : "off"} | age: ${lastSensorSnapshot?.timeSincePedoMs ?? "n/a"} ms | last collision send: ${lastCollisionSendAtMs ? `${Math.round((Date.now() - lastCollisionSendAtMs) / 100) / 10}s ago` : "n/a"}`,
             ),
           ),
-
-        navigationInstructions &&
-          React.createElement(NavigationInstructionsDropdown, {
-            instructions: navigationInstructions,
-            onExit: handleExitNavigation,
-            selectedIndex: currentStepIndex,
-            onSelectedIndexChange: handleSelectedIndexChange,
-          }),
       ),
     ),
 
@@ -754,6 +887,25 @@ export default function NavigationSession() {
         React.createElement(
           View,
           { style: styles.speakerButtonRow },
+          React.createElement(
+            Pressable,
+            {
+              style: [
+                styles.debugToggleButton,
+                showDebugBackground ? styles.debugToggleButtonActive : null,
+              ],
+              onPress: toggleDebugBackground,
+              accessibilityRole: "button",
+              accessibilityLabel: showDebugBackground
+                ? "Hide debug background"
+                : "Show debug background",
+            },
+            React.createElement(Ionicons, {
+              name: "bug-outline",
+              size: 22,
+              color: showDebugBackground ? colors.primary : colors.textSecondary,
+            }),
+          ),
           React.createElement(
             Pressable,
             {
@@ -848,12 +1000,36 @@ const styles = StyleSheet.create({
     height: 1,
     opacity: 0,
   },
+  cameraBackground: {
+    ...StyleSheet.absoluteFillObject,
+  },
   overlay: {
     flex: 1,
   },
   swipeableOverlay: {
     flex: 1,
+  },
+  swipeableOverlayCamera: {
+    backgroundColor: "transparent",
+  },
+  debugToggleButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: colors.background,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.backgroundSecondary,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  debugToggleButtonActive: {
+    borderColor: colors.primary,
+    borderWidth: 1,
   },
   centered: {
     flex: 1,
@@ -901,10 +1077,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: 14,
-    backgroundColor: colors.backgroundSecondary,
+    backgroundColor: "#FFFFFFEE",
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.secondary,
     gap: 4,
+    shadowColor: "#000",
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
   },
   debugTitle: {
     ...typography.h3,
@@ -925,7 +1106,8 @@ const styles = StyleSheet.create({
   },
   speakerButtonRow: {
     flexDirection: "row",
-    justifyContent: "flex-end",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: spacing.md,
     marginBottom: spacing.sm,
   },
