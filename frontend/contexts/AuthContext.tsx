@@ -8,8 +8,14 @@
 
 import * as React from "react";
 import { useRouter, useSegments } from "expo-router";
-import { isAuthenticated as checkAuth, getTokens, clearTokens, storeTokens } from "../services/tokenStorage";
+import {
+  getBiometricLoginEnabled,
+  getTokens,
+  clearTokens,
+  storeTokens,
+} from "../services/tokenStorage";
 import { refreshToken as refreshTokenApi } from "../services/api";
+import { canUseBiometrics, promptBiometricUnlock } from "../services/biometricAuth";
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -75,20 +81,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const checkAuthStatus = async () => {
     try {
-      const authenticated = await checkAuth();
-      setIsAuthenticated(authenticated);
-      
-      // TODO: Re-enable token refresh once the /refresh endpoint is implemented.
-      // Currently the refresh endpoint does not exist, so calling it causes
-      // "Network request failed" errors on startup. Once the backend supports
-      // POST /refresh, uncomment the block below.
-      //
-      // if (authenticated) {
-      //   const refreshed = await refreshTokens();
-      //   if (!refreshed) {
-      //     console.log("Token refresh unavailable or failed, using existing tokens");
-      //   }
-      // }
+      const tokens = await getTokens();
+      if (!tokens) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      const biometricEnabled = await getBiometricLoginEnabled();
+      if (!biometricEnabled) {
+        setIsAuthenticated(true);
+        return;
+      }
+
+      const biometricAvailability = await canUseBiometrics();
+      if (!biometricAvailability.available) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      const biometricResult = await promptBiometricUnlock("Unlock Stride");
+      if (!biometricResult.success) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      try {
+        const refreshedTokens = await refreshTokenApi(tokens.refreshToken);
+        await storeTokens({
+          accessToken: refreshedTokens.accessToken,
+          idToken: refreshedTokens.idToken,
+          refreshToken: refreshedTokens.refreshToken,
+        });
+        setIsAuthenticated(true);
+      } catch (refreshError) {
+        console.warn("Biometric unlock refresh failed, requiring full login:", refreshError);
+        setIsAuthenticated(false);
+      }
     } catch (error) {
       console.error("Error checking auth status:", error);
       setIsAuthenticated(false);
