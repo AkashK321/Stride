@@ -6,12 +6,11 @@
  * Also includes automatic token refresh functionality to keep users logged in.
  */
 
-import * as SecureStore from 'expo-secure-store';
-import { refreshToken } from "./api";
+import * as SecureStore from "expo-secure-store";
 
-const ACCESS_TOKEN_KEY = 'accessToken';
-const ID_TOKEN_KEY = 'idToken';
-const REFRESH_TOKEN_KEY = 'refreshToken';
+const ACCESS_TOKEN_KEY = "accessToken";
+const ID_TOKEN_KEY = "idToken";
+const REFRESH_TOKEN_KEY = "refreshToken";
 
 export interface Tokens {
   accessToken: string;
@@ -30,8 +29,8 @@ export async function storeTokens(tokens: Tokens): Promise<void> {
       SecureStore.setItemAsync(REFRESH_TOKEN_KEY, tokens.refreshToken),
     ]);
   } catch (error) {
-    console.error('Error storing tokens:', error);
-    throw new Error('Failed to store authentication tokens');
+    console.error("Error storing tokens:", error);
+    throw new Error("Failed to store authentication tokens");
   }
 }
 
@@ -42,7 +41,7 @@ export async function getAccessToken(): Promise<string | null> {
   try {
     return await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
   } catch (error) {
-    console.error('Error retrieving access token:', error);
+    console.error("Error retrieving access token:", error);
     return null;
   }
 }
@@ -54,7 +53,7 @@ export async function getIdToken(): Promise<string | null> {
   try {
     return await SecureStore.getItemAsync(ID_TOKEN_KEY);
   } catch (error) {
-    console.error('Error retrieving ID token:', error);
+    console.error("Error retrieving ID token:", error);
     return null;
   }
 }
@@ -66,7 +65,7 @@ export async function getRefreshToken(): Promise<string | null> {
   try {
     return await SecureStore.getItemAsync(REFRESH_TOKEN_KEY);
   } catch (error) {
-    console.error('Error retrieving refresh token:', error);
+    console.error("Error retrieving refresh token:", error);
     return null;
   }
 }
@@ -92,7 +91,7 @@ export async function getTokens(): Promise<Tokens | null> {
 
     return null;
   } catch (error) {
-    console.error('Error retrieving tokens:', error);
+    console.error("Error retrieving tokens:", error);
     return null;
   }
 }
@@ -108,8 +107,8 @@ export async function clearTokens(): Promise<void> {
       SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY),
     ]);
   } catch (error) {
-    console.error('Error clearing tokens:', error);
-    throw new Error('Failed to clear authentication tokens');
+    console.error("Error clearing tokens:", error);
+    throw new Error("Failed to clear authentication tokens");
   }
 }
 
@@ -121,7 +120,7 @@ export async function isAuthenticated(): Promise<boolean> {
     const tokens = await getTokens();
     return tokens !== null;
   } catch (error) {
-    console.error('Error checking authentication status:', error);
+    console.error("Error checking authentication status:", error);
     return false;
   }
 }
@@ -186,6 +185,8 @@ export async function autoRefreshTokens(): Promise<boolean> {
     // Attempt to refresh the token
     // If the endpoint doesn't exist (404), this will throw an error
     // which we catch and handle gracefully
+    // Use runtime require to avoid top-level circular imports while keeping Jest mocks compatible.
+    const { refreshToken } = require("./api");
     const newTokens = await refreshToken(tokens.refreshToken);
     
     // Store new tokens

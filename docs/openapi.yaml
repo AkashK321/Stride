@@ -681,11 +681,11 @@ paths:
         - Authentication
       summary: Change password (authenticated)
       description: |
-        **⚠️ NOT IMPLEMENTED YET**
-        
         Changes the authenticated user's password. Requires a valid access token.
         Uses Cognito's `ChangePassword` API.
       operationId: changePassword
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:

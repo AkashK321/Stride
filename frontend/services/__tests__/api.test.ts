@@ -3,6 +3,7 @@
  */
 
 import type {
+  ChangePasswordResponse,
   LoginResponse,
   RefreshTokenResponse,
   RegisterRequest,
@@ -442,5 +443,105 @@ describe("register", () => {
         lastName: "User",
       })
     ).rejects.toThrow("No backend URL configured");
+  });
+});
+
+describe("changePassword", () => {
+  const mockGetAccessToken = jest.fn();
+
+  beforeEach(() => {
+    jest.doMock("../tokenStorage", () => ({
+      getAccessToken: mockGetAccessToken,
+    }));
+    apiModule = require("../api");
+  });
+
+  afterEach(() => {
+    jest.dontMock("../tokenStorage");
+  });
+
+  it("sends authenticated POST request and returns response", async () => {
+    mockGetAccessToken.mockResolvedValueOnce("access-token-123");
+    const mockResponse: ChangePasswordResponse = {
+      message: "Password changed successfully",
+    };
+
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockResponse,
+    });
+
+    const result = await apiModule.changePassword({
+      currentPassword: "OldPass123!",
+      newPassword: "NewPass123!",
+      newPasswordConfirm: "NewPass123!",
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://test-api.example.com/password/change",
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          Authorization: "Bearer access-token-123",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          currentPassword: "OldPass123!",
+          newPassword: "NewPass123!",
+          newPasswordConfirm: "NewPass123!",
+        }),
+      })
+    );
+    expect(result).toEqual(mockResponse);
+  });
+
+  it("throws when no access token is available", async () => {
+    mockGetAccessToken.mockResolvedValueOnce(null);
+
+    await expect(
+      apiModule.changePassword({
+        currentPassword: "OldPass123!",
+        newPassword: "NewPass123!",
+        newPasswordConfirm: "NewPass123!",
+      })
+    ).rejects.toThrow("You are not authenticated. Please log in again.");
+
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("throws session-expired message on 401", async () => {
+    mockGetAccessToken.mockResolvedValueOnce("access-token-123");
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      statusText: "Unauthorized",
+      json: async () => ({ error: "Invalid token" }),
+    });
+
+    await expect(
+      apiModule.changePassword({
+        currentPassword: "OldPass123!",
+        newPassword: "NewPass123!",
+        newPasswordConfirm: "NewPass123!",
+      })
+    ).rejects.toThrow("Your session has expired. Please log in again.");
+  });
+
+  it("uses API error message for non-401 failures", async () => {
+    mockGetAccessToken.mockResolvedValueOnce("access-token-123");
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      statusText: "Bad Request",
+      json: async () => ({ error: "Current password is incorrect" }),
+    });
+
+    await expect(
+      apiModule.changePassword({
+        currentPassword: "wrong-password",
+        newPassword: "NewPass123!",
+        newPasswordConfirm: "NewPass123!",
+      })
+    ).rejects.toThrow("Current password is incorrect");
   });
 });

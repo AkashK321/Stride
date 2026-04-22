@@ -14,6 +14,7 @@ import Button from "../../components/Button";
 import TextField from "../../components/TextField";
 import Label from "../../components/Label";
 import ValidationIndicator, { ValidationStatus } from "../../components/ValidationIndicator";
+import { checkPasswordRequirements, isPasswordValid } from "../../utils/passwordPolicy";
 import { spacing } from "../../theme/spacing";
 import { typography } from "../../theme/typography";
 import { colors } from "../../theme/colors";
@@ -47,27 +48,12 @@ export default function RegisterCredentials() {
   const [focusedField, setFocusedField] = React.useState<"username" | "password" | "passwordConfirm" | null>(null);
   const [hasScrolled, setHasScrolled] = React.useState(false);
 
-  // Password requirements checking
-  const checkPasswordRequirements = (pwd: string) => {
-    return {
-      minLength: pwd.length >= 8,
-      hasUpperCase: /[A-Z]/.test(pwd),
-      hasLowerCase: /[a-z]/.test(pwd),
-      hasNumber: /[0-9]/.test(pwd),
-      hasSpecialChar: /[^A-Za-z0-9]/.test(pwd),
-    };
-  };
-
   const passwordRequirements = React.useMemo(() => checkPasswordRequirements(password), [password]);
   const passwordsMatch = passwordConfirm.length > 0 && password === passwordConfirm;
   
   // Check if password meets all requirements
-  const isPasswordValid = React.useMemo(() => {
-    return passwordRequirements.minLength &&
-           passwordRequirements.hasUpperCase &&
-           passwordRequirements.hasLowerCase &&
-           passwordRequirements.hasNumber &&
-           passwordRequirements.hasSpecialChar;
+  const isPasswordValidForForm = React.useMemo(() => {
+    return isPasswordValid(passwordRequirements);
   }, [passwordRequirements]);
   
   // Check if username is valid (not empty, minimum 3 characters)
@@ -78,8 +64,8 @@ export default function RegisterCredentials() {
   
   // Form is valid if all conditions are met
   const isFormValid = React.useMemo(() => {
-    return isUsernameValid && isPasswordValid && passwordsMatch;
-  }, [isUsernameValid, isPasswordValid, passwordsMatch]);
+    return isUsernameValid && isPasswordValidForForm && passwordsMatch;
+  }, [isUsernameValid, isPasswordValidForForm, passwordsMatch]);
   const requiresUsernameAvailabilityCheck = React.useMemo(
     () => trimmedUsername.length >= 3,
     [trimmedUsername]
@@ -115,11 +101,7 @@ export default function RegisterCredentials() {
     // Real-time validation
     if (text.length > 0) {
       const requirements = checkPasswordRequirements(text);
-      const allMet = requirements.minLength &&
-                     requirements.hasUpperCase &&
-                     requirements.hasLowerCase &&
-                     requirements.hasNumber &&
-                     requirements.hasSpecialChar;
+      const allMet = isPasswordValid(requirements);
       
       if (!allMet) {
         setPasswordError("Password does not meet all requirements");
