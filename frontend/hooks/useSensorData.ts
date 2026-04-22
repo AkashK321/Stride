@@ -75,15 +75,9 @@ export interface UseSensorDataReturn {
 }
 
 const STRIDE_LENGTH_FEET = 2.3; // Average stride length in feet
-const MAX_INTERPOLATION_WINDOW_MS = 5000;
 const MIN_SPEED_SAMPLE_INTERVAL_MS = 250;
 const MAX_STEPS_PER_MS = 0.004; // ~4 steps/sec upper bound for walking/running
 const SPEED_HOLD_WINDOW_MS = 2500; // Keep last known speed briefly across sparse pedometer callbacks
-// Expo only injects EXPO_PUBLIC_* vars into client runtime.
-// Keep a legacy fallback for local/dev compatibility.
-const DISTANCE_INTERPOLATION_ENABLED =
-  (process.env.EXPO_PUBLIC_ENABLE_DISTANCE_INTERPOLATION ??
-    process.env.ENABLE_DISTANCE_INTERPOLATION) === "true";
 
 export function useSensorData(): UseSensorDataReturn {
   const [hasLocationPermission, setHasLocationPermission] = React.useState(false);
@@ -266,20 +260,9 @@ export function useSensorData(): UseSensorDataReturn {
     const timeSincePedo = now - lastPedometerTimeRef.current;
     // console.log(`Time since last pedometer update: ${timeSincePedo}ms, current speed: ${currentSpeed} steps/ms`);
 
-    // Estimate current total steps based on last known steps + interpolated speed
-    let estimatedTotalSteps = lastPedometerStepsRef.current;
-    if (
-      DISTANCE_INTERPOLATION_ENABLED &&
-      lastPedometerTimeRef.current > 0 &&
-      timeSincePedo <= MAX_INTERPOLATION_WINDOW_MS
-    ) {
-      estimatedTotalSteps += currentSpeed * timeSincePedo;
-    }
-    const interpolationApplied =
-      DISTANCE_INTERPOLATION_ENABLED &&
-      lastPedometerTimeRef.current > 0 &&
-      timeSincePedo <= MAX_INTERPOLATION_WINDOW_MS &&
-      currentSpeed > 0;
+    // Use raw pedometer totals only (no interpolation) for stable progression.
+    const estimatedTotalSteps = lastPedometerStepsRef.current;
+    const interpolationApplied = false;
 
     let deltaSteps = estimatedTotalSteps - lastSnapshotStepsRef.current;
     if (deltaSteps < 0) deltaSteps = 0;

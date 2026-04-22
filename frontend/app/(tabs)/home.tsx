@@ -26,6 +26,7 @@ import { spacing } from "../../theme/spacing";
 import { typography } from "../../theme/typography";
 
 const DEBOUNCE_MS = 300;
+const RECENT_DESTINATION_OUTDATED_MESSAGE = "Destination outdated, please reselect.";
 const QUICK_ACTIONS = [
   { id: "restroom", label: "Restrooms", query: "restroom", icon: "water-outline" },
   { id: "elevator", label: "Elevators", query: "elevator", icon: "swap-vertical-outline" },
@@ -45,6 +46,8 @@ export default function Home() {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [searched, setSearched] = React.useState(false);
+  const [selectionError, setSelectionError] = React.useState<string | null>(null);
+  const [isStartingWayfinding, setIsStartingWayfinding] = React.useState(false);
   const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const performSearch = React.useCallback(async (text: string) => {
@@ -111,14 +114,6 @@ export default function Home() {
     });
   }, []);
 
-  const handleSelectRecentDestination = React.useCallback(
-    (landmark: LandmarkResult) => {
-      setSelectedDestination(landmark);
-      updateRecentDestinations(landmark);
-    },
-    [updateRecentDestinations],
-  );
-
   const closePicker = React.useCallback(() => {
     setPickerVisible(false);
     setQuery("");
@@ -126,6 +121,63 @@ export default function Home() {
     setError(null);
     setSearched(false);
   }, []);
+
+  const resolveDestinationLandmark = React.useCallback(
+    async (candidate: LandmarkResult): Promise<LandmarkResult | null> => {
+      const response = await searchLandmarks(candidate.name, 25);
+      const byId = response.results.find(
+        (landmark) => landmark.landmark_id === candidate.landmark_id,
+      );
+      if (byId) {
+        return byId;
+      }
+
+      const normalizedName = candidate.name.trim().toLowerCase();
+      const exactNameMatches = response.results.filter(
+        (landmark) => landmark.name.trim().toLowerCase() === normalizedName,
+      );
+      if (exactNameMatches.length === 0) {
+        return null;
+      }
+
+      const byNearestNode = exactNameMatches.find(
+        (landmark) => landmark.nearest_node === candidate.nearest_node,
+      );
+      return byNearestNode ?? exactNameMatches[0];
+    },
+    [],
+  );
+
+  const selectRecentDestination = React.useCallback(
+    async (
+      landmark: LandmarkResult,
+      options?: { closePickerOnSuccess?: boolean },
+    ): Promise<void> => {
+      try {
+        const resolved = await resolveDestinationLandmark(landmark);
+        if (!resolved) {
+          setSelectionError(RECENT_DESTINATION_OUTDATED_MESSAGE);
+          return;
+        }
+        setSelectedDestination(resolved);
+        updateRecentDestinations(resolved);
+        setSelectionError(null);
+        if (options?.closePickerOnSuccess) {
+          closePicker();
+        }
+      } catch (error) {
+        setSelectionError("Unable to validate destination right now. Please search again.");
+      }
+    },
+    [closePicker, resolveDestinationLandmark, updateRecentDestinations],
+  );
+
+  const handleSelectRecentDestination = React.useCallback(
+    (landmark: LandmarkResult) => {
+      void selectRecentDestination(landmark);
+    },
+    [selectRecentDestination],
+  );
 
   const openPicker = React.useCallback(
     (context: PickerContext, presetQuery?: string) => {
@@ -175,34 +227,56 @@ export default function Home() {
     (landmark: LandmarkResult) => {
       if (pickerContext === "start") {
         setSelectedStart(landmark);
+        setSelectionError(null);
       } else {
         setSelectedDestination(landmark);
         updateRecentDestinations(landmark);
+        setSelectionError(null);
       }
       closePicker();
     },
     [closePicker, pickerContext, updateRecentDestinations],
   );
 
-  const handleStartWayfinding = React.useCallback(() => {
+  const handleStartWayfinding = React.useCallback(async () => {
     if (!selectedStart || !selectedDestination) {
       return;
     }
 
-    router.push({
-      pathname: "/navigation/navigation",
-      params: {
-        landmark_id: String(selectedDestination.landmark_id),
-        name: selectedDestination.name,
-        floor_number: String(selectedDestination.floor_number),
-        start_node_id: selectedStart.nearest_node,
-      },
-    });
-  }, [selectedDestination, selectedStart]);
+    setIsStartingWayfinding(true);
+    setSelectionError(null);
+
+    try {
+      const resolvedDestination = await resolveDestinationLandmark(selectedDestination);
+      if (!resolvedDestination) {
+        setSelectionError(RECENT_DESTINATION_OUTDATED_MESSAGE);
+        return;
+      }
+
+      if (resolvedDestination.landmark_id !== selectedDestination.landmark_id) {
+        setSelectedDestination(resolvedDestination);
+        updateRecentDestinations(resolvedDestination);
+      }
+
+      router.push({
+        pathname: "/navigation/navigation",
+        params: {
+          landmark_id: String(resolvedDestination.landmark_id),
+          name: resolvedDestination.name,
+          floor_number: String(resolvedDestination.floor_number),
+          start_node_id: selectedStart.nearest_node,
+        },
+      });
+    } catch (error) {
+      setSelectionError("Unable to validate destination right now. Please search again.");
+    } finally {
+      setIsStartingWayfinding(false);
+    }
+  }, [resolveDestinationLandmark, selectedDestination, selectedStart, updateRecentDestinations]);
 
   const showRecentSuggestions =
     pickerContext === "destination" && query.trim().length === 0 && recentDestinations.length > 0;
-  const canStartWayfinding = Boolean(selectedStart && selectedDestination);
+  const canStartWayfinding = Boolean(selectedStart && selectedDestination) && !isStartingWayfinding;
 
   return React.createElement(
     SafeAreaView,
@@ -276,7 +350,7 @@ export default function Home() {
               !canStartWayfinding ? styles.startButtonDisabled : null,
             ],
             disabled: !canStartWayfinding,
-            onPress: handleStartWayfinding,
+            onPress: () => void handleStartWayfinding(),
             accessibilityRole: "button",
             accessibilityLabel: "Start",
           },
@@ -288,9 +362,15 @@ export default function Home() {
                 !canStartWayfinding ? styles.startButtonTextDisabled : null,
               ],
             },
-            "Start",
+            isStartingWayfinding ? "Starting..." : "Start",
           ),
         ),
+        selectionError &&
+          React.createElement(
+            Text,
+            { style: styles.startErrorText },
+            selectionError,
+          ),
       ),
       React.createElement(
         View,
@@ -430,7 +510,8 @@ export default function Home() {
                     { key: `picker-recent-${landmark.landmark_id}` },
                     React.createElement(SearchResultItem, {
                       landmark,
-                      onPress: handleSelectLandmark,
+                      onPress: (selected) =>
+                        void selectRecentDestination(selected, { closePickerOnSuccess: true }),
                     }),
                     index < Math.min(recentDestinations.length, 5) - 1 &&
                       React.createElement(View, { style: styles.separator }),
@@ -537,6 +618,12 @@ const styles = StyleSheet.create({
   },
   startButtonTextDisabled: {
     color: colors.buttonPrimaryTextDisabled,
+  },
+  startErrorText: {
+    ...typography.label,
+    color: colors.danger,
+    marginTop: spacing.sm,
+    textAlign: "center",
   },
   quickActionRow: {
     flexDirection: "row",
