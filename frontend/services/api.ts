@@ -71,13 +71,13 @@ export interface RegisterResponse {
   username: string;
 }
 
-<<<<<<< HEAD
 export interface AvailabilityCheckResponse {
   available: boolean;
   username?: string;
   email?: string;
   error?: boolean;
-=======
+}
+
 export interface ChangePasswordRequest {
   currentPassword: string;
   newPassword: string;
@@ -86,7 +86,6 @@ export interface ChangePasswordRequest {
 
 export interface ChangePasswordResponse {
   message: string;
->>>>>>> 07c3b48 (updated frontend to update live, implemented frontend)
 }
 
 export interface LandmarkResult {
@@ -227,7 +226,6 @@ export async function register(userData: RegisterRequest): Promise<RegisterRespo
 }
 
 /**
-<<<<<<< HEAD
  * Checks if a username is available during registration.
  * Returns an explicit error flag so the UI can show an "unknown" state.
  */
@@ -337,7 +335,9 @@ export async function checkEmailAvailability(
     console.warn("[API] check-email request error:", error);
     return fallbackResponse;
   }
-=======
+}
+
+/**
  * Changes the currently authenticated user's password.
  */
 export async function changePassword(
@@ -370,7 +370,6 @@ export async function changePassword(
   }
 
   return data as ChangePasswordResponse;
->>>>>>> 07c3b48 (updated frontend to update live, implemented frontend)
 }
 
 /**
