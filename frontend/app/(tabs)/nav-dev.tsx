@@ -42,9 +42,9 @@ import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
  * Default settings for frame capture.
  * These can be changed via the settings panel.
  */
-const DEFAULT_FRAME_WIDTH = 360;
-const DEFAULT_JPEG_QUALITY = 0.5;
-const DEFAULT_SEND_INTERVAL_MS = 500;
+const DEFAULT_FRAME_WIDTH = 1024;
+const DEFAULT_JPEG_QUALITY = 1.0;
+const DEFAULT_SEND_INTERVAL_MS = 1000;
 
 /**
  * Formats JSON with color styling for better readability.
@@ -577,7 +577,7 @@ export default function Navigation() {
             React.createElement(
               View,
               { style: styles.settingsOptions },
-              [240, 360, 480, 640].map((width) =>
+              [640, 800, 1024, 1280].map((width) =>
                 React.createElement(
                   Pressable,
                   {
@@ -617,7 +617,7 @@ export default function Navigation() {
             React.createElement(
               View,
               { style: styles.settingsOptions },
-              [0.3, 0.5, 0.7, 0.9].map((quality) =>
+              [0.3, 0.5, 0.7, 0.9, 1.0].map((quality) =>
                 React.createElement(
                   Pressable,
                   {

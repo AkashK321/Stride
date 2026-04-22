@@ -102,6 +102,11 @@ class LiveNavigationHandlerTest {
 
     @Test
     fun `handleRequest processes valid multipart request`() {
+        val jpegLikeBytes = byteArrayOf(
+            0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte(),
+            0x00.toByte(), 0x10.toByte(), 0x4A.toByte(), 0x46.toByte(),
+            0x49.toByte(), 0x46.toByte(),
+        )
         val metadata = """
             {
               "session_id": "session123",
@@ -113,7 +118,7 @@ class LiveNavigationHandlerTest {
               "gps": {"latitude": 40.0, "longitude": -86.0}
             }
         """.trimIndent()
-        val event = multipartRequest(metadata, "dummy_image".toByteArray())
+        val event = multipartRequest(metadata, jpegLikeBytes)
         val response = handler.handleRequest(event, mockContext)
 
         assertEquals(200, response.statusCode)

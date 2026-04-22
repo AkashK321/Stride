@@ -197,7 +197,13 @@ class CdkStack(Stack):
         api = apigw.LambdaRestApi(
             self, "BusinessApi",
             handler=auth_handler,
-            proxy=False
+            proxy=False,
+            binary_media_types=[
+                "multipart/form-data",
+                "image/jpeg",
+                "image/png",
+                "application/octet-stream",
+            ],
         )
 
         items = api.root.add_resource("items")

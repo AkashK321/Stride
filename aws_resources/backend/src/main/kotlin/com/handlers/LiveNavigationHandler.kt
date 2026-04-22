@@ -47,6 +47,12 @@ class LiveNavigationHandler(
 
     private val rdsMapClient = RdsMapClient()
 
+    private fun ByteArray.toHexPreview(maxBytes: Int = 8): String {
+        val end = kotlin.math.min(maxBytes, this.size)
+        if (end == 0) return "<empty>"
+        return this.copyOfRange(0, end).joinToString(" ") { b -> "%02X".format(b) }
+    }
+
     private fun jsonResponse(statusCode: Int, payload: Map<String, Any?>): APIGatewayProxyResponseEvent {
         return APIGatewayProxyResponseEvent()
             .withStatusCode(statusCode)
@@ -102,6 +108,7 @@ class LiveNavigationHandler(
 
     private fun parseMultipartRequest(
         input: APIGatewayProxyRequestEvent,
+        logger: LambdaLogger,
     ): Pair<Map<String, Any?>?, String?> {
         val contentType = input.headers?.entries
             ?.firstOrNull { it.key.equals("content-type", ignoreCase = true) }
@@ -124,10 +131,29 @@ class LiveNavigationHandler(
             requestBody.toByteArray(StandardCharsets.ISO_8859_1)
         }
 
+        logger.log(
+            "Multipart ingress: isBase64Encoded=${input.isBase64Encoded}, contentType=$contentType, bodyBytes=${bodyBytes.size}",
+        )
+
         val parts = parseMultipart(bodyBytes, boundary)
         val metadataPart = parts["metadata"] ?: return Pair(null, "Missing multipart field: metadata")
         val imagePart = parts["image"] ?: return Pair(null, "Missing multipart field: image")
         if (imagePart.data.isEmpty()) return Pair(null, "Invalid multipart field: image is empty")
+        logger.log(
+            "Multipart image part: bytes=${imagePart.data.size}, header=${imagePart.data.toHexPreview()}",
+        )
+
+        val isJpeg = imagePart.data.size > 2 &&
+            imagePart.data[0] == 0xFF.toByte() &&
+            imagePart.data[1] == 0xD8.toByte()
+        val isPng = imagePart.data.size > 4 &&
+            imagePart.data[0] == 0x89.toByte() &&
+            imagePart.data[1] == 0x50.toByte() &&
+            imagePart.data[2] == 0x4E.toByte() &&
+            imagePart.data[3] == 0x47.toByte()
+        if (!isJpeg && !isPng) {
+            return Pair(null, "Invalid image bytes in multipart payload (expected JPEG/PNG signature)")
+        }
 
         val metadata = try {
             mapper.readValue<Map<String, Any?>>(String(metadataPart.data, StandardCharsets.UTF_8)).toMutableMap()
@@ -353,7 +379,7 @@ class LiveNavigationHandler(
         val logger = context.logger
         logger.log("Live navigation HTTP request received.")
 
-        val (payload, payloadError) = parseMultipartRequest(input)
+        val (payload, payloadError) = parseMultipartRequest(input, logger)
         if (payloadError != null || payload == null) {
             return jsonResponse(
                 400,
