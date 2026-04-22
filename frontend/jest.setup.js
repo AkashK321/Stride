@@ -74,6 +74,20 @@ jest.mock("@expo-google-fonts/roboto", () => ({
   useFonts: jest.fn(() => [true, null]),
 }));
 
+// expo-local-authentication: mock biometric APIs
+jest.mock("expo-local-authentication", () => ({
+  hasHardwareAsync: jest.fn(() => Promise.resolve(true)),
+  isEnrolledAsync: jest.fn(() => Promise.resolve(true)),
+  supportedAuthenticationTypesAsync: jest.fn(() => Promise.resolve([1])),
+  authenticateAsync: jest.fn(() =>
+    Promise.resolve({
+      success: true,
+      error: undefined,
+      warning: undefined,
+    })
+  ),
+}));
+
 // react-native-safe-area-context: mock SafeAreaView
 jest.mock("react-native-safe-area-context", () => {
   const React = require("react");

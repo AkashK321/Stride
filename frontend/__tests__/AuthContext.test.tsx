@@ -8,7 +8,6 @@
 import * as React from "react";
 import { render, waitFor, act } from "@testing-library/react-native";
 import { AuthProvider, useAuth } from "../contexts/AuthContext";
-import * as TokenStorage from "../services/tokenStorage";
 
 // Mock expo-router
 let mockSegments: string[] = [];
@@ -30,12 +29,26 @@ const mockIsAuthenticated = jest.fn();
 const mockStoreTokens = jest.fn();
 const mockClearTokens = jest.fn();
 const mockGetTokens = jest.fn();
+const mockGetBiometricLoginEnabled = jest.fn();
 
 jest.mock("../services/tokenStorage", () => ({
   isAuthenticated: (...args: any[]) => mockIsAuthenticated(...args),
   storeTokens: (...args: any[]) => mockStoreTokens(...args),
   clearTokens: (...args: any[]) => mockClearTokens(...args),
   getTokens: (...args: any[]) => mockGetTokens(...args),
+  getBiometricLoginEnabled: (...args: any[]) => mockGetBiometricLoginEnabled(...args),
+}));
+
+const mockCanUseBiometrics = jest.fn();
+const mockPromptBiometricUnlock = jest.fn();
+jest.mock("../services/biometricAuth", () => ({
+  canUseBiometrics: (...args: any[]) => mockCanUseBiometrics(...args),
+  promptBiometricUnlock: (...args: any[]) => mockPromptBiometricUnlock(...args),
+}));
+
+const mockRefreshTokenApi = jest.fn();
+jest.mock("../services/api", () => ({
+  refreshToken: (...args: any[]) => mockRefreshTokenApi(...args),
 }));
 
 // Test consumer component to access context
@@ -62,6 +75,20 @@ describe("AuthContext", () => {
     mockStoreTokens.mockResolvedValue(undefined);
     mockClearTokens.mockResolvedValue(undefined);
     mockGetTokens.mockResolvedValue(null);
+    mockGetBiometricLoginEnabled.mockResolvedValue(false);
+    mockCanUseBiometrics.mockResolvedValue({
+      status: "available",
+      available: true,
+      supportedTypes: [1],
+    });
+    mockPromptBiometricUnlock.mockResolvedValue({ status: "success", success: true });
+    mockRefreshTokenApi.mockResolvedValue({
+      accessToken: "refreshed-access",
+      idToken: "refreshed-id",
+      refreshToken: "refreshed-refresh",
+      expiresIn: 3600,
+      tokenType: "Bearer",
+    });
   });
 
   // --- Initial state ---
@@ -82,7 +109,7 @@ describe("AuthContext", () => {
     });
 
     it("resolves to isAuthenticated: false when no tokens are stored", async () => {
-      mockIsAuthenticated.mockResolvedValue(false);
+      mockGetTokens.mockResolvedValue(null);
 
       render(
         <AuthProvider>
@@ -99,11 +126,16 @@ describe("AuthContext", () => {
       });
 
       expect(capturedCtx?.isAuthenticated).toBe(false);
-      expect(mockIsAuthenticated).toHaveBeenCalledTimes(1);
+      expect(mockGetTokens).toHaveBeenCalledTimes(1);
     });
 
     it("resolves to isAuthenticated: true when valid tokens exist", async () => {
-      mockIsAuthenticated.mockResolvedValue(true);
+      mockGetTokens.mockResolvedValue({
+        accessToken: "stored-access",
+        idToken: "stored-id",
+        refreshToken: "stored-refresh",
+      });
+      mockGetBiometricLoginEnabled.mockResolvedValue(false);
 
       render(
         <AuthProvider>
@@ -120,7 +152,7 @@ describe("AuthContext", () => {
       });
 
       expect(capturedCtx?.isAuthenticated).toBe(true);
-      expect(mockIsAuthenticated).toHaveBeenCalledTimes(1);
+      expect(mockGetTokens).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -380,7 +412,12 @@ describe("AuthContext", () => {
 
   describe("Route protection - authenticated users", () => {
     beforeEach(async () => {
-      mockIsAuthenticated.mockResolvedValue(true);
+      mockGetTokens.mockResolvedValue({
+        accessToken: "stored-access",
+        idToken: "stored-id",
+        refreshToken: "stored-refresh",
+      });
+      mockGetBiometricLoginEnabled.mockResolvedValue(false);
       mockSegments = [];
     });
 
@@ -517,7 +554,7 @@ describe("AuthContext", () => {
   describe("Error handling", () => {
     it("handles errors in checkAuthStatus gracefully", async () => {
       const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
-      mockIsAuthenticated.mockRejectedValueOnce(new Error("Check failed"));
+      mockGetTokens.mockRejectedValueOnce(new Error("Check failed"));
 
       render(
         <AuthProvider>
@@ -534,12 +571,123 @@ describe("AuthContext", () => {
       });
 
       expect(capturedCtx?.isAuthenticated).toBe(false);
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        "Error checking auth status:",
-        expect.any(Error)
+      expect(consoleErrorSpy.mock.calls.some((call) => call[0] === "Error checking auth status:")).toBe(
+        true
       );
 
       consoleErrorSpy.mockRestore();
+    });
+  });
+
+  describe("Biometric startup flow", () => {
+    const storedTokens = {
+      accessToken: "stored-access",
+      idToken: "stored-id",
+      refreshToken: "stored-refresh",
+    };
+
+    it("prompts biometrics and refreshes tokens when biometric login is enabled", async () => {
+      mockGetTokens.mockResolvedValue(storedTokens);
+      mockGetBiometricLoginEnabled.mockResolvedValue(true);
+
+      render(
+        <AuthProvider>
+          <AuthTestConsumer
+            onRender={(ctx) => {
+              capturedCtx = ctx;
+            }}
+          />
+        </AuthProvider>
+      );
+
+      await waitFor(() => {
+        expect(capturedCtx?.isLoading).toBe(false);
+      });
+
+      expect(mockCanUseBiometrics).toHaveBeenCalledTimes(1);
+      expect(mockPromptBiometricUnlock).toHaveBeenCalledWith("Unlock Stride");
+      expect(mockRefreshTokenApi).toHaveBeenCalledWith("stored-refresh");
+      expect(mockStoreTokens).toHaveBeenCalledWith({
+        accessToken: "refreshed-access",
+        idToken: "refreshed-id",
+        refreshToken: "refreshed-refresh",
+      });
+      expect(capturedCtx?.isAuthenticated).toBe(true);
+    });
+
+    it("falls back to unauthenticated state when biometric prompt is cancelled", async () => {
+      mockGetTokens.mockResolvedValue(storedTokens);
+      mockGetBiometricLoginEnabled.mockResolvedValue(true);
+      mockPromptBiometricUnlock.mockResolvedValue({ status: "cancelled", success: false });
+
+      render(
+        <AuthProvider>
+          <AuthTestConsumer
+            onRender={(ctx) => {
+              capturedCtx = ctx;
+            }}
+          />
+        </AuthProvider>
+      );
+
+      await waitFor(() => {
+        expect(capturedCtx?.isLoading).toBe(false);
+      });
+
+      expect(mockRefreshTokenApi).not.toHaveBeenCalled();
+      expect(capturedCtx?.isAuthenticated).toBe(false);
+    });
+
+    it("falls back to unauthenticated state when biometric hardware is unavailable", async () => {
+      mockGetTokens.mockResolvedValue(storedTokens);
+      mockGetBiometricLoginEnabled.mockResolvedValue(true);
+      mockCanUseBiometrics.mockResolvedValue({
+        status: "not-supported",
+        available: false,
+        supportedTypes: [],
+      });
+
+      render(
+        <AuthProvider>
+          <AuthTestConsumer
+            onRender={(ctx) => {
+              capturedCtx = ctx;
+            }}
+          />
+        </AuthProvider>
+      );
+
+      await waitFor(() => {
+        expect(capturedCtx?.isLoading).toBe(false);
+      });
+
+      expect(mockPromptBiometricUnlock).not.toHaveBeenCalled();
+      expect(mockRefreshTokenApi).not.toHaveBeenCalled();
+      expect(capturedCtx?.isAuthenticated).toBe(false);
+    });
+
+    it("falls back to unauthenticated state when refresh fails after successful biometric unlock", async () => {
+      mockGetTokens.mockResolvedValue(storedTokens);
+      mockGetBiometricLoginEnabled.mockResolvedValue(true);
+      mockRefreshTokenApi.mockRejectedValueOnce(new Error("refresh failed"));
+
+      render(
+        <AuthProvider>
+          <AuthTestConsumer
+            onRender={(ctx) => {
+              capturedCtx = ctx;
+            }}
+          />
+        </AuthProvider>
+      );
+
+      await waitFor(() => {
+        expect(capturedCtx?.isLoading).toBe(false);
+      });
+
+      expect(mockPromptBiometricUnlock).toHaveBeenCalledTimes(1);
+      expect(mockRefreshTokenApi).toHaveBeenCalledWith("stored-refresh");
+      expect(capturedCtx?.isAuthenticated).toBe(false);
     });
   });
 });

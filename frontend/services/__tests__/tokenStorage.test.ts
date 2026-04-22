@@ -10,6 +10,9 @@ import {
   getIdToken,
   getRefreshToken,
   clearTokens,
+  setBiometricLoginEnabled,
+  getBiometricLoginEnabled,
+  clearBiometricLoginPreference,
   isAuthenticated,
   isTokenExpiringSoon,
   autoRefreshTokens,
@@ -294,6 +297,28 @@ describe("tokenStorage", () => {
 
       const result = await isAuthenticated();
       expect(result).toBe(false);
+    });
+  });
+
+  describe("biometric login preference", () => {
+    it("stores and retrieves enabled biometric login preference", async () => {
+      await setBiometricLoginEnabled(true);
+
+      expect(await getBiometricLoginEnabled()).toBe(true);
+      expect(SecureStore.setItemAsync).toHaveBeenCalledWith("biometricLoginEnabled", "true");
+    });
+
+    it("returns false when biometric login preference is missing", async () => {
+      expect(await getBiometricLoginEnabled()).toBe(false);
+    });
+
+    it("clears biometric login preference", async () => {
+      await setBiometricLoginEnabled(true);
+      expect(await getBiometricLoginEnabled()).toBe(true);
+
+      await clearBiometricLoginPreference();
+      expect(await getBiometricLoginEnabled()).toBe(false);
+      expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("biometricLoginEnabled");
     });
   });
 
