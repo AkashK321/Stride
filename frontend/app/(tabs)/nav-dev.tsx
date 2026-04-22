@@ -45,6 +45,22 @@ import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 const DEFAULT_FRAME_WIDTH = 1024;
 const DEFAULT_JPEG_QUALITY = 1.0;
 const DEFAULT_SEND_INTERVAL_MS = 1000;
+const NATIVE_FRAME_WIDTH = "native" as const;
+type FrameWidthOption = number | typeof NATIVE_FRAME_WIDTH;
+type LastFrameStats = {
+  mode: "native" | "resized";
+  captured_width: number | null;
+  captured_height: number | null;
+  sent_width: number | null;
+  sent_height: number | null;
+  payload_bytes: number;
+};
+
+type ParsedPictureSize = {
+  width: number;
+  height: number;
+  raw: string;
+};
 
 /**
  * Formats JSON with color styling for better readability.
@@ -215,6 +231,7 @@ export default function Navigation() {
   // Camera
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const cameraRef = React.useRef<CameraView>(null);
+  const [selectedPictureSize, setSelectedPictureSize] = React.useState<string | undefined>(undefined);
   const [transportStatus, setTransportStatus] = React.useState<"idle" | "sending" | "error">("idle");
 
   // Sensors
@@ -239,15 +256,56 @@ export default function Navigation() {
 
   // Last compressed frame URI for preview (shows exactly what the backend receives)
   const [lastFrameUri, setLastFrameUri] = React.useState<string | null>(null);
+  const [lastFrameStats, setLastFrameStats] = React.useState<LastFrameStats | null>(null);
 
   // Settings state
   const [showSettings, setShowSettings] = React.useState(false);
-  const [frameWidth, setFrameWidth] = React.useState(DEFAULT_FRAME_WIDTH);
+  const [frameWidth, setFrameWidth] = React.useState<FrameWidthOption>(DEFAULT_FRAME_WIDTH);
   const [jpegQuality, setJpegQuality] = React.useState(DEFAULT_JPEG_QUALITY);
   const [sendIntervalMs, setSendIntervalMs] = React.useState(DEFAULT_SEND_INTERVAL_MS);
 
-  // Focal length (computed once on mount)
-  const focalLengthPixels = React.useMemo(() => getFocalLengthPixels(), []);
+  const chooseSquarePictureSize = React.useCallback(async () => {
+    try {
+      if (!cameraRef.current || typeof cameraRef.current.getAvailablePictureSizesAsync !== "function") {
+        return;
+      }
+      const rawSizes = await cameraRef.current.getAvailablePictureSizesAsync();
+      if (!Array.isArray(rawSizes) || rawSizes.length === 0) return;
+
+      const parsed: ParsedPictureSize[] = rawSizes
+        .map((raw) => {
+          const match = /^(\d+)x(\d+)$/i.exec(raw);
+          if (!match) return null;
+          return {
+            width: Number(match[1]),
+            height: Number(match[2]),
+            raw,
+          };
+        })
+        .filter((value): value is ParsedPictureSize => value !== null);
+
+      const squareOnly = parsed.filter((s) => s.width === s.height);
+      if (squareOnly.length === 0) {
+        console.warn("[nav-dev] No native square camera picture size available; using post-capture crop fallback.");
+        return;
+      }
+
+      const preferred = squareOnly.find((s) => s.width === 1080);
+      if (preferred) {
+        setSelectedPictureSize(preferred.raw);
+        return;
+      }
+
+      const closest = squareOnly.reduce((best, curr) => {
+        const currDistance = Math.abs(curr.width - 1080);
+        const bestDistance = Math.abs(best.width - 1080);
+        return currDistance < bestDistance ? curr : best;
+      }, squareOnly[0]);
+      setSelectedPictureSize(closest.raw);
+    } catch (e) {
+      console.warn("[nav-dev] Failed to resolve camera picture sizes; using crop fallback.", e);
+    }
+  }, []);
 
   // Cleanup nav loop on unmount
   React.useEffect(() => {
@@ -298,11 +356,21 @@ export default function Navigation() {
         return;
       }
 
-      // Resize to configured width to stay under API Gateway's 32 KB WS payload limit.
-      // YOLOv11 resizes to 640×640 internally, so detection quality is preserved.
+      const shouldUseNative = frameWidth === NATIVE_FRAME_WIDTH;
+      const photoWidth = photo.width ?? 1920;
+      const photoHeight = photo.height ?? 1080;
+      const squareSize = Math.min(photoWidth, photoHeight);
+      const cropOriginX = Math.floor((photoWidth - squareSize) / 2);
+      const cropOriginY = Math.floor((photoHeight - squareSize) / 2);
+      const targetWidth = shouldUseNative ? squareSize : frameWidth;
       const resized = await manipulateAsync(
         photo.uri,
-        [{ resize: { width: frameWidth } }],
+        shouldUseNative
+          ? [{ crop: { originX: cropOriginX, originY: cropOriginY, width: squareSize, height: squareSize } }]
+          : [
+              { crop: { originX: cropOriginX, originY: cropOriginY, width: squareSize, height: squareSize } },
+              { resize: { width: targetWidth } },
+            ],
         { base64: true, compress: jpegQuality, format: SaveFormat.JPEG },
       );
 
@@ -321,7 +389,7 @@ export default function Navigation() {
       const metadata: NavigationFrameMetadata = {
         action: "frame",
         session_id: SESSION_ID,
-        focal_length_pixels: focalLengthPixels,
+        focal_length_pixels: getFocalLengthPixels(targetWidth),
         heading_degrees: sensors.heading,
         gps: sensors.gps,
         distance_traveled: sensors.distanceDeltaFeet,
@@ -332,6 +400,14 @@ export default function Navigation() {
       setLastSentData({
         ...metadata,
         image_size_bytes: Math.round((resized.base64.length * 3) / 4),
+      });
+      setLastFrameStats({
+        mode: shouldUseNative ? "native" : "resized",
+        captured_width: photoWidth,
+        captured_height: photoHeight,
+        sent_width: resized.width ?? null,
+        sent_height: resized.height ?? null,
+        payload_bytes: Math.round((resized.base64.length * 3) / 4),
       });
       const response = await sendNavigationFrameHttp(resized.uri, metadata);
       setLastResponse(response);
@@ -354,7 +430,7 @@ export default function Navigation() {
     } finally {
       setIsSending(false);
     }
-  }, [frameWidth, jpegQuality, focalLengthPixels, getSnapshot]);
+  }, [frameWidth, jpegQuality, getSnapshot]);
 
   /**
    * Handle manual "Send Frame" button press.
@@ -449,6 +525,10 @@ export default function Navigation() {
         ref: cameraRef,
         style: styles.camera,
         facing: "back",
+        pictureSize: selectedPictureSize,
+        onCameraReady: () => {
+          void chooseSquarePictureSize();
+        },
       }),
       // Transport status badge
       React.createElement(
@@ -477,6 +557,15 @@ export default function Navigation() {
         { style: styles.frameCounter },
         `Frames sent: ${frameCount}`,
       ),
+      lastFrameStats &&
+        React.createElement(
+          Text,
+          { style: styles.frameStats },
+          `Frame Stats: ${lastFrameStats.mode.toUpperCase()} | ` +
+            `Captured ${lastFrameStats.captured_width ?? "?"}x${lastFrameStats.captured_height ?? "?"} | ` +
+            `Sent ${lastFrameStats.sent_width ?? "?"}x${lastFrameStats.sent_height ?? "?"} | ` +
+            `${(lastFrameStats.payload_bytes / 1024).toFixed(1)} KB (${(lastFrameStats.payload_bytes / (1024 * 1024)).toFixed(2)} MB)`,
+        ),
 
       // Buttons row
       React.createElement(
@@ -577,11 +666,11 @@ export default function Navigation() {
             React.createElement(
               View,
               { style: styles.settingsOptions },
-              [640, 800, 1024, 1280].map((width) =>
+              ([NATIVE_FRAME_WIDTH, 360,, 800, 1024, 1280] as FrameWidthOption[]).map((width) =>
                 React.createElement(
                   Pressable,
                   {
-                    key: width,
+                    key: String(width),
                     onPress: () => setFrameWidth(width),
                     disabled: isNavActive,
                     style: [
@@ -598,7 +687,7 @@ export default function Navigation() {
                         frameWidth === width && styles.optionButtonTextActive,
                       ],
                     },
-                    `${width}px`,
+                    width === NATIVE_FRAME_WIDTH ? "Native" : `${width}px`,
                   ),
                 ),
               ),
@@ -871,6 +960,12 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   frameCounter: {
+    ...typography.label,
+    color: colors.textSecondary,
+    textAlign: "center",
+    marginBottom: spacing.xs,
+  },
+  frameStats: {
     ...typography.label,
     color: colors.textSecondary,
     textAlign: "center",

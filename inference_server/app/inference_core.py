@@ -24,7 +24,6 @@ ALLOWED_CONTENT_TYPES = frozenset(
 )
 
 SIGN_CLASS_NAME = "sign"
-OCR_MIN_WIDTH = 400
 OCR_CLAHE_CLIP = 3.0
 OCR_CLAHE_GRID = (8, 8)
 
@@ -52,17 +51,6 @@ def _extract_sign_text(image: Image.Image, x1: int, y1: int, x2: int, y2: int) -
 
     crop = image.crop((cx1, cy1, cx2, cy2))
     crop_cv = cv2.cvtColor(np.array(crop), cv2.COLOR_RGB2BGR)
-
-    crop_h, crop_w = crop_cv.shape[:2]
-    if crop_w < OCR_MIN_WIDTH:
-        scale = OCR_MIN_WIDTH / crop_w
-        crop_cv = cv2.resize(
-            crop_cv,
-            (int(crop_w * scale), int(crop_h * scale)),
-            interpolation=cv2.INTER_CUBIC,
-        )
-        kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], dtype=np.float32)
-        crop_cv = cv2.filter2D(crop_cv, -1, kernel)
 
     gray = cv2.cvtColor(crop_cv, cv2.COLOR_BGR2GRAY)
     clahe = cv2.createCLAHE(clipLimit=OCR_CLAHE_CLIP, tileGridSize=OCR_CLAHE_GRID)
@@ -153,7 +141,10 @@ def predict_image_bytes(model: YOLO, image_bytes: bytes, content_type: str | Non
         return {"success": False, "error": f"Invalid image format: {str(e)}"}, 400
 
     try:
-        results = model(image, verbose=False)
+        # Prefer native image dimensions for inference to avoid implicit 640x640 resizing.
+        # Ultralytics still applies minimal stride/letterbox requirements internally.
+        native_imgsz = max(image_width, image_height)
+        results = model(image, verbose=False, imgsz=native_imgsz)
         predictions: list[dict[str, Any]] = []
         for result in results:
             boxes = result.boxes

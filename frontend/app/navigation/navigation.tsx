@@ -106,10 +106,19 @@ export default function NavigationSession() {
     };
 
     try {
-      // By supplying only width, Expo automatically scales the height to preserve the full frame's aspect ratio.
+      const photoWidth = photo.width ?? LIVE_NAV_FRAME_WIDTH;
+      const photoHeight = photo.height ?? LIVE_NAV_FRAME_WIDTH;
+      const squareSize = Math.min(photoWidth, photoHeight);
+      const cropOriginX = Math.floor((photoWidth - squareSize) / 2);
+      const cropOriginY = Math.floor((photoHeight - squareSize) / 2);
+
+      // Always center-crop to square first, then resize to target frame width.
       const resized = await manipulateAsync(
         photo.uri,
-        [{ resize: { width: LIVE_NAV_FRAME_WIDTH } }], 
+        [
+          { crop: { originX: cropOriginX, originY: cropOriginY, width: squareSize, height: squareSize } },
+          { resize: { width: LIVE_NAV_FRAME_WIDTH } },
+        ],
         encodeOptions,
       );
       return resized.uri;

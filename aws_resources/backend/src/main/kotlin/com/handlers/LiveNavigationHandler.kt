@@ -53,6 +53,41 @@ class LiveNavigationHandler(
         return this.copyOfRange(0, end).joinToString(" ") { b -> "%02X".format(b) }
     }
 
+    private fun isJpeg(bytes: ByteArray): Boolean {
+        return bytes.size > 2 &&
+            bytes[0] == 0xFF.toByte() &&
+            bytes[1] == 0xD8.toByte()
+    }
+
+    private fun isPng(bytes: ByteArray): Boolean {
+        return bytes.size > 4 &&
+            bytes[0] == 0x89.toByte() &&
+            bytes[1] == 0x50.toByte() &&
+            bytes[2] == 0x4E.toByte() &&
+            bytes[3] == 0x47.toByte()
+    }
+
+    private fun normalizeImageBytes(raw: ByteArray): ByteArray {
+        if (raw.isEmpty()) return raw
+        if (isJpeg(raw) || isPng(raw)) return raw
+
+        // Recover from multipart parser artifacts by searching for common image signatures.
+        for (i in 0 until kotlin.math.max(0, raw.size - 1)) {
+            if (raw[i] == 0xFF.toByte() && raw[i + 1] == 0xD8.toByte()) {
+                return raw.copyOfRange(i, raw.size)
+            }
+            if (i < raw.size - 3 &&
+                raw[i] == 0x89.toByte() &&
+                raw[i + 1] == 0x50.toByte() &&
+                raw[i + 2] == 0x4E.toByte() &&
+                raw[i + 3] == 0x47.toByte()
+            ) {
+                return raw.copyOfRange(i, raw.size)
+            }
+        }
+        return raw
+    }
+
     private fun jsonResponse(statusCode: Int, payload: Map<String, Any?>): APIGatewayProxyResponseEvent {
         return APIGatewayProxyResponseEvent()
             .withStatusCode(statusCode)
@@ -139,19 +174,11 @@ class LiveNavigationHandler(
         val metadataPart = parts["metadata"] ?: return Pair(null, "Missing multipart field: metadata")
         val imagePart = parts["image"] ?: return Pair(null, "Missing multipart field: image")
         if (imagePart.data.isEmpty()) return Pair(null, "Invalid multipart field: image is empty")
+        val normalizedImage = normalizeImageBytes(imagePart.data)
         logger.log(
-            "Multipart image part: bytes=${imagePart.data.size}, header=${imagePart.data.toHexPreview()}",
+            "Multipart image part: rawBytes=${imagePart.data.size}, rawHeader=${imagePart.data.toHexPreview()}, normalizedHeader=${normalizedImage.toHexPreview()}",
         )
-
-        val isJpeg = imagePart.data.size > 2 &&
-            imagePart.data[0] == 0xFF.toByte() &&
-            imagePart.data[1] == 0xD8.toByte()
-        val isPng = imagePart.data.size > 4 &&
-            imagePart.data[0] == 0x89.toByte() &&
-            imagePart.data[1] == 0x50.toByte() &&
-            imagePart.data[2] == 0x4E.toByte() &&
-            imagePart.data[3] == 0x47.toByte()
-        if (!isJpeg && !isPng) {
+        if (!isJpeg(normalizedImage) && !isPng(normalizedImage)) {
             return Pair(null, "Invalid image bytes in multipart payload (expected JPEG/PNG signature)")
         }
 
@@ -161,7 +188,7 @@ class LiveNavigationHandler(
             return Pair(null, "Invalid metadata JSON")
         }
 
-        metadata["image_base64"] = Base64.getEncoder().encodeToString(imagePart.data)
+        metadata["image_base64"] = Base64.getEncoder().encodeToString(normalizedImage)
         return Pair(metadata, null)
     }
 
