@@ -23,11 +23,11 @@ import {
   startNavigation,
 } from "../../services/api";
 import {
-  NavigationFrameMessage,
+  NavigationFrameMetadata,
   NavigationResponse,
-  NavigationWebSocket,
-  getWebSocketUrl,
-} from "../../services/navigationWebSocket";
+  nextNavigationRequestId,
+  sendNavigationFrameHttp,
+} from "../../services/navigationHttp";
 import { colors } from "../../theme/colors";
 import { typography } from "../../theme/typography";
 import { spacing } from "../../theme/spacing";
@@ -38,8 +38,8 @@ import { getFocalLengthPixels } from "../../services/focalLength";
 /** After centered square crop, resize to this width (output is square, e.g. 360×360). */
 const LIVE_NAV_FRAME_WIDTH = 360;
 
-/** How often to send `action: "navigation"` on the WebSocket (live nav updates). */
-const LIVE_NAV_WS_INTERVAL_MS = 1000;
+/** How often to send navigation frame updates over HTTP. */
+const LIVE_NAV_HTTP_INTERVAL_MS = 1000;
 
 function getImageSize(uri: string): Promise<{ width: number; height: number }> {
   return new Promise((resolve, reject) => {
@@ -60,15 +60,8 @@ export default function NavigationSession() {
   );
   const [navigationLoading, setNavigationLoading] = React.useState(false);
   const collisionPersonDetectedRef = React.useRef(false);
-  const wsRef = React.useRef<NavigationWebSocket | null>(null);
   const navLoopRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
-  const collisionLoopRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
-  const lastVibrationTimeRef = React.useRef(0);
-  const lastIntervalRef = React.useRef(0); // 0 = Safe, 1 = Low, 2 = Med, 3 = High
-  // const frameInFlightRef = React.useRef(false);
   const navFrameInFlightRef = React.useRef(false);
-  const collisionFrameInFlightRef = React.useRef(false);
-  const requestCounterRef = React.useRef(0);
   const [speakerMode, setSpeakerMode] = React.useState(false);
   const [currentStepIndex, setCurrentStepIndex] = React.useState(0);
   const focalLengthPixels = React.useMemo(() => getFocalLengthPixels(LIVE_NAV_FRAME_WIDTH), []);
@@ -92,18 +85,9 @@ export default function NavigationSession() {
       clearInterval(navLoopRef.current);
       navLoopRef.current = null;
     }
-    if (collisionLoopRef.current) {
-      clearInterval(collisionLoopRef.current);
-      collisionLoopRef.current = null;
-    }
   }, []);
 
-  const nextRequestId = React.useCallback(() => {
-    requestCounterRef.current += 1;
-    return requestCounterRef.current;
-  }, []);
-
-  const captureBase64Frame = React.useCallback(async (): Promise<string | null> => {
+  const captureFrameUri = React.useCallback(async (): Promise<string | null> => {
     if (!cameraRef.current) {
       return null;
     }
@@ -128,7 +112,7 @@ export default function NavigationSession() {
         [{ resize: { width: LIVE_NAV_FRAME_WIDTH } }], 
         encodeOptions,
       );
-      return resized.base64 ?? null;
+      return resized.uri;
     } catch (e) {
       console.error("Frame manipulation failed:", e);
       return null;
@@ -136,73 +120,35 @@ export default function NavigationSession() {
   }, []);
 
   const sendNavigationFrame = React.useCallback(async () => {
-    const ws = wsRef.current;
-    if (!ws || !ws.isConnected() || !navigationSessionId || navFrameInFlightRef.current) {
+    if (!navigationSessionId || navFrameInFlightRef.current) {
       return;
     }
     navFrameInFlightRef.current = true;
     try {
-      const imageBase64 = await captureBase64Frame();
-      if (!imageBase64) return;
+      const imageUri = await captureFrameUri();
+      if (!imageUri) return;
       const snapshot = getSnapshot();
-      const message: NavigationFrameMessage = {
-        action: "navigation",
+      const metadata: NavigationFrameMetadata = {
         session_id: navigationSessionId,
-        image_base64: imageBase64,
         focal_length_pixels: focalLengthPixels,
         heading_degrees: snapshot.heading ?? 0,
         gps: snapshot.gps,
         distance_traveled: snapshot.distanceDeltaFeet,
         timestamp_ms: Date.now(),
-        request_id: nextRequestId(),
+        request_id: nextNavigationRequestId(),
       };
-      ws.sendFrame(message);
+      const response = await sendNavigationFrameHttp(imageUri, metadata);
+      handleSocketMessage(response);
     } catch (e) {
       setNavigationError(e instanceof Error ? e.message : "Failed to send navigation frame");
     } finally {
       navFrameInFlightRef.current = false;
     }
   }, [
-    captureBase64Frame,
+    captureFrameUri,
     focalLengthPixels,
     getSnapshot,
-    navigationSessionId,
-    nextRequestId,
-  ]);
-
-  const sendCollisionFrame = React.useCallback(async () => {
-    const ws = wsRef.current;
-    if (!ws || !ws.isConnected() || !navigationSessionId || collisionFrameInFlightRef.current) {
-      return;
-    }
-    collisionFrameInFlightRef.current = true;
-    try {
-      const imageBase64 = await captureBase64Frame();
-      if (!imageBase64) return;
-      const snapshot = getSnapshot();
-      const message: NavigationFrameMessage = {
-        action: "frame",
-        session_id: navigationSessionId,
-        image_base64: imageBase64,
-        focal_length_pixels: focalLengthPixels,
-        heading_degrees: snapshot.heading,
-        distance_traveled: 0,
-        gps: snapshot.gps,
-        timestamp_ms: Date.now(),
-        request_id: nextRequestId(),
-      };
-      ws.sendFrame(message);
-    } catch (e) {
-      setNavigationError(e instanceof Error ? e.message : "Failed to send collision frame");
-    } finally {
-      collisionFrameInFlightRef.current = false;
-    }
-  }, [
-    captureBase64Frame,
-    focalLengthPixels,
-    getSnapshot,
-    navigationSessionId,
-    nextRequestId,
+    navigationSessionId
   ]);
 
   const handleSocketMessage = React.useCallback((response: NavigationResponse) => {
@@ -223,63 +169,11 @@ export default function NavigationSession() {
       return;
     }
 
-    if (Array.isArray(response.estimatedDistances) && response.estimatedDistances.length > 0) {
-      
-      console.log("Received collision update with distances (meters):", response.estimatedDistances);
-      // The backend returns distances in meters, convert to feet and find the closest object
-      const distancesInMeters = response.estimatedDistances.map((entry) => parseFloat(entry.distance));
-      const minDistanceMeters = Math.min(...distancesInMeters);
-
-      const minDistanceFeet = minDistanceMeters * 3.28084;
-
-      let currentInterval = 0; 
-      if (minDistanceFeet < 5) currentInterval = 3;
-      else if (minDistanceFeet < 10) currentInterval = 2;
-      else if (minDistanceFeet <= 20) currentInterval = 1;
-
-      const now = Date.now();
-      const timeSinceLast = now - lastVibrationTimeRef.current;
-      
-      console.log(`Closest object at ${minDistanceFeet.toFixed(1)} ft, interval ${currentInterval}, time since last vibration ${timeSinceLast} ms`);
-      if (currentInterval > 0) {
-        // TRIGGER RULE:
-        // 1. If danger escalated (e.g. Low -> High), vibrate immediately to warn the user.
-        // 2. If danger is the same/lower, wait for the previous pattern to fully finish (500ms frame cycle).
-        if (currentInterval > lastIntervalRef.current || timeSinceLast >= 500) {
-          
-          if (currentInterval === 3) {
-            // [0-5) ft: High danger - 3 rapid buzzes
-            // Duration: 100+40+100+40+100 = 380ms (Leaves 120ms of silence before next frame)
-            Vibration.vibrate([0, 100, 40, 100, 40, 100]);
-          } else if (currentInterval === 2) {
-            // [5-10) ft: Medium warning - 2 moderate buzzes
-            // Duration: 150+100+150 = 400ms (Leaves 100ms of silence before next frame)
-            Vibration.vibrate([0, 150, 100, 150]);
-          } else if (currentInterval === 1) {
-            // [10-20] ft: Low alert - 1 long pulse
-            // Duration: 400ms (Leaves 100ms of silence before next frame)
-            Vibration.vibrate(400);
-          }
-
-          lastVibrationTimeRef.current = now;
-          lastIntervalRef.current = currentInterval;
-        }
-      } else {
-        lastIntervalRef.current = 0; // Reset to safe
-      }
-    } else {
-      lastIntervalRef.current = 0; // Reset if no objects detected in frame
-    }
   }, []);
 
   /** Always latest send fns so WebSocket intervals do not need effect re-runs when sensors/state change. */
   const sendNavigationFrameRef = React.useRef(sendNavigationFrame);
-  const sendCollisionFrameRef = React.useRef(sendCollisionFrame);
   sendNavigationFrameRef.current = sendNavigationFrame;
-  sendCollisionFrameRef.current = sendCollisionFrame;
-
-  const handleSocketMessageRef = React.useRef(handleSocketMessage);
-  handleSocketMessageRef.current = handleSocketMessage;
 
   const startSensorsRef = React.useRef(startSensors);
   const stopSensorsRef = React.useRef(stopSensors);
@@ -314,7 +208,7 @@ export default function NavigationSession() {
     }),
   ).current;
 
-  // Reset selected step when the instruction list is replaced (e.g. from API or later from WebSocket).
+  // Reset selected step when the instruction list is replaced.
   React.useEffect(() => {
     setCurrentStepIndex(0);
   }, [navigationInstructions]);
@@ -381,8 +275,7 @@ export default function NavigationSession() {
     };
   }, [params.landmark_id]);
 
-  // WebSocket + loops: run only when session id appears or changes — not when send callbacks
-  // or sensorsActive change (that was causing disconnect/reconnect churn).
+  // Start HTTP navigation loop once session id is available.
   React.useEffect(() => {
     if (!navigationSessionId) {
       return;
@@ -392,37 +285,14 @@ export default function NavigationSession() {
 
     const run = async () => {
       try {
-        const wsUrl = getWebSocketUrl();
-        if (!wsUrl) {
-          setNavigationError("WebSocket URL is not configured");
-          return;
-        }
-        const ws = new NavigationWebSocket(wsUrl);
-        ws.autoReconnect = true;
-        ws.setStatusHandler((status) => {
-          if (status === "error") {
-            setNavigationError("WebSocket connection error");
-          }
-        });
-        ws.setMessageHandler((response) => {
-          handleSocketMessageRef.current(response);
-        });
-        wsRef.current = ws;
-        await ws.connect();
-        if (cancelled) return;
-
         await startSensorsRef.current();
         if (cancelled) return;
 
         navLoopRef.current = setInterval(() => {
           void sendNavigationFrameRef.current();
-        }, LIVE_NAV_WS_INTERVAL_MS);
-        collisionLoopRef.current = setInterval(() => {
-          void sendCollisionFrameRef.current();
-        }, 500);
+        }, LIVE_NAV_HTTP_INTERVAL_MS);
 
         void sendNavigationFrameRef.current();
-        void sendCollisionFrameRef.current();
       } catch (e) {
         if (!cancelled) {
           setNavigationError(
@@ -437,16 +307,14 @@ export default function NavigationSession() {
     return () => {
       cancelled = true;
       stopStreamingLoops();
-      wsRef.current?.disconnect();
-      wsRef.current = null;
+      Vibration.cancel();
       stopSensorsRef.current();
     };
   }, [navigationSessionId, stopStreamingLoops]);
 
   const handleExitNavigation = React.useCallback(() => {
     stopStreamingLoops();
-    wsRef.current?.disconnect();
-    wsRef.current = null;
+    Vibration.cancel();
     stopSensors();
     router.back();
   }, [stopSensors, stopStreamingLoops]);

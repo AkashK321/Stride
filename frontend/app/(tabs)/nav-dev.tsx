@@ -30,12 +30,11 @@ import { spacing } from "../../theme/spacing";
 import { typography } from "../../theme/typography";
 import { getFocalLengthPixels } from "../../services/focalLength";
 import {
-  NavigationWebSocket,
-  NavigationFrameMessage,
+  NavigationFrameMetadata,
   NavigationResponse,
-  ConnectionStatus,
-  getWebSocketUrl,
-} from "../../services/navigationWebSocket";
+  nextNavigationRequestId,
+  sendNavigationFrameHttp,
+} from "../../services/navigationHttp";
 import { useSensorData } from "../../hooks/useSensorData";
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 
@@ -216,10 +215,7 @@ export default function Navigation() {
   // Camera
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const cameraRef = React.useRef<CameraView>(null);
-
-  // WebSocket
-  const wsRef = React.useRef<NavigationWebSocket | null>(null);
-  const [wsStatus, setWsStatus] = React.useState<ConnectionStatus>("disconnected");
+  const [transportStatus, setTransportStatus] = React.useState<"idle" | "sending" | "error">("idle");
 
   // Sensors
   const { getSnapshot, start: startSensors, stop: stopSensors, isActive: sensorsActive } =
@@ -236,7 +232,7 @@ export default function Navigation() {
   const [lastError, setLastError] = React.useState<string | null>(null);
 
   // Sent data display (stores the last sent message without image_base64)
-  const [lastSentData, setLastSentData] = React.useState<Omit<NavigationFrameMessage, "image_base64"> & { image_size_bytes: number } | null>(null);
+  const [lastSentData, setLastSentData] = React.useState<(NavigationFrameMetadata & { image_size_bytes: number }) | null>(null);
 
   // Tab toggle for data display
   const [activeTab, setActiveTab] = React.useState<"sent" | "response">("response");
@@ -253,34 +249,6 @@ export default function Navigation() {
   // Focal length (computed once on mount)
   const focalLengthPixels = React.useMemo(() => getFocalLengthPixels(), []);
 
-  // Initialize WebSocket (connect on demand, not eagerly)
-  React.useEffect(() => {
-    const wsUrl = getWebSocketUrl();
-    if (wsUrl) {
-      const ws = new NavigationWebSocket(wsUrl);
-      ws.setStatusHandler(setWsStatus);
-      ws.setMessageHandler((response) => {
-        setLastResponse(response);
-        setLastError(null);
-
-        // If navigation is complete, stop the loop
-        if (response.type === "navigation_complete" && navIntervalRef.current) {
-          stopNavLoop();
-        }
-        // If error response, show it
-        if (response.type === "navigation_error" || response.error || response.status === "error") {
-          setLastError(response.error || response.message || "Unknown error from backend");
-        }
-      });
-      wsRef.current = ws;
-    }
-
-    return () => {
-      wsRef.current?.disconnect();
-      wsRef.current = null;
-    };
-  }, []);
-
   // Cleanup nav loop on unmount
   React.useEffect(() => {
     return () => {
@@ -292,22 +260,8 @@ export default function Navigation() {
     };
   }, [stopSensors]);
 
-  /**
-   * Ensure the WebSocket is connected and sensors are running.
-   * Enables auto-reconnect so the connection stays alive during use.
-   */
-  const connectAndStartSensors = async () => {
+  const ensureSensorsStarted = async () => {
     try {
-      if (!wsRef.current) {
-        Alert.alert("Configuration Error", "WebSocket URL is not configured. Set EXPO_PUBLIC_WS_API_URL in your .env file.");
-        return false;
-      }
-      // Enable auto-reconnect now that the user is actively using the connection
-      wsRef.current.autoReconnect = true;
-      // Connect only if not already connected
-      if (!wsRef.current.isConnected()) {
-        await wsRef.current.connect();
-      }
       if (!sensorsActive) {
         await startSensors();
       }
@@ -329,13 +283,9 @@ export default function Navigation() {
       return;
     }
 
-    if (!wsRef.current?.isConnected()) {
-      setLastError("WebSocket not connected");
-      return;
-    }
-
     try {
       setIsSending(true);
+      setTransportStatus("sending");
 
       // Capture photo — only need the URI, we'll resize before encoding to base64
       const photo = await cameraRef.current.takePictureAsync({
@@ -367,14 +317,9 @@ export default function Navigation() {
       // Get current sensor readings
       const sensors = getSnapshot();
 
-      // Generate request ID for latency tracking
-      const requestId = wsRef.current.generateRequestId();
-
-      // Assemble the NavigationFrameMessage
-      const message: NavigationFrameMessage = {
-        action: "frame",
+      const requestId = nextNavigationRequestId();
+      const metadata: NavigationFrameMetadata = {
         session_id: SESSION_ID,
-        image_base64: resized.base64,
         focal_length_pixels: focalLengthPixels,
         heading_degrees: sensors.heading,
         gps: sensors.gps,
@@ -383,35 +328,27 @@ export default function Navigation() {
         request_id: requestId,
       };
 
-      // Store the sent data for display (exclude the large base64 image)
-      const { image_base64, ...sentWithoutImage } = message;
       setLastSentData({
-        ...sentWithoutImage,
-        image_size_bytes: Math.round((image_base64.length * 3) / 4), // approximate decoded size
+        ...metadata,
+        image_size_bytes: Math.round((resized.base64.length * 3) / 4),
       });
-
-      const sent = wsRef.current.sendFrame(message);
-      if (sent) {
-        setFrameCount((c) => c + 1);
-        setLastError(null); // Clear any previous errors on successful send
-      } else {
-        // Check if the payload might be too large
-        const payloadSize = JSON.stringify(message).length;
-        const maxSize = 30 * 1024; // 30 KB limit
-        if (payloadSize > maxSize) {
-          const imageSizeKB = Math.round((message.image_base64.length * 3) / 4 / 1024);
-          setLastError(
-            `Frame too large (${Math.round(payloadSize / 1024)} KB). ` +
-            `Image: ${imageSizeKB} KB. Skipped to prevent disconnection. ` +
-            `Check console for details.`
-          );
-        } else {
-          setLastError("Failed to send frame via WebSocket");
-        }
+      const response = await sendNavigationFrameHttp(resized.uri, metadata);
+      setLastResponse(response);
+      if (response.type === "navigation_complete" && navIntervalRef.current) {
+        stopNavLoop();
       }
+      if (response.type === "navigation_error" || response.error || response.status === "error") {
+        setLastError(response.error || response.message || "Unknown error from backend");
+        setTransportStatus("error");
+        return;
+      }
+      setFrameCount((c) => c + 1);
+      setLastError(null);
+      setTransportStatus("idle");
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Capture failed";
       setLastError(msg);
+      setTransportStatus("error");
       console.error("Frame capture error:", e);
     } finally {
       setIsSending(false);
@@ -422,10 +359,8 @@ export default function Navigation() {
    * Handle manual "Send Frame" button press.
    */
   const handleSendFrame = async () => {
-    if (!wsRef.current?.isConnected()) {
-      const connected = await connectAndStartSensors();
-      if (!connected) return;
-    }
+    const connected = await ensureSensorsStarted();
+    if (!connected) return;
     await captureAndSend();
   };
 
@@ -433,10 +368,8 @@ export default function Navigation() {
    * Start continuous navigation mode (capture every 2 seconds).
    */
   const startNavLoop = async () => {
-    if (!wsRef.current?.isConnected()) {
-      const connected = await connectAndStartSensors();
-      if (!connected) return;
-    }
+    const connected = await ensureSensorsStarted();
+    if (!connected) return;
 
     setIsNavActive(true);
     setShowSettings(false); // Close settings panel when navigation starts
@@ -516,14 +449,14 @@ export default function Navigation() {
         style: styles.camera,
         facing: "back",
       }),
-      // Connection status badge
+      // Transport status badge
       React.createElement(
         View,
-        { style: [styles.statusBadge, statusBadgeColor(wsStatus)] },
+        { style: [styles.statusBadge, statusBadgeColor(transportStatus)] },
         React.createElement(
           Text,
           { style: styles.statusText },
-          wsStatus.toUpperCase(),
+          transportStatus.toUpperCase(),
         ),
       ),
     ),
@@ -875,11 +808,11 @@ export default function Navigation() {
   );
 }
 
-function statusBadgeColor(status: ConnectionStatus) {
+function statusBadgeColor(status: "idle" | "sending" | "error") {
   switch (status) {
-    case "connected":
+    case "idle":
       return { backgroundColor: "#22C55E" };
-    case "connecting":
+    case "sending":
       return { backgroundColor: "#F59E0B" };
     case "error":
       return { backgroundColor: "#EF4444" };

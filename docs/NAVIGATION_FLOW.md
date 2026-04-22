@@ -73,22 +73,15 @@ Content-Type: application/json
 }
 ```
 
-#### Step 1b: Connect to WebSocket
-
-```
-Connect to: wss://{wsApiId}.execute-api.{region}.amazonaws.com/prod
-Route: "navigation" (configured in CDK stack)
-```
-
-#### Step 1c: Store session state
+#### Step 1b: Store session state
 
 - Save `session_id` from REST response
 - Store initial `instructions` array
-- Mark WebSocket as "active"
+- Mark live frame loop as "active"
 
 ---
 
-### 2. While WebSocket is Active (Continuous Loop)
+### 2. While Navigation Session is Active (Continuous Loop)
 
 #### Step 2a: Capture frame and sensor data
 
@@ -96,23 +89,13 @@ Route: "navigation" (configured in CDK stack)
 - Read device heading (degrees: 0-360)
 - Read accelerometer (ax, ay, az)
 
-#### Step 2b: Send `NavigationFrameMessage` via WebSocket
+#### Step 2b: Send frame via HTTP multipart (`POST /navigation/frame`)
 
-```json
-{
-  "session_id": "nav_session_abc123",
-  "image_base64": "<base64-encoded-image>",
-  "heading_degrees": 270.0,
-  "accelerometer": {
-    "ax": 0.1,
-    "ay": 0.0,
-    "az": 9.8
-  },
-  "timestamp_ms": 1739052345123
-}
-```
+- `multipart/form-data` fields:
+  - `image`: JPEG/PNG bytes
+  - `metadata`: JSON (`session_id`, `focal_length_pixels`, `heading_degrees`, `gps`, `distance_traveled`, `timestamp_ms`, `request_id`)
 
-#### Step 2c: Receive `NavigationUpdateMessage` from WebSocket
+#### Step 2c: Receive `NavigationUpdateMessage` in HTTP response body
 
 ```json
 {
@@ -167,18 +150,12 @@ Route: "navigation" (configured in CDK stack)
 
 ### 3. End Button Pressed
 
-#### Step 3a: Disconnect WebSocket
-
-```
-WebSocket.close()
-```
-
-#### Step 3b: Cleanup
+#### Step 3a: Cleanup
 
 - Clear `session_id`
 - Clear `instructions`
 - Stop frame capture loop
-- Mark WebSocket as "inactive"
+- Mark navigation as "inactive"
 
 ---
 
@@ -200,21 +177,7 @@ Response: NavigationStartResponse {
 - Response: `NavigationStartResponse` (session_id, instructions)
 - Instruction: `NavigationInstruction` (step, distance_feet, direction, node_id, coordinates)
 
-### WebSocket Messages (from spec)
-
-#### Client → Server
-
-```yaml
-NavigationFrameMessage {
-  session_id: string
-  image_base64: string
-  heading_degrees: number
-  accelerometer: { ax, ay, az }
-  timestamp_ms?: number
-}
-```
-
-#### Server → Client
+### Live Navigation Frame Endpoint (from spec)
 
 ```yaml
 NavigationUpdateMessage {
@@ -228,7 +191,7 @@ NavigationUpdateMessage {
 }
 ```
 
-**Other Server Message Types:**
+**Other response message types:**
 - `NavigationErrorMessage` - `type: "navigation_error"`
 - `NavigationCompleteMessage` - `type: "navigation_complete"`
 
@@ -242,7 +205,7 @@ NavigationUpdateMessage {
 │ - session_id: null                                      │
 │ - instructions: []                                      │
 │ - current_step: 0                                       │
-│ - websocket: null                                       │
+│ - frame transport: HTTP                                 │
 │ - is_active: false                                      │
 └─────────────────────────────────────────────────────────┘
                     │
@@ -251,8 +214,7 @@ NavigationUpdateMessage {
 │ [Start Button Pressed]                                  │
 │ 1. POST /navigation/start                               │
 │    → Get session_id + initial instructions              │
-│ 2. WebSocket.connect()                                  │
-│ 3. Set is_active = true                                 │
+│ 2. Set is_active = true                                 │
 └─────────────────────────────────────────────────────────┘
                     │
                     ▼
@@ -261,8 +223,8 @@ NavigationUpdateMessage {
 │                                                         │
 │  ┌────────────────────────────────────────────┐         │
 │  │ 1. Capture frame + sensors                 │         │
-│  │ 2. Send NavigationFrameMessage             │         │
-│  │ 3. Wait for NavigationUpdateMessage        │         │
+│  │ 2. POST /navigation/frame (multipart)      │         │
+│  │ 3. Parse NavigationUpdateMessage response   │         │
 │  │ 4. Update state:                           │         │
 │  │    - current_step = update.current_step    │         │
 │  │    - instructions = update.remaining_...   │         │
@@ -279,10 +241,9 @@ NavigationUpdateMessage {
                     ▼
 ┌─────────────────────────────────────────────────────────┐
 │ [End Button Pressed]                                    │
-│ 1. WebSocket.close()                                    │
-│ 2. Stop frame capture loop                              │
-│ 3. Clear session_id, instructions                       │
-│ 4. Set is_active = false                                │
+│ 1. Stop frame capture loop                              │
+│ 2. Clear session_id, instructions                       │
+│ 3. Set is_active = false                                │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -298,15 +259,15 @@ NavigationUpdateMessage {
 - Initial instructions represent the complete path from start node to destination
 - **Future Enhancement:** Automatic localization from sensor data (heading, accelerometer, GPS) will eliminate the need for users to specify a start node
 
-### 2. WebSocket uses `session_id` for context
+### 2. Frame endpoint uses `session_id` for context
 
-- Every `NavigationFrameMessage` includes `session_id`
+- Every `/navigation/frame` request includes `session_id` in metadata
 - Server uses it to track the user's navigation session
 - Allows server to maintain state across multiple frame updates
 
-### 3. WebSocket updates replace initial instructions
+### 3. HTTP frame responses replace initial instructions
 
-- Initial `instructions` from REST are replaced by `remaining_instructions` from WebSocket
+- Initial `instructions` from REST are replaced by `remaining_instructions` from frame responses
 - `current_step` tracks progress through the path
 - As user progresses, `remaining_instructions` shrinks until completion
 
@@ -347,7 +308,7 @@ NavigationUpdateMessage {
 
 ### Error Handling
 
-- **WebSocket Connection Failure**: Retry connection or show error to user
+- **HTTP Request Failure**: Retry request or show error to user
 - **Invalid Session**: Server may return `navigation_error` if session_id is invalid
 - **Localization Failure**: Server may return low confidence or request more frames
 - **Network Issues**: Frontend should handle timeouts and reconnection
@@ -361,7 +322,7 @@ NavigationUpdateMessage {
 3. **User selects or enters their starting node** (e.g., "staircase_main_2S01") - MVP requirement
 4. User presses "Start Navigation"
 5. Frontend calls `/navigation/start` with destination and start node
-6. Frontend receives initial instructions and connects to WebSocket
+6. Frontend receives initial instructions and starts the frame send loop
 7. Frontend starts sending frames every 1-2 seconds
 8. Backend processes frames and returns updated instructions
 9. Frontend provides audio feedback: "Walk 13 feet west"
@@ -369,7 +330,7 @@ NavigationUpdateMessage {
 11. Frontend provides next instruction: "Walk 5 feet west"
 12. User arrives → Backend sends `navigation_complete`
 13. Frontend announces: "You have arrived at Room 226"
-14. User presses "End" → WebSocket disconnects, session cleared
+14. User presses "End" → frame loop stops, session cleared
 
 **Note:** In future versions, step 3 will be automated - the backend will determine the starting position from sensor data (heading, accelerometer, GPS) without requiring user input.
 

@@ -1017,102 +1017,57 @@ paths:
     post:
       tags:
         - Navigation
-      summary: Send navigation frame (WebSocket)
+      summary: Send navigation frame (HTTP multipart)
       description: |
-        **⚠️ WebSocket Endpoint - Not a REST endpoint**
+        Uploads one camera frame and associated navigation metadata using `multipart/form-data`.
+        The backend processes the frame synchronously and responds with a navigation update payload.
 
-        This documents the JSON body shape for messages sent **over** the WebSocket.
-        API Gateway uses **`$request.body.action`** to choose the integration (see CDK `route_selection_expression`).
-
-        **Routing**
-
-        | `action` value | Lambda | Typical client interval | Server response shape |
-        | --- | --- | --- | --- |
-        | `"navigation"` | Live navigation | ~1 s during active session | `NavigationUpdateMessage` (`type: navigation_update`) |
-        | `"frame"` | Object detection | ~500 ms (collision loop) | `ObjectDetectionWebSocketResponse` (distances, no `type` field) |
-
-        **Connection**
-
-        1. Connect to the WebSocket URL (e.g. `wss://{apiId}.execute-api.{region}.amazonaws.com/{stage}`).
-        2. Send JSON messages; each must include **`action`**: `"navigation"` or `"frame"`.
-        3. Responses are pushed on the same connection; match outbound messages using **`request_id`**.
-
-        **Sensor data** (shared shape for both actions when using the mobile client)
-
-        - `focal_length_pixels`: Per-device focal length for distance estimation (device map + `expo-device`)
-        - `gps`, `accelerometer`, `gyroscope`, `heading_degrees`, `timestamp_ms`: as in `NavigationFrameMessage`
+        **Multipart Fields**
+        - `image`: JPEG/PNG binary frame
+        - `metadata`: JSON string containing session and sensor metadata
       operationId: sendNavigationFrame
       requestBody:
         required: true
-        description: Navigation frame message sent via WebSocket
+        description: Navigation frame sent as multipart request
         content:
-          application/json:
+          multipart/form-data:
             schema:
-              $ref: '#/components/schemas/NavigationFrameMessage'
+              type: object
+              required:
+                - image
+                - metadata
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: JPEG/PNG frame bytes
+                metadata:
+                  $ref: '#/components/schemas/NavigationFrameMetadata'
             examples:
-              navigationFrame:
-                summary: Live navigation (`action` routes to LiveNavigationHandler)
+              frameUpload:
+                summary: Live navigation frame upload
                 value:
-                  action: "navigation"
-                  session_id: "nav_session_abc123"
-                  image_base64: "<base64-encoded-image>"
-                  focal_length_pixels: 1435.2
-                  heading_degrees: 270.0
-                  gps:
-                    latitude: 39.1653
-                    longitude: -86.5264
-                    altitude: 230.5
-                    accuracy: 5.0
-                    altitude_accuracy: 10.0
-                    speed: 1.2
-                  accelerometer:
-                    x: 0.1
-                    y: 0.0
-                    z: 9.8
-                  gyroscope:
-                    x: 0.01
-                    y: -0.02
-                    z: 0.005
-                  timestamp_ms: 1739052345123
-                  request_id: 42
-              objectDetectionFrame:
-                summary: Object detection only (`action` routes to ObjectDetectionHandler)
-                value:
-                  action: "frame"
-                  session_id: "nav_session_abc123"
-                  image_base64: "<base64-encoded-image>"
-                  focal_length_pixels: 1435.2
-                  heading_degrees: 270.0
-                  gps:
-                    latitude: 39.1653
-                    longitude: -86.5264
-                    altitude: 230.5
-                    accuracy: 5.0
-                    altitude_accuracy: 10.0
-                    speed: 1.2
-                  accelerometer:
-                    x: 0.1
-                    y: 0.0
-                    z: 9.8
-                  gyroscope:
-                    x: 0.01
-                    y: -0.02
-                    z: 0.005
-                  timestamp_ms: 1739052345123
-                  request_id: 43
+                  metadata:
+                    session_id: "nav_session_abc123"
+                    focal_length_pixels: 1435.2
+                    heading_degrees: 270.0
+                    gps:
+                      latitude: 39.1653
+                      longitude: -86.5264
+                      altitude: 230.5
+                      accuracy: 5.0
+                      altitude_accuracy: 10.0
+                      speed: 1.2
+                    distance_traveled: 2.5
+                    timestamp_ms: 1739052345123
+                    request_id: 42
       responses:
         '200':
-          description: |
-            Response is sent over the WebSocket (not as an HTTP body). Shape depends on `action`:
-            navigation updates vs object-detection distances.
+          description: Navigation frame processed successfully
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: '#/components/schemas/NavigationUpdateMessage'
-                  - $ref: '#/components/schemas/ObjectDetectionWebSocketResponse'
-                  - $ref: '#/components/schemas/NavigationErrorMessage'
-                  - $ref: '#/components/schemas/NavigationCompleteMessage'
+                $ref: '#/components/schemas/NavigationUpdateMessage'
               examples:
                 navigationUpdate:
                   summary: Regular navigation update
@@ -1135,27 +1090,18 @@ paths:
                         y_feet: 0
                     message: "Localization: PDR + landmark fusion; closest map node returned in estimated_position."
                     request_id: 42
-                objectDetectionResponse:
-                  summary: Object-detection response (`action` was `frame`)
-                  value:
-                    frameSize: 245760
-                    valid: true
-                    estimatedDistances:
-                      - className: "person"
-                        distance: "2.500"
-                    request_id: 43
-                navigationComplete:
-                  summary: Navigation completed
-                  value:
-                    type: "navigation_complete"
-                    session_id: "nav_session_abc123"
-                    message: "You have arrived at Room 226"
-                navigationError:
-                  summary: Navigation error
-                  value:
-                    type: "navigation_error"
-                    session_id: "nav_session_abc123"
-                    error: "Invalid or expired session_id"
+        '400':
+          description: Invalid multipart payload or metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NavigationErrorMessage'
+        '500':
+          description: Navigation processing failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NavigationErrorMessage'
 
 components:
   securitySchemes:
@@ -1482,49 +1428,24 @@ components:
               description: Y coordinate in feet
               example: 0
 
-    NavigationFrameMessage:
+    NavigationFrameMetadata:
       type: object
       description: |
-        Client → Server WebSocket message for camera + sensors.
-
-        **`action` is required for API Gateway:** the stack uses `route_selection_expression:
-        $request.body.action`, so each message must set **`action`** to **`"navigation"`** (live
-        localization and path updates) or **`"frame"`** (object detection / distances only).
-
-        **Sensor Data Sources (Expo):**
-        - `focal_length_pixels`: Computed on the frontend from a hardcoded device model → focal length map
-          using `expo-device` to detect the device. Focal length in mm and sensor width in mm are mapped
-          per device, then converted to pixels: `f_pixels = (f_mm / sensor_width_mm) * image_width_pixels`.
-        - `gps`: From `expo-location` (`Location.getCurrentPositionAsync` or `Location.watchPositionAsync`).
-        - `accelerometer`: From `expo-sensors` (`Accelerometer`).
-        - `gyroscope`: From `expo-sensors` (`Gyroscope`).
-        - `heading_degrees`: From `expo-location` (`Location.watchHeadingAsync`) or `expo-sensors` (`Magnetometer`).
+        JSON metadata attached as the `metadata` multipart field for `/navigation/frame`.
+        The image bytes are sent separately as the `image` multipart field.
       required:
-        - action
         - session_id
-        - image_base64
-        - heading_degrees
-        - accelerometer
-        - gyroscope
         - focal_length_pixels
+        - heading_degrees
+        - distance_traveled
+        - gps
+        - timestamp_ms
         - request_id
       properties:
-        action:
-          type: string
-          description: Selects WebSocket integration (`navigation` vs `frame`)
-          enum:
-            - navigation
-            - frame
-          example: "navigation"
         session_id:
           type: string
           description: Active navigation session ID from /navigation/start
           example: "nav_session_abc123"
-        image_base64:
-          type: string
-          description: JPEG/PNG frame encoded as base64
-          format: byte
-          example: "<base64-encoded-image>"
         focal_length_pixels:
           type: number
           description: |
@@ -1579,50 +1500,10 @@ components:
               nullable: true
               description: Speed in meters per second (may be null if unavailable)
               example: 1.2
-        accelerometer:
-          type: object
-          description: |
-            Raw accelerometer readings from `expo-sensors` (`Accelerometer`).
-            Measures acceleration force along three axes including gravity.
-          required:
-            - x
-            - y
-            - z
-          properties:
-            x:
-              type: number
-              description: Acceleration on X axis (m/s²)
-              example: 0.1
-            y:
-              type: number
-              description: Acceleration on Y axis (m/s²)
-              example: 0.0
-            z:
-              type: number
-              description: Acceleration on Z axis (m/s²)
-              example: 9.8
-        gyroscope:
-          type: object
-          description: |
-            Raw gyroscope readings from `expo-sensors` (`Gyroscope`).
-            Measures rotation rate around three axes in radians per second.
-          required:
-            - x
-            - y
-            - z
-          properties:
-            x:
-              type: number
-              description: Rotation rate around X axis (rad/s)
-              example: 0.01
-            y:
-              type: number
-              description: Rotation rate around Y axis (rad/s)
-              example: -0.02
-            z:
-              type: number
-              description: Rotation rate around Z axis (rad/s)
-              example: 0.005
+        distance_traveled:
+          type: number
+          description: Distance traveled since last frame in feet
+          example: 2.5
         timestamp_ms:
           type: integer
           description: Client-side timestamp in milliseconds since epoch

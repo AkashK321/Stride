@@ -223,6 +223,8 @@ class CdkStack(Stack):
         navigation = api.root.add_resource("navigation")
         start = navigation.add_resource("start")
         start.add_method("POST", integration=apigw.LambdaIntegration(static_navigation_handler))
+        frame = navigation.add_resource("frame")
+        frame.add_method("POST", integration=apigw.LambdaIntegration(live_navigation_handler))
 
         # Define the API Gateway WebSocket API
         # Explicit selection: client JSON must include "action": "frame" | "navigation" (etc.)
@@ -249,17 +251,12 @@ class CdkStack(Stack):
             route_key="frame",
             integration=integrations.WebSocketLambdaIntegration("FrameIntegration", object_detection_handler)
         )
-        ws_api.add_route(
-            route_key="navigation",
-            integration=integrations.WebSocketLambdaIntegration("NavigationIntegration", live_navigation_handler)
-        )
         # Add $default route to catch unmatched messages (for debugging)
         ws_api.add_route(
             route_key="$default",
             integration=integrations.WebSocketLambdaIntegration("DefaultIntegration", object_detection_handler)
         )
         ws_api.grant_manage_connections(object_detection_handler)
-        ws_api.grant_manage_connections(live_navigation_handler)
 
         # Add stack outputs for reporting to CICD
         CfnOutput(self, "RestAPIEndpointURL",
