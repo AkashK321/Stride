@@ -41,11 +41,24 @@ import { getFocalLengthPixels } from "../../services/focalLength";
 const COLLISION_FRAME_WIDTH = 256;
 const COLLISION_FRAME_COMPRESS = 0.22;
 /** How often to tick local progression from pedometer deltas. */
-const LOCAL_PROGRESS_TICK_MS = 500;
+const LOCAL_PROGRESS_TICK_MS = 1000;
+const COLLISION_SCHEDULER_TICK_MS = 250;
+const COLLISION_IDLE_MIN_INTERVAL_MS = 650;
+const COLLISION_WALKING_MIN_INTERVAL_MS = 900;
+const COLLISION_PROGRESS_PRIORITY_WINDOW_MS = 140;
+const COLLISION_RECENT_PEDOMETER_MS = 1200;
+const COLLISION_OVERLOAD_MS = 550;
+const COLLISION_OVERLOAD_BACKOFF_MS = 350;
+const COLLISION_START_STAGGER_MS = 175;
+const DEBUG_SENSOR_POLL_MS = 200;
 const SPEECH_MILESTONE_FEET = [50, 10] as const;
 const SPEECH_DUPLICATE_WINDOW_MS = 4000;
 const ORIENTATION_ALIGN_HOLD_MS = 1500;
 const ORIENTATION_PROGRESS_TICK_MS = 50;
+const ORIENTATION_RING_SEGMENTS = 56;
+const ORIENTATION_PROMPT_TEXT = "Orient yourself to begin navigation.";
+
+type CollisionRiskLevel = "safe" | "low" | "medium" | "high";
 
 type StepSpeechState = {
   hasStepAnnouncement: boolean;
@@ -138,6 +151,11 @@ function getSingleParam(value: string | string[] | undefined): string | null {
   return null;
 }
 
+function normalizeHeadingDegrees(value: number): number {
+  const normalized = value % 360;
+  return normalized < 0 ? normalized + 360 : normalized;
+}
+
 export default function NavigationSession() {
   const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
@@ -152,7 +170,11 @@ export default function NavigationSession() {
   const [navigationLoading, setNavigationLoading] = React.useState(false);
   const wsRef = React.useRef<NavigationWebSocket | null>(null);
   const collisionLoopRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const collisionStartTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const localProgressLoopRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastProgressRunAtMsRef = React.useRef(0);
+  const lastCollisionCaptureAtMsRef = React.useRef(0);
+  const collisionBackoffUntilMsRef = React.useRef(0);
   const lastVibrationTimeRef = React.useRef(0);
   const lastIntervalRef = React.useRef(0); // 0 = Safe, 1 = Low, 2 = Med, 3 = High
   const collisionFrameInFlightRef = React.useRef(false);
@@ -162,6 +184,7 @@ export default function NavigationSession() {
   const [navigationMode, setNavigationMode] = React.useState<"orienting" | "navigating">(
     "navigating",
   );
+  const [orientationIntroComplete, setOrientationIntroComplete] = React.useState(false);
   const [orientationHoldProgress, setOrientationHoldProgress] = React.useState(0);
   const [currentStepIndex, setCurrentStepIndex] = React.useState(0);
   const [distanceConsumedFeet, setDistanceConsumedFeet] = React.useState(0);
@@ -172,6 +195,7 @@ export default function NavigationSession() {
   const [collisionFramesSent, setCollisionFramesSent] = React.useState(0);
   const [collisionFramesDropped, setCollisionFramesDropped] = React.useState(0);
   const [lastCollisionSendAtMs, setLastCollisionSendAtMs] = React.useState<number | null>(null);
+  const [collisionRiskLevel, setCollisionRiskLevel] = React.useState<CollisionRiskLevel>("safe");
   const fallbackFocalLengthPixels = React.useMemo(
     () => getFocalLengthPixels(COLLISION_FRAME_WIDTH),
     [],
@@ -191,12 +215,26 @@ export default function NavigationSession() {
     playAlignedCompletionDing,
   } = useOrientationFeedback();
   const activeInstruction = navigationInstructions?.[currentStepIndex] ?? null;
-  const alignment = getAlignment(activeInstruction?.heading_degrees ?? null);
+  const activeInstructionHeading = activeInstruction?.heading_degrees ?? null;
+  const alignment = getAlignment(activeInstructionHeading);
+  const isAlignedWithInstructionHeading = alignment === "aligned";
+  const roundedHeading =
+    smoothedHeading == null ? null : ((Math.round(smoothedHeading) % 360) + 360) % 360;
   const orientationTargetHeading = navigationInstructions?.[0]?.heading_degrees ?? null;
   const orientationAlignment = getAlignment(orientationTargetHeading);
   const orientationHeadingDelta = getHeadingDelta(orientationTargetHeading);
   const orientationAbsErrorDeg =
     orientationHeadingDelta === null ? 180 : Math.abs(orientationHeadingDelta);
+  const orientationInstructionText = ORIENTATION_PROMPT_TEXT;
+  const orientationCurrentHeading =
+    smoothedHeading == null ? null : Math.round(normalizeHeadingDegrees(smoothedHeading));
+  const orientationTargetHeadingRounded =
+    orientationTargetHeading == null
+      ? null
+      : Math.round(normalizeHeadingDegrees(orientationTargetHeading));
+  const orientationProgressSegmentsLit = Math.round(
+    orientationHoldProgress * ORIENTATION_RING_SEGMENTS,
+  );
   const isOrienting = navigationMode === "orienting";
 
   const toggleSpeakerMode = React.useCallback(() => {
@@ -215,6 +253,10 @@ export default function NavigationSession() {
     if (collisionLoopRef.current) {
       clearInterval(collisionLoopRef.current);
       collisionLoopRef.current = null;
+    }
+    if (collisionStartTimeoutRef.current) {
+      clearTimeout(collisionStartTimeoutRef.current);
+      collisionStartTimeoutRef.current = null;
     }
     if (localProgressLoopRef.current) {
       clearInterval(localProgressLoopRef.current);
@@ -266,6 +308,27 @@ export default function NavigationSession() {
     if (!ws || !ws.isConnected() || !navigationSessionId || collisionFrameInFlightRef.current) {
       return;
     }
+    const now = Date.now();
+    if (now < collisionBackoffUntilMsRef.current) {
+      return;
+    }
+    const snapshot = getSnapshot({ consumeDistance: false });
+    const hasRecentPedometerActivity =
+      snapshot.effectiveSpeedStepsPerMs > 0 ||
+      (snapshot.timeSincePedoMs >= 0 && snapshot.timeSincePedoMs <= COLLISION_RECENT_PEDOMETER_MS);
+    const minCollisionIntervalMs = hasRecentPedometerActivity
+      ? COLLISION_WALKING_MIN_INTERVAL_MS
+      : COLLISION_IDLE_MIN_INTERVAL_MS;
+    if (now - lastCollisionCaptureAtMsRef.current < minCollisionIntervalMs) {
+      return;
+    }
+    if (
+      hasRecentPedometerActivity &&
+      now - lastProgressRunAtMsRef.current < COLLISION_PROGRESS_PRIORITY_WINDOW_MS
+    ) {
+      return;
+    }
+    lastCollisionCaptureAtMsRef.current = now;
     collisionFrameInFlightRef.current = true;
     try {
       const imageBase64 = await captureBase64Frame({
@@ -273,7 +336,6 @@ export default function NavigationSession() {
         compress: COLLISION_FRAME_COMPRESS,
       });
       if (!imageBase64) return;
-      const snapshot = getSnapshot({ consumeDistance: false });
       setLastSensorSnapshot(snapshot);
       const message: NavigationFrameMessage = {
         action: "frame",
@@ -296,6 +358,10 @@ export default function NavigationSession() {
     } catch (e) {
       setNavigationError(e instanceof Error ? e.message : "Failed to send collision frame");
     } finally {
+      const elapsedMs = Date.now() - now;
+      if (elapsedMs >= COLLISION_OVERLOAD_MS) {
+        collisionBackoffUntilMsRef.current = Date.now() + COLLISION_OVERLOAD_BACKOFF_MS;
+      }
       collisionFrameInFlightRef.current = false;
     }
   }, [
@@ -335,6 +401,10 @@ export default function NavigationSession() {
       if (minDistanceFeet < 5) currentInterval = 3;
       else if (minDistanceFeet < 10) currentInterval = 2;
       else if (minDistanceFeet <= 20) currentInterval = 1;
+      if (currentInterval === 3) setCollisionRiskLevel("high");
+      else if (currentInterval === 2) setCollisionRiskLevel("medium");
+      else if (currentInterval === 1) setCollisionRiskLevel("low");
+      else setCollisionRiskLevel("safe");
 
       const now = Date.now();
       const timeSinceLast = now - lastVibrationTimeRef.current;
@@ -365,9 +435,11 @@ export default function NavigationSession() {
         }
       } else {
         lastIntervalRef.current = 0; // Reset to safe
+        setCollisionRiskLevel("safe");
       }
     } else {
       lastIntervalRef.current = 0; // Reset if no objects detected in frame
+      setCollisionRiskLevel("safe");
     }
   }, []);
 
@@ -469,18 +541,58 @@ export default function NavigationSession() {
       stopOrientationProgressLoop();
       orientationAlignedStartedAtMsRef.current = null;
       setOrientationHoldProgress(0);
+      setOrientationIntroComplete(false);
+      void stopOrientationFeedback();
+      return;
+    }
+
+    setOrientationIntroComplete(false);
+    stopOrientationProgressLoop();
+    orientationAlignedStartedAtMsRef.current = null;
+    setOrientationHoldProgress(0);
+    void stopOrientationFeedback();
+    Speech.stop();
+    let cancelled = false;
+    Speech.speak(ORIENTATION_PROMPT_TEXT, {
+      language: "en",
+      onDone: () => {
+        if (!cancelled) {
+          setOrientationIntroComplete(true);
+        }
+      },
+      onStopped: () => {
+        if (!cancelled) {
+          setOrientationIntroComplete(true);
+        }
+      },
+      onError: () => {
+        if (!cancelled) {
+          setOrientationIntroComplete(true);
+        }
+      },
+    });
+
+    return () => {
+      cancelled = true;
+      Speech.stop();
+      stopOrientationProgressLoop();
+      void stopOrientationFeedback();
+    };
+  }, [isOrienting, stopOrientationFeedback, stopOrientationProgressLoop]);
+
+  React.useEffect(() => {
+    if (!isOrienting || !orientationIntroComplete) {
       void stopOrientationFeedback();
       return;
     }
     void startOrientationFeedback();
     return () => {
-      stopOrientationProgressLoop();
       void stopOrientationFeedback();
     };
-  }, [isOrienting, startOrientationFeedback, stopOrientationFeedback, stopOrientationProgressLoop]);
+  }, [isOrienting, orientationIntroComplete, startOrientationFeedback, stopOrientationFeedback]);
 
   React.useEffect(() => {
-    if (!isOrienting) {
+    if (!isOrienting || !orientationIntroComplete) {
       return;
     }
 
@@ -511,6 +623,7 @@ export default function NavigationSession() {
     }
   }, [
     isOrienting,
+    orientationIntroComplete,
     orientationAbsErrorDeg,
     orientationAlignment,
     orientationTargetHeading,
@@ -519,7 +632,7 @@ export default function NavigationSession() {
   ]);
 
   React.useEffect(() => {
-    if (!isOrienting || orientationAlignment !== "aligned") {
+    if (!isOrienting || !orientationIntroComplete || orientationAlignment !== "aligned") {
       stopOrientationProgressLoop();
       return;
     }
@@ -556,6 +669,7 @@ export default function NavigationSession() {
     };
   }, [
     isOrienting,
+    orientationIntroComplete,
     orientationAlignment,
     playAlignedCompletionDing,
     stopOrientationProgressLoop,
@@ -767,11 +881,13 @@ export default function NavigationSession() {
         await startSensorsRef.current();
         if (cancelled) return;
 
-        collisionLoopRef.current = setInterval(() => {
+        collisionStartTimeoutRef.current = setTimeout(() => {
+          if (cancelled) return;
+          collisionLoopRef.current = setInterval(() => {
+            void sendCollisionFrameRef.current();
+          }, COLLISION_SCHEDULER_TICK_MS);
           void sendCollisionFrameRef.current();
-        }, 500);
-
-        void sendCollisionFrameRef.current();
+        }, COLLISION_START_STAGGER_MS);
       } catch (e) {
         if (!cancelled) {
           setNavigationError(
@@ -798,6 +914,7 @@ export default function NavigationSession() {
     }
     localProgressLoopRef.current = setInterval(() => {
       if (instructionCountRef.current === 0) return;
+      lastProgressRunAtMsRef.current = Date.now();
       const snapshot = getProgressSnapshot();
       setLastSensorSnapshot(snapshot);
       setLatestProgressDeltaFeet(snapshot.distanceDeltaFeet);
@@ -841,6 +958,19 @@ export default function NavigationSession() {
     };
   }, [getProgressSnapshot, isOrienting, navigationSessionId]);
 
+  React.useEffect(() => {
+    if (!showDebugBackground || isOrienting) {
+      return;
+    }
+    const interval = setInterval(() => {
+      const snapshot = getSnapshot({ consumeDistance: false });
+      setLastSensorSnapshot(snapshot);
+    }, DEBUG_SENSOR_POLL_MS);
+    return () => {
+      clearInterval(interval);
+    };
+  }, [getSnapshot, isOrienting, showDebugBackground]);
+
   const handleExitNavigation = React.useCallback(() => {
     stopStreamingLoops();
     wsRef.current?.disconnect();
@@ -874,6 +1004,14 @@ export default function NavigationSession() {
   const progressTickLabel = lastProgressTickMs
     ? `${Math.round((Date.now() - lastProgressTickMs) / 100) / 10}s ago`
     : "n/a";
+  const collisionRiskColor =
+    collisionRiskLevel === "high"
+      ? colors.danger
+      : collisionRiskLevel === "medium"
+      ? "#F97316"
+      : collisionRiskLevel === "low"
+      ? "#EAB308"
+      : colors.primary;
 
   if (!cameraPermission) {
     return React.createElement(
@@ -1015,6 +1153,11 @@ export default function NavigationSession() {
             React.createElement(
               Text,
               { style: styles.debugLine },
+              `Raw pedometer: events=${lastSensorSnapshot?.pedometerEventCount ?? "n/a"} | last delta=${lastSensorSnapshot?.lastPedometerDeltaSteps ?? "n/a"} steps | callback dt=${lastSensorSnapshot?.lastPedometerDeltaTimeMs ?? "n/a"} ms | last event ${lastSensorSnapshot?.lastPedometerEventAtMs ? `${Math.round((Date.now() - lastSensorSnapshot.lastPedometerEventAtMs) / 100) / 10}s ago` : "n/a"}`,
+            ),
+            React.createElement(
+              Text,
+              { style: styles.debugLine },
               `Interpolation: ${lastSensorSnapshot?.interpolationApplied ? "on" : "off"} | age: ${lastSensorSnapshot?.timeSincePedoMs ?? "n/a"} ms | last collision send: ${lastCollisionSendAtMs ? `${Math.round((Date.now() - lastCollisionSendAtMs) / 100) / 10}s ago` : "n/a"}`,
             ),
           ),
@@ -1028,44 +1171,52 @@ export default function NavigationSession() {
           React.createElement(
             View,
             { style: styles.orientationCard },
-            React.createElement(Text, { style: styles.orientationTitle }, "Orient Yourself"),
             React.createElement(
               Text,
-              { style: styles.orientationBody },
-              orientationAlignment === "aligned"
-                ? "Hold steady. You're facing the correct direction."
-                : orientationAlignment === "turn_left"
-                ? "Turn left to match the first instruction direction."
-                : orientationAlignment === "turn_right"
-                ? "Turn right to match the first instruction direction."
-                : "Rotate slowly to calibrate your heading.",
-            ),
-            React.createElement(
-              Text,
-              { style: styles.orientationMetric },
-              `Target heading: ${orientationTargetHeading == null ? "n/a" : `${Math.round(orientationTargetHeading)}°`}`,
-            ),
-            React.createElement(
-              Text,
-              { style: styles.orientationMetric },
-              `Current heading: ${smoothedHeading == null ? "n/a" : `${Math.round(smoothedHeading)}°`} | Delta: ${orientationHeadingDelta == null ? "n/a" : `${Math.round(orientationHeadingDelta)}°`}`,
+              { style: styles.orientationInstructionText },
+              orientationInstructionText,
             ),
             React.createElement(
               View,
-              { style: styles.orientationProgressTrack },
-              React.createElement(View, {
-                style: [
-                  styles.orientationProgressFill,
-                  { width: `${Math.round(orientationHoldProgress * 100)}%` },
-                ],
-              }),
-            ),
-            React.createElement(
-              Text,
-              { style: styles.orientationProgressLabel },
-              orientationAlignment === "aligned"
-                ? `Hold alignment ${(orientationHoldProgress * 1.5).toFixed(1)} / 1.5s`
-                : "Align with target heading to continue",
+              { style: styles.orientationCompassWrapper },
+              React.createElement(
+                View,
+                { style: styles.orientationRing },
+                Array.from({ length: ORIENTATION_RING_SEGMENTS }).map((_, index) =>
+                  React.createElement(View, {
+                    key: `orientation-ring-segment-${index}`,
+                    style: [
+                      styles.orientationRingSegment,
+                      {
+                        transform: [
+                          {
+                            rotate: `${(index / ORIENTATION_RING_SEGMENTS) * 360}deg`,
+                          },
+                          { translateY: -126 },
+                        ],
+                        backgroundColor:
+                          index < orientationProgressSegmentsLit
+                            ? colors.primary
+                            : "#CBD5E1",
+                      },
+                    ],
+                  }),
+                ),
+              ),
+              React.createElement(
+                View,
+                { style: styles.orientationCompassCenter },
+                React.createElement(
+                  Text,
+                  { style: styles.orientationCurrentHeadingText },
+                  orientationCurrentHeading == null ? "--°" : `${orientationCurrentHeading}°`,
+                ),
+                React.createElement(
+                  Text,
+                  { style: styles.orientationTargetHeadingText },
+                  `Target ${orientationTargetHeadingRounded == null ? "--°" : `${orientationTargetHeadingRounded}°`}`,
+                ),
+              ),
             ),
           ),
         ),
@@ -1114,6 +1265,9 @@ export default function NavigationSession() {
             }),
           ),
         ),
+        React.createElement(View, {
+          style: [styles.collisionRiskBar, { backgroundColor: collisionRiskColor }],
+        }),
         React.createElement(
           View,
           {
@@ -1130,38 +1284,41 @@ export default function NavigationSession() {
               { style: styles.bottomNavDestination, numberOfLines: 1 },
               params.name,
             ),
-            totalDistanceFeet !== null &&
-              React.createElement(
-                Text,
-                { style: styles.bottomNavDistance },
-                `${totalDistanceFeet} ft`,
-              ),
-            // Alignment indicator — shows when heading_degrees is available on the active instruction.
-            // Hidden on the final "arrive" step (heading_degrees is null) and before instructions load.
-            alignment !== "unknown" &&
+            React.createElement(
+              View,
+              { style: styles.bottomNavMetaRow },
+              totalDistanceFeet !== null &&
+                React.createElement(
+                  Text,
+                  { style: styles.bottomNavDistance },
+                  `${totalDistanceFeet} ft`,
+                ),
               React.createElement(
                 View,
-                { style: styles.alignmentRow },
+                { style: styles.alignmentBadge },
                 React.createElement(Ionicons, {
-                  name:
-                    alignment === "aligned"
-                      ? "checkmark-circle"
-                      : alignment === "turn_left"
-                      ? "arrow-back-circle"
-                      : "arrow-forward-circle",
-                  size: 20,
-                  color: alignment === "aligned" ? colors.primary : colors.textSecondary,
+                  name: "compass-outline",
+                  size: 16,
+                  color: colors.textSecondary,
+                  style: styles.alignmentBadgeIcon,
                 }),
                 React.createElement(
                   Text,
                   { style: styles.alignmentText },
-                  alignment === "aligned"
-                    ? "Facing the right way"
-                    : alignment === "turn_left"
-                    ? "Turn left"
-                    : "Turn right",
+                  roundedHeading == null ? "--°" : `${roundedHeading}°`,
                 ),
+                React.createElement(View, {
+                  style: [
+                    styles.alignmentIndicator,
+                    {
+                      backgroundColor: isAlignedWithInstructionHeading
+                        ? colors.primary
+                        : colors.secondary,
+                    },
+                  ],
+                }),
               ),
+            ),
           ),
           React.createElement(
             Pressable,
@@ -1234,35 +1391,59 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 3 },
     elevation: 5,
-    gap: spacing.xs,
+    alignItems: "center",
+    gap: spacing.sm,
   },
-  orientationTitle: {
-    ...typography.h3,
-    color: colors.text,
-  },
-  orientationBody: {
+  orientationInstructionText: {
     ...typography.body,
-    color: colors.textSecondary,
+    color: colors.text,
+    textAlign: "center",
   },
-  orientationMetric: {
-    ...typography.label,
-    color: colors.textSecondary,
+  orientationCompassWrapper: {
+    width: 272,
+    height: 272,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  orientationProgressTrack: {
-    marginTop: spacing.xs,
-    height: 8,
-    borderRadius: 999,
-    backgroundColor: colors.backgroundSecondary,
-    overflow: "hidden",
-  },
-  orientationProgressFill: {
+  orientationRing: {
+    position: "absolute",
+    width: "100%",
     height: "100%",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  orientationRingSegment: {
+    position: "absolute",
+    width: 5,
+    height: 18,
     borderRadius: 999,
-    backgroundColor: colors.primary,
+  },
+  orientationCompassCenter: {
+    width: 200,
+    height: 200,
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: "#D1D5DB",
+    backgroundColor: "#FFFFFFEE",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  orientationCurrentHeadingText: {
+    ...typography.h1,
+    fontSize: 54,
+    color: colors.text,
+    lineHeight: 60,
+  },
+  orientationTargetHeadingText: {
+    ...typography.label,
+    marginTop: spacing.xs,
+    color: colors.textSecondary,
+    fontSize: 16,
   },
   orientationProgressLabel: {
     ...typography.label,
     color: colors.text,
+    textAlign: "center",
     marginTop: spacing.xs,
   },
   debugToggleButton: {
@@ -1357,6 +1538,14 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: "100%",
   },
+  collisionRiskBar: {
+    height: 10,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "#00000022",
+  },
   speakerButtonRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1402,19 +1591,35 @@ const styles = StyleSheet.create({
   },
   bottomNavDistance: {
     ...typography.label,
-    marginTop: 4,
     fontSize: 18,
     color: colors.textSecondary,
   },
-  alignmentRow: {
+  bottomNavMetaRow: {
+    marginTop: 6,
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 6,
-    gap: 6,
+    gap: spacing.sm,
+  },
+  alignmentBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 999,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    backgroundColor: colors.backgroundSecondary,
+  },
+  alignmentBadgeIcon: {
+    marginRight: 4,
+  },
+  alignmentIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    marginLeft: spacing.xs,
   },
   alignmentText: {
     ...typography.label,
-    fontSize: 15,
+    fontSize: 14,
     color: colors.textSecondary,
   },
   bottomNavEndButton: {
