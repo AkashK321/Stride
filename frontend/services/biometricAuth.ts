@@ -98,7 +98,7 @@ export async function promptBiometricUnlock(
   try {
     const result = await LocalAuthentication.authenticateAsync({
       promptMessage,
-      disableDeviceFallback: true,
+      disableDeviceFallback: false,
     });
 
     if (result.success) {

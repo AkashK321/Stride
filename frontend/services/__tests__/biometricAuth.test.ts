@@ -62,7 +62,7 @@ describe("biometricAuth", () => {
 
       expect(mockAuthenticateAsync).toHaveBeenCalledWith({
         promptMessage: "Unlock Stride",
-        disableDeviceFallback: true,
+        disableDeviceFallback: false,
       });
       expect(result).toEqual({ status: "success", success: true });
     });
