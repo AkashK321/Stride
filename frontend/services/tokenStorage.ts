@@ -11,6 +11,7 @@ import * as SecureStore from "expo-secure-store";
 const ACCESS_TOKEN_KEY = "accessToken";
 const ID_TOKEN_KEY = "idToken";
 const REFRESH_TOKEN_KEY = "refreshToken";
+const BIOMETRIC_LOGIN_ENABLED_KEY = "biometricLoginEnabled";
 
 export interface Tokens {
   accessToken: string;
@@ -109,6 +110,43 @@ export async function clearTokens(): Promise<void> {
   } catch (error) {
     console.error("Error clearing tokens:", error);
     throw new Error("Failed to clear authentication tokens");
+  }
+}
+
+/**
+ * Stores biometric login preference.
+ */
+export async function setBiometricLoginEnabled(enabled: boolean): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(BIOMETRIC_LOGIN_ENABLED_KEY, String(enabled));
+  } catch (error) {
+    console.error("Error storing biometric login preference:", error);
+    throw new Error("Failed to store biometric login preference");
+  }
+}
+
+/**
+ * Retrieves biometric login preference.
+ */
+export async function getBiometricLoginEnabled(): Promise<boolean> {
+  try {
+    const value = await SecureStore.getItemAsync(BIOMETRIC_LOGIN_ENABLED_KEY);
+    return value === "true";
+  } catch (error) {
+    console.error("Error retrieving biometric login preference:", error);
+    return false;
+  }
+}
+
+/**
+ * Clears biometric login preference.
+ */
+export async function clearBiometricLoginPreference(): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(BIOMETRIC_LOGIN_ENABLED_KEY);
+  } catch (error) {
+    console.error("Error clearing biometric login preference:", error);
+    throw new Error("Failed to clear biometric login preference");
   }
 }
 
