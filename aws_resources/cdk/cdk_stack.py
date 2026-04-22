@@ -207,6 +207,10 @@ class CdkStack(Stack):
 
         register = api.root.add_resource("register")
         register.add_method("POST", integration=apigw.LambdaIntegration(auth_handler))
+        check_username = register.add_resource("check-username")
+        check_username.add_method("GET", integration=apigw.LambdaIntegration(auth_handler))
+        check_email = register.add_resource("check-email")
+        check_email.add_method("GET", integration=apigw.LambdaIntegration(auth_handler))
 
         search = api.root.add_resource("search")
         search.add_method("GET", integration=apigw.LambdaIntegration(static_navigation_handler))

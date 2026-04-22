@@ -236,6 +236,22 @@ class AuthHandlerTest {
         }
     }
 
+    private fun createCheckUsernameEvent(username: String): APIGatewayProxyRequestEvent {
+        return APIGatewayProxyRequestEvent().apply {
+            httpMethod = "GET"
+            path = "/register/check-username"
+            queryStringParameters = mapOf("username" to username)
+        }
+    }
+
+    private fun createCheckEmailEvent(email: String): APIGatewayProxyRequestEvent {
+        return APIGatewayProxyRequestEvent().apply {
+            httpMethod = "GET"
+            path = "/register/check-email"
+            queryStringParameters = mapOf("email" to email)
+        }
+    }
+
     private fun createRegisterEvent(
         username: String,
         password: String,
@@ -559,6 +575,120 @@ class AuthHandlerTest {
         
         // Then
         assertEquals(404, response.statusCode)
+    }
+
+    @Test
+    @DisplayName("Check username missing environment variables returns 500")
+    fun `check username missing environment returns 500`() {
+        // Given - no environment variables set
+        val event = createCheckUsernameEvent("testuser")
+
+        // When
+        val response = handler.handleRequest(event, mockContext)
+
+        // Then
+        assertEquals(500, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("Server configuration error"))
+    }
+
+    @Test
+    @DisplayName("Check username missing query parameter returns 400")
+    fun `check username missing query parameter returns 400`(envVars: EnvironmentVariables) {
+        // Given
+        envVars.set("USER_POOL_ID", "test-pool-id")
+        val event = APIGatewayProxyRequestEvent().apply {
+            httpMethod = "GET"
+            path = "/register/check-username"
+            queryStringParameters = emptyMap()
+        }
+
+        // When
+        val response = handler.handleRequest(event, mockContext)
+
+        // Then
+        assertEquals(400, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("username query parameter is required"))
+    }
+
+    @Test
+    @DisplayName("Check username with too-long username returns 400")
+    fun `check username too long returns 400`(envVars: EnvironmentVariables) {
+        // Given
+        envVars.set("USER_POOL_ID", "test-pool-id")
+        val event = createCheckUsernameEvent("a".repeat(65))
+
+        // When
+        val response = handler.handleRequest(event, mockContext)
+
+        // Then
+        assertEquals(400, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("username must be 64 characters or less"))
+    }
+
+    @Test
+    @DisplayName("Check email missing environment variables returns 500")
+    fun `check email missing environment returns 500`() {
+        // Given - no environment variables set
+        val event = createCheckEmailEvent("test@example.com")
+
+        // When
+        val response = handler.handleRequest(event, mockContext)
+
+        // Then
+        assertEquals(500, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("Server configuration error"))
+    }
+
+    @Test
+    @DisplayName("Check email missing query parameter returns 400")
+    fun `check email missing query parameter returns 400`(envVars: EnvironmentVariables) {
+        // Given
+        envVars.set("USER_POOL_ID", "test-pool-id")
+        val event = APIGatewayProxyRequestEvent().apply {
+            httpMethod = "GET"
+            path = "/register/check-email"
+            queryStringParameters = emptyMap()
+        }
+
+        // When
+        val response = handler.handleRequest(event, mockContext)
+
+        // Then
+        assertEquals(400, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("email query parameter is required"))
+    }
+
+    @Test
+    @DisplayName("Check email with invalid format returns 400")
+    fun `check email invalid format returns 400`(envVars: EnvironmentVariables) {
+        // Given
+        envVars.set("USER_POOL_ID", "test-pool-id")
+        val event = createCheckEmailEvent("not-an-email")
+
+        // When
+        val response = handler.handleRequest(event, mockContext)
+
+        // Then
+        assertEquals(400, response.statusCode)
+        val responseBody = response.body
+        assertNotNull(responseBody)
+        assertTrue(responseBody!!.contains("error"))
+        assertTrue(responseBody.contains("Invalid email format"))
     }
 
     // Normalization tests (whitespace trimming)

@@ -13,9 +13,11 @@ import { Ionicons } from "@expo/vector-icons";
 import Button from "../../components/Button";
 import TextField from "../../components/TextField";
 import Label from "../../components/Label";
+import ValidationIndicator, { ValidationStatus } from "../../components/ValidationIndicator";
 import { spacing } from "../../theme/spacing";
 import { typography } from "../../theme/typography";
 import { colors } from "../../theme/colors";
+import { checkUsernameAvailability } from "../../services/api";
 
 export default function RegisterCredentials() {
   const router = useRouter();
@@ -28,9 +30,13 @@ export default function RegisterCredentials() {
   const usernameRef = React.useRef<TextInput>(null);
   const passwordRef = React.useRef<TextInput>(null);
   const passwordConfirmRef = React.useRef<TextInput>(null);
+  const usernameAvailabilityTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const usernameAvailabilityRequestIdRef = React.useRef(0);
 
   const [username, setUsername] = React.useState("");
   const [usernameError, setUsernameError] = React.useState("");
+  const [usernameAvailabilityStatus, setUsernameAvailabilityStatus] =
+    React.useState<ValidationStatus>("idle");
   const [password, setPassword] = React.useState("");
   const [passwordError, setPasswordError] = React.useState("");
   const [passwordConfirm, setPasswordConfirm] = React.useState("");
@@ -68,11 +74,24 @@ export default function RegisterCredentials() {
   const isUsernameValid = React.useMemo(() => {
     return username.trim().length >= 3;
   }, [username]);
+  const trimmedUsername = React.useMemo(() => username.trim(), [username]);
   
   // Form is valid if all conditions are met
   const isFormValid = React.useMemo(() => {
     return isUsernameValid && isPasswordValid && passwordsMatch;
   }, [isUsernameValid, isPasswordValid, passwordsMatch]);
+  const requiresUsernameAvailabilityCheck = React.useMemo(
+    () => trimmedUsername.length >= 3,
+    [trimmedUsername]
+  );
+  const isUsernameAvailabilityBlockingStatus = React.useMemo(
+    () => usernameAvailabilityStatus !== "available",
+    [usernameAvailabilityStatus]
+  );
+  const isUsernameAvailabilityBlocking = React.useMemo(
+    () => isFormValid && requiresUsernameAvailabilityCheck && isUsernameAvailabilityBlockingStatus,
+    [isFormValid, requiresUsernameAvailabilityCheck, isUsernameAvailabilityBlockingStatus]
+  );
 
   // Listen to keyboard events to get keyboard height
   React.useEffect(() => {
@@ -195,6 +214,45 @@ export default function RegisterCredentials() {
     }
   }, [keyboardHeight, focusedField]);
 
+  React.useEffect(() => {
+    if (usernameAvailabilityTimeoutRef.current) {
+      clearTimeout(usernameAvailabilityTimeoutRef.current);
+      usernameAvailabilityTimeoutRef.current = null;
+    }
+
+    if (trimmedUsername.length < 3) {
+      setUsernameAvailabilityStatus("idle");
+      return;
+    }
+
+    const requestId = usernameAvailabilityRequestIdRef.current + 1;
+    usernameAvailabilityRequestIdRef.current = requestId;
+
+    usernameAvailabilityTimeoutRef.current = setTimeout(async () => {
+      setUsernameAvailabilityStatus("loading");
+      const result = await checkUsernameAvailability(trimmedUsername);
+
+      // Ignore stale responses from older checks.
+      if (requestId !== usernameAvailabilityRequestIdRef.current) {
+        return;
+      }
+
+      if (result.error) {
+        setUsernameAvailabilityStatus("error");
+        return;
+      }
+
+      setUsernameAvailabilityStatus(result.available ? "available" : "taken");
+    }, 500);
+
+    return () => {
+      if (usernameAvailabilityTimeoutRef.current) {
+        clearTimeout(usernameAvailabilityTimeoutRef.current);
+        usernameAvailabilityTimeoutRef.current = null;
+      }
+    };
+  }, [trimmedUsername]);
+
   const handleNext = () => {
     // Clear previous errors
     setUsernameError("");
@@ -227,6 +285,23 @@ export default function RegisterCredentials() {
 
     if (hasErrors) {
       return;
+    }
+
+    if (requiresUsernameAvailabilityCheck) {
+      if (usernameAvailabilityStatus === "loading" || usernameAvailabilityStatus === "idle") {
+        setUsernameError("Please wait while we verify username availability");
+        return;
+      }
+
+      if (usernameAvailabilityStatus === "taken") {
+        setUsernameError("This username is already taken");
+        return;
+      }
+
+      if (usernameAvailabilityStatus === "error") {
+        setUsernameError("Unable to verify username availability right now");
+        return;
+      }
     }
 
     // Validate that we have all required data from step 1
@@ -327,28 +402,54 @@ export default function RegisterCredentials() {
           },
           "Step 2 of 3: Username & Password"
         ),
-        React.createElement(TextField, {
-          ref: usernameRef,
-          value: username,
-          onChangeText: handleUsernameChange,
-          error: usernameError,
-          autoCapitalize: "none",
-          autoComplete: "username",
-          autoCorrect: false,
-          spellCheck: false,
-          returnKeyType: "next",
-          onSubmitEditing: () => {
-            setFocusedField("username");
-            passwordRef.current?.focus();
+        React.createElement(
+          View,
+          {
+            style: {
+              width: "100%",
+              marginBottom: spacing.md,
+            },
           },
-          placeholder: "Username",
-          accessibilityLabel: "Username",
-          accessibilityHint: "Enter your desired username. Press next to move to password field.",
-          style: {
-            width: "100%",
-            marginBottom: spacing.md,
-          },
-        }),
+          React.createElement(TextField, {
+            ref: usernameRef,
+            value: username,
+            onChangeText: handleUsernameChange,
+            error: usernameError,
+            autoCapitalize: "none",
+            autoComplete: "username",
+            autoCorrect: false,
+            spellCheck: false,
+            returnKeyType: "next",
+            onSubmitEditing: () => {
+              setFocusedField("username");
+              passwordRef.current?.focus();
+            },
+            placeholder: "Username",
+            accessibilityLabel: "Username",
+            accessibilityHint: "Enter your desired username. Press next to move to password field.",
+            style: {
+              width: "100%",
+            },
+            rightIcon:
+              usernameAvailabilityStatus === "idle"
+                ? undefined
+                : React.createElement(ValidationIndicator, {
+                    status: usernameAvailabilityStatus,
+                    variant: "icon",
+                    loadingText: "Checking username availability",
+                    availableText: "Username is available",
+                    takenText: "Username is already taken",
+                    errorText: "Unable to verify username availability",
+                  }),
+          }),
+          React.createElement(ValidationIndicator, {
+            status: usernameAvailabilityStatus,
+            loadingText: "Checking username availability...",
+            availableText: "Username is available",
+            takenText: "Username is already taken",
+            errorText: "Unable to verify username availability right now",
+          }),
+        ),
         React.createElement(
           View,
           {
@@ -638,12 +739,13 @@ export default function RegisterCredentials() {
         React.createElement(Button, {
           onPress: handleNext,
           title: "Continue",
+          disabled: isUsernameAvailabilityBlocking,
           style: {
             marginTop: spacing.xl,
           },
           accessibilityLabel: "Continue to contact information",
           accessibilityRole: "button",
-          accessibilityHint: "Continue to the next step to enter your email and phone number",
+          accessibilityHint: "Continue to the next step to enter your email address",
         }),
         React.createElement(Button, {
           onPress: () => router.back(),

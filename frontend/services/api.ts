@@ -70,6 +70,13 @@ export interface RegisterResponse {
   username: string;
 }
 
+export interface AvailabilityCheckResponse {
+  available: boolean;
+  username?: string;
+  email?: string;
+  error?: boolean;
+}
+
 export interface LandmarkResult {
   landmark_id: number;
   name: string;
@@ -204,6 +211,118 @@ export async function register(userData: RegisterRequest): Promise<RegisterRespo
     }
     // Otherwise wrap it
     throw new Error(`Registration failed: ${String(error)}`);
+  }
+}
+
+/**
+ * Checks if a username is available during registration.
+ * Returns an explicit error flag so the UI can show an "unknown" state.
+ */
+export async function checkUsernameAvailability(
+  username: string
+): Promise<AvailabilityCheckResponse> {
+  const normalizedUsername = username.trim();
+  const fallbackResponse: AvailabilityCheckResponse = {
+    available: false,
+    username: normalizedUsername,
+    error: true,
+  };
+
+  try {
+    const base = requireApiUrl();
+    const params = new URLSearchParams({ username: normalizedUsername });
+    const response = await fetch(`${base}/register/check-username?${params.toString()}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    let data: unknown = {};
+    try {
+      data = await response.json();
+    } catch (parseError) {
+      console.warn("[API] check-username returned non-JSON response", parseError);
+      return fallbackResponse;
+    }
+
+    if (!response.ok) {
+      console.warn("[API] check-username failed:", {
+        status: response.status,
+        statusText: response.statusText,
+        data,
+      });
+      return fallbackResponse;
+    }
+
+    const parsed = data as AvailabilityCheckResponse;
+    return {
+      available: Boolean(parsed.available),
+      username:
+        typeof parsed.username === "string" && parsed.username.length > 0
+          ? parsed.username
+          : normalizedUsername,
+      error: false,
+    };
+  } catch (error) {
+    console.warn("[API] check-username request error:", error);
+    return fallbackResponse;
+  }
+}
+
+/**
+ * Checks if an email is available during registration.
+ * Returns an explicit error flag so the UI can show an "unknown" state.
+ */
+export async function checkEmailAvailability(
+  email: string
+): Promise<AvailabilityCheckResponse> {
+  const normalizedEmail = email.trim().toLowerCase();
+  const fallbackResponse: AvailabilityCheckResponse = {
+    available: false,
+    email: normalizedEmail,
+    error: true,
+  };
+
+  try {
+    const base = requireApiUrl();
+    const params = new URLSearchParams({ email: normalizedEmail });
+    const response = await fetch(`${base}/register/check-email?${params.toString()}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    let data: unknown = {};
+    try {
+      data = await response.json();
+    } catch (parseError) {
+      console.warn("[API] check-email returned non-JSON response", parseError);
+      return fallbackResponse;
+    }
+
+    if (!response.ok) {
+      console.warn("[API] check-email failed:", {
+        status: response.status,
+        statusText: response.statusText,
+        data,
+      });
+      return fallbackResponse;
+    }
+
+    const parsed = data as AvailabilityCheckResponse;
+    return {
+      available: Boolean(parsed.available),
+      email:
+        typeof parsed.email === "string" && parsed.email.length > 0
+          ? parsed.email
+          : normalizedEmail,
+      error: false,
+    };
+  } catch (error) {
+    console.warn("[API] check-email request error:", error);
+    return fallbackResponse;
   }
 }
 

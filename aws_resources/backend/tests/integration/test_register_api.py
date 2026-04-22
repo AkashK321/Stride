@@ -310,6 +310,132 @@ def test_register_duplicate_email_case_insensitive(api_base_url, test_user_crede
 
 
 # ============================================
+# Registration Availability Endpoint Tests
+# ============================================
+
+def test_check_username_missing_query_param(api_base_url):
+    """Test username availability endpoint with missing username query parameter."""
+    response = requests.get(
+        f"{api_base_url}/register/check-username",
+        headers={"Content-Type": "application/json"},
+        timeout=10
+    )
+
+    assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert "error" in data
+    assert "username query parameter is required" in data["error"]
+
+
+def test_check_username_too_long(api_base_url):
+    """Test username availability endpoint with username over max length."""
+    response = requests.get(
+        f"{api_base_url}/register/check-username",
+        params={"username": "a" * 65},
+        headers={"Content-Type": "application/json"},
+        timeout=10
+    )
+
+    assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert "error" in data
+    assert "64 characters or less" in data["error"]
+
+
+def test_check_username_availability_taken_after_register(api_base_url, test_user_credentials):
+    """Test username availability endpoint reports false for an existing username."""
+    register_response = requests.post(
+        f"{api_base_url}/register",
+        json={
+            "username": test_user_credentials["username"],
+            "password": test_user_credentials["password"],
+            "passwordConfirm": test_user_credentials["passwordConfirm"],
+            "email": test_user_credentials["email"],
+            "firstName": test_user_credentials["firstName"],
+            "lastName": test_user_credentials["lastName"]
+        },
+        headers={"Content-Type": "application/json"},
+        timeout=10
+    )
+    assert register_response.status_code == 201, f"Registration failed: {register_response.text}"
+
+    check_response = requests.get(
+        f"{api_base_url}/register/check-username",
+        params={"username": test_user_credentials["username"]},
+        headers={"Content-Type": "application/json"},
+        timeout=10
+    )
+
+    assert check_response.status_code == 200, f"Expected 200, got {check_response.status_code}: {check_response.text}"
+    data = check_response.json()
+    assert set(data.keys()) == {"available", "username"}
+    assert isinstance(data["available"], bool)
+    assert data["available"] is False
+    assert data["username"] == test_user_credentials["username"]
+
+
+def test_check_email_missing_query_param(api_base_url):
+    """Test email availability endpoint with missing email query parameter."""
+    response = requests.get(
+        f"{api_base_url}/register/check-email",
+        headers={"Content-Type": "application/json"},
+        timeout=10
+    )
+
+    assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert "error" in data
+    assert "email query parameter is required" in data["error"]
+
+
+def test_check_email_invalid_format(api_base_url):
+    """Test email availability endpoint rejects invalid email format."""
+    response = requests.get(
+        f"{api_base_url}/register/check-email",
+        params={"email": "invalid-email"},
+        headers={"Content-Type": "application/json"},
+        timeout=10
+    )
+
+    assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert "error" in data
+    assert data["error"] == "Invalid email format"
+
+
+def test_check_email_availability_taken_after_register(api_base_url, test_user_credentials):
+    """Test email availability endpoint reports false for an existing email."""
+    register_response = requests.post(
+        f"{api_base_url}/register",
+        json={
+            "username": test_user_credentials["username"],
+            "password": test_user_credentials["password"],
+            "passwordConfirm": test_user_credentials["passwordConfirm"],
+            "email": test_user_credentials["email"],
+            "firstName": test_user_credentials["firstName"],
+            "lastName": test_user_credentials["lastName"]
+        },
+        headers={"Content-Type": "application/json"},
+        timeout=10
+    )
+    assert register_response.status_code == 201, f"Registration failed: {register_response.text}"
+
+    check_response = requests.get(
+        f"{api_base_url}/register/check-email",
+        params={"email": test_user_credentials["email"].upper()},
+        headers={"Content-Type": "application/json"},
+        timeout=10
+    )
+
+    assert check_response.status_code == 200, f"Expected 200, got {check_response.status_code}: {check_response.text}"
+    data = check_response.json()
+    assert set(data.keys()) == {"available", "email"}
+    assert isinstance(data["available"], bool)
+    assert data["available"] is False
+    assert data["email"] == test_user_credentials["email"]
+
+
+# ============================================
 # Invalid Input Format Tests
 # ============================================
 
