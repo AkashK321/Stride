@@ -285,6 +285,11 @@ class LiveNavigationHandler(
     }
 
     private fun validateNavigationFramePayload(payload: Map<String, Any?>): String? {
+        val action = (payload["action"] as? String)?.ifBlank { null } ?: "navigation"
+        if (action != "navigation" && action != "frame") {
+            return "Invalid field: action must be 'navigation' or 'frame'"
+        }
+
         val sessionId = payload["session_id"] as? String
         if (sessionId.isNullOrBlank()) return "Missing or invalid field: session_id"
 
@@ -373,7 +378,32 @@ class LiveNavigationHandler(
             )
         }
 
+        val action = (payload["action"] as? String)?.ifBlank { null } ?: "navigation"
         val navRequest = parseNavigationFramePayload(payload)
+
+        if (action == "frame") {
+            val detections = objectDetectionHandler.detectObjectsFromImage(
+                imageBase64 = navRequest.image_base64,
+                logger = logger,
+                focalLength = navRequest.focal_length_pixels,
+            )
+            val distancesList = detections.map { detected ->
+                mapOf(
+                    "className" to detected.obj.className,
+                    "distance" to String.format(java.util.Locale.US, "%.3f", detected.distanceMeters),
+                )
+            }
+            return jsonResponse(
+                200,
+                mapOf(
+                    "frameSize" to Base64.getDecoder().decode(navRequest.image_base64).size,
+                    "valid" to true,
+                    "estimatedDistances" to distancesList,
+                    "request_id" to navRequest.request_id.toInt(),
+                ),
+            )
+        }
+
         val sessionData = getSessionData(sessionTableClient, navRequest.session_id, logger)
 
         if (sessionData.previousX == Double.POSITIVE_INFINITY && sessionData.previousY == Double.POSITIVE_INFINITY) {

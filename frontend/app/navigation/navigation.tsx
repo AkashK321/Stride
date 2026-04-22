@@ -129,6 +129,7 @@ export default function NavigationSession() {
       if (!imageUri) return;
       const snapshot = getSnapshot();
       const metadata: NavigationFrameMetadata = {
+        action: "navigation",
         session_id: navigationSessionId,
         focal_length_pixels: focalLengthPixels,
         heading_degrees: snapshot.heading ?? 0,

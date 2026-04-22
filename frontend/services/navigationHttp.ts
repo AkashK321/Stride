@@ -1,6 +1,7 @@
 import { requireApiUrl } from "./api";
 
 export interface NavigationFrameMetadata {
+  action?: "navigation" | "frame";
   session_id: string;
   focal_length_pixels: number;
   heading_degrees: number | null;

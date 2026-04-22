@@ -319,6 +319,7 @@ export default function Navigation() {
 
       const requestId = nextNavigationRequestId();
       const metadata: NavigationFrameMetadata = {
+        action: "frame",
         session_id: SESSION_ID,
         focal_length_pixels: focalLengthPixels,
         heading_degrees: sensors.heading,
