@@ -114,14 +114,6 @@ export default function Home() {
     });
   }, []);
 
-  const handleSelectRecentDestination = React.useCallback(
-    (landmark: LandmarkResult) => {
-      setSelectedDestination(landmark);
-      updateRecentDestinations(landmark);
-    },
-    [updateRecentDestinations],
-  );
-
   const closePicker = React.useCallback(() => {
     setPickerVisible(false);
     setQuery("");
