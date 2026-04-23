@@ -13,23 +13,58 @@ import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Button from "../../../components/Button";
 import { useAuth } from "../../../contexts/AuthContext";
+import { getIdToken } from "../../../services/tokenStorage";
 import { spacing } from "../../../theme/spacing";
 import { typography } from "../../../theme/typography";
 import { colors } from "../../../theme/colors";
 
 export default function Profile() {
   const router = useRouter();
-  const { logout } = useAuth();
+  const { logout, isDevBypass } = useAuth();
   const [isLoggingOut, setIsLoggingOut] = React.useState(false);
+
+  // User Profile State
+  const [username, setUsername] = React.useState("Loading...");
+  const [email, setEmail] = React.useState("");
 
   // App settings state
   const [cameraMode, setCameraMode] = React.useState(true);
 
-  // Mock User Info (TODO: Fetch this from AuthContext or an API endpoint)
-  const user = {
-    username: "DemoUser",
-    email: "demo@example.com",
-  };
+  React.useEffect(() => {
+    const fetchUserData = async () => {
+      // Handle the case where the app is bypassed and no tokens exist
+      if (isDevBypass) {
+        setUsername("Developer Bypass");
+        setEmail("dev@stride.local");
+        return;
+      }
+
+      try {
+        const token = await getIdToken();
+        if (token) {
+          const parts = token.split(".");
+          if (parts.length === 3) {
+            // Decode the base64 JWT payload
+            const payload = JSON.parse(atob(parts[1]));
+            
+            // Extract the user data (supporting standard JWT and AWS Cognito keys)
+            const decodedUsername = payload["cognito:username"] || payload.preferred_username || payload.username || "User";
+            const decodedEmail = payload.email || "No email provided";
+
+            setUsername(decodedUsername);
+            setEmail(decodedEmail);
+          }
+        } else {
+          setUsername("Unknown User");
+        }
+      } catch (error) {
+        console.error("Failed to parse ID token for user profile:", error);
+        setUsername("Unknown User");
+      }
+    };
+
+    fetchUserData();
+  }, [isDevBypass]);
 
   const handleLogout = async () => {
     try {
@@ -84,11 +119,11 @@ export default function Profile() {
           { style: { ...typography.h1, marginBottom: spacing.sm } },
           "Profile & Settings"
         ),
-        React.createElement(Text, { style: typography.h3 }, user.username),
+        React.createElement(Text, { style: typography.h3 }, username),
         React.createElement(
           Text,
           { style: { ...typography.body, color: colors.textSecondary } },
-          user.email
+          email
         )
       ),
 
@@ -124,7 +159,6 @@ export default function Profile() {
         View,
         { style: { gap: spacing.md, marginTop: spacing.md } },
         React.createElement(Button, {
-          // Routes directly to the robust validation screen imported from main
           onPress: () => router.push("/profile/change-password" as any),
           title: "Change Password",
           variant: "secondary",
