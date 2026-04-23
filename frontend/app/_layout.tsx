@@ -14,6 +14,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useFonts, Roboto_400Regular, Roboto_700Bold, Roboto_300Light } from "@expo-google-fonts/roboto";
 import { AuthProvider, useAuth } from "../contexts/AuthContext";
+import { SettingsProvider } from "../contexts/SettingsContext";
 import { setupAutoRefresh } from "../services/tokenStorage";
 import { colors } from "../theme/colors";
 
@@ -79,7 +80,11 @@ export default function RootLayout() {
       React.createElement(
         AuthProvider,
         null,
-        React.createElement(AppContent),
+        React.createElement(
+          SettingsProvider,
+          null,
+          React.createElement(AppContent),
+        ),
       ),
     ),
   );
