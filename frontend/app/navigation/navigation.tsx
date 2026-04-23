@@ -306,6 +306,10 @@ export default function NavigationSession() {
   }, []);
 
   const sendCollisionFrame = React.useCallback(async () => {
+    if (cameraMode === false) {
+      console.log("Camera mode is disabled, skipping collision frame capture and send.");
+      return;
+    }
     const ws = wsRef.current;
     if (!ws || !ws.isConnected() || !navigationSessionId || collisionFrameInFlightRef.current) {
       return;
