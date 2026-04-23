@@ -36,6 +36,7 @@ import { useHeading } from "../../hooks/useHeading";
 import { useOrientationFeedback } from "../../hooks/useOrientationFeedback";
 import { SensorSnapshot, useSensorData } from "../../hooks/useSensorData";
 import { getFocalLengthPixels } from "../../services/focalLength";
+import { useSettings } from "@/contexts/SettingsContext";
 
 /** Collision frame encode settings. */
 const COLLISION_FRAME_WIDTH = 256;
@@ -160,6 +161,7 @@ export default function NavigationSession() {
   const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const { cameraMode } = useSettings();
   const cameraRef = React.useRef<CameraView>(null);
   const [navigationInstructions, setNavigationInstructions] =
     React.useState<NavigationInstruction[] | null>(null);
@@ -304,6 +306,10 @@ export default function NavigationSession() {
   }, []);
 
   const sendCollisionFrame = React.useCallback(async () => {
+    if (cameraMode === false) {
+      console.log("Camera mode is disabled, skipping collision frame capture and send.");
+      return;
+    }
     const ws = wsRef.current;
     if (!ws || !ws.isConnected() || !navigationSessionId || collisionFrameInFlightRef.current) {
       return;
