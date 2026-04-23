@@ -17,6 +17,7 @@ import { getIdToken } from "../../../services/tokenStorage";
 import { spacing } from "../../../theme/spacing";
 import { typography } from "../../../theme/typography";
 import { colors } from "../../../theme/colors";
+import { useSettings } from "../../../contexts/SettingsContext";
 
 export default function Profile() {
   const router = useRouter();
@@ -28,7 +29,7 @@ export default function Profile() {
   const [email, setEmail] = React.useState("");
 
   // App settings state
-  const [cameraMode, setCameraMode] = React.useState(true);
+  const { cameraMode, setCameraMode } = useSettings();
 
   React.useEffect(() => {
     const fetchUserData = async () => {
@@ -79,11 +80,7 @@ export default function Profile() {
   const handleCameraModeToggle = (value: boolean) => {
     setCameraMode(value);
     if (!value) {
-      // TODO: Hook into your context/services to disable collision detection
-      // and halt any ongoing live navigation requests
-      console.log("Camera Mode Disabled: Disabling collision detection and live navigation.");
-    } else {
-      console.log("Camera Mode Enabled: Resuming features.");
+      console.log("Camera Mode Disabled: Global circuit breaker activated.");
     }
   };
 
