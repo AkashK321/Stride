@@ -8,6 +8,7 @@
  * Uses React.createElement (non-JSX) to match the project's TypeScript configuration.
  */
 import * as React from "react";
+import * as Speech from "expo-speech";
 import { View, Text, Switch, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -80,7 +81,7 @@ export default function Profile() {
   const handleCameraModeToggle = (value: boolean) => {
     setCameraMode(value);
     if (!value) {
-      console.log("Camera Mode Disabled: Global circuit breaker activated.");
+      console.log("Camera Mode Disabled: Global circuit breaker activated.", { cameraMode: value });
     }
   };
 
@@ -94,75 +95,101 @@ export default function Profile() {
       ScrollView,
       {
         contentContainerStyle: {
+          flexGrow: 1, // Crucial: forces the ScrollView content to fill the screen
           padding: spacing.lg,
-          gap: spacing.xl,
-          paddingBottom: spacing.xl,
+          paddingBottom: spacing.xl, // Extra padding at the very bottom
         },
       },
 
-      // --- Header: User Information ---
+      // --- Top Content Group ---
+      // Wraps everything except logout. flex: 1 pushes the next sibling down.
       React.createElement(
         View,
-        {
-          style: {
-            gap: spacing.xs,
-            borderBottomWidth: 1,
-            borderBottomColor: "#E5E5E5",
-            paddingBottom: spacing.lg,
-          },
-        },
-        React.createElement(
-          Text,
-          { style: { ...typography.h1, marginBottom: spacing.sm } },
-          "Profile & Settings"
-        ),
-        React.createElement(Text, { style: typography.h3 }, username),
-        React.createElement(
-          Text,
-          { style: { ...typography.body, color: colors.textSecondary } },
-          email
-        )
-      ),
-
-      // --- Settings: Camera Mode ---
-      React.createElement(
-        View,
-        {
-          style: {
-            flexDirection: "row",
-            justifyContent: "space-between",
-            alignItems: "center",
-          },
-        },
+        { style: { flex: 1, gap: spacing.xl } }, // Increased gap to space out elements evenly
+        
+        // --- Header: User Information ---
         React.createElement(
           View,
-          { style: { flex: 1, paddingRight: spacing.md, gap: spacing.xs } },
-          React.createElement(Text, { style: typography.h3 }, "Camera Mode"),
+          {
+            style: {
+              gap: spacing.xs,
+              borderBottomWidth: 1,
+              borderBottomColor: "#E5E5E5",
+              paddingBottom: spacing.lg,
+            },
+          },
           React.createElement(
             Text,
-            { style: { ...typography.caption, color: colors.textSecondary } },
-            "When enabled, collision detection and live navigation routing are active."
+            { style: { ...typography.h1, marginBottom: spacing.sm } },
+            "Profile & Settings"
+          ),
+          React.createElement(Text, { style: typography.h3 }, username),
+          React.createElement(
+            Text,
+            { style: { ...typography.body, color: colors.textSecondary } },
+            email
           )
         ),
-        React.createElement(Switch, {
-          value: cameraMode,
-          onValueChange: handleCameraModeToggle,
-          trackColor: { true: colors.primary },
-        })
-      ),
 
-      // --- Actions Section ---
+        // --- Settings: Camera Mode ---
+        React.createElement(
+          View,
+          {
+            style: {
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+            },
+          },
+          React.createElement(
+            View,
+            { style: { flex: 1, paddingRight: spacing.md, gap: spacing.xs } },
+            React.createElement(Text, { style: typography.h3 }, "Camera Mode"),
+            React.createElement(
+              Text,
+              { 
+                style: { ...typography.body, color: colors.textSecondary },
+                // Make the text act as a button that triggers Text-To-Speech
+                onPress: () => {
+                  // Optional: stop any current speech before reading the new one
+                  Speech.stop(); 
+                  Speech.speak("Camera mode: When enabled, collision detection and live navigation routing are active.");
+                },
+                accessibilityRole: "button",
+                accessibilityLabel: "Read camera mode description",
+                accessibilityHint: "Double tap to hear the description of camera mode aloud",
+              },
+              "When enabled, collision detection and live navigation routing are active."
+            )
+          ),
+          React.createElement(Switch, {
+            value: cameraMode,
+            onValueChange: handleCameraModeToggle,
+            trackColor: { false: "#E5E5E5", true: colors.primary },
+            ios_backgroundColor: "#E5E5E5",
+          })
+        ),
+
+        // --- Actions Section (Change Password) ---
+        React.createElement(
+          View,
+          { style: { gap: spacing.xl } },
+          React.createElement(Button, {
+            onPress: () => router.push("/profile/change-password" as any),
+            title: "Change Password",
+            variant: "secondary",
+            accessibilityLabel: "Change Password",
+            accessibilityRole: "button",
+            accessibilityHint: "Go to the change password screen",
+          })
+        )
+      ), // End of Top Content Group
+
+      // --- Bottom Content Group (Logout) ---
+      // marginTop: 'auto' forces this element to stick to the bottom of the flex container
       React.createElement(
         View,
-        { style: { gap: spacing.md, marginTop: spacing.md } },
-        React.createElement(Button, {
-          onPress: () => router.push("/profile/change-password" as any),
-          title: "Change Password",
-          variant: "secondary",
-          accessibilityLabel: "Change Password",
-          accessibilityRole: "button",
-          accessibilityHint: "Go to the change password screen",
-        }),
+        { style: { marginTop: "auto", paddingTop: spacing.xl } },
         React.createElement(Button, {
           onPress: handleLogout,
           title: "Logout",

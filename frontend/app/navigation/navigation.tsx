@@ -12,7 +12,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Speech from "expo-speech";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, Feather } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 import NavigationInstructionsDropdown from "../../components/NavigationInstructions/NavigationInstructionsDropdown";
@@ -306,10 +306,6 @@ export default function NavigationSession() {
   }, []);
 
   const sendCollisionFrame = React.useCallback(async () => {
-    if (cameraMode === false) {
-      console.log("Camera mode is disabled, skipping collision frame capture and send.");
-      return;
-    }
     const ws = wsRef.current;
     if (!ws || !ws.isConnected() || !navigationSessionId || collisionFrameInFlightRef.current) {
       return;
@@ -887,13 +883,13 @@ export default function NavigationSession() {
         await startSensorsRef.current();
         if (cancelled) return;
 
-        collisionStartTimeoutRef.current = setTimeout(() => {
-          if (cancelled) return;
-          collisionLoopRef.current = setInterval(() => {
-            void sendCollisionFrameRef.current();
-          }, COLLISION_SCHEDULER_TICK_MS);
-          void sendCollisionFrameRef.current();
-        }, COLLISION_START_STAGGER_MS);
+        // collisionStartTimeoutRef.current = setTimeout(() => {
+        //   if (cancelled) return;
+        //   collisionLoopRef.current = setInterval(() => {
+        //     void sendCollisionFrameRef.current();
+        //   }, COLLISION_SCHEDULER_TICK_MS);
+        //   void sendCollisionFrameRef.current();
+        // }, COLLISION_START_STAGGER_MS);
       } catch (e) {
         if (!cancelled) {
           setNavigationError(
@@ -913,6 +909,35 @@ export default function NavigationSession() {
       stopSensorsRef.current();
     };
   }, [isOrienting, navigationSessionId, stopStreamingLoops]);
+
+  React.useEffect(() => {
+    // Only start the interval if all required conditions are met
+    if (!navigationSessionId || isOrienting || !cameraMode || wsStatus !== "connected") {
+      return; // Returns immediately, no background loops created
+    }
+
+    console.log("▶️ Collision loop started!");
+    // Start the collision loop
+    const timeoutId = setTimeout(() => {
+      collisionLoopRef.current = setInterval(() => {
+        void sendCollisionFrameRef.current();
+      }, COLLISION_SCHEDULER_TICK_MS);
+      
+      // Fire the first frame immediately
+      void sendCollisionFrameRef.current();
+    }, COLLISION_START_STAGGER_MS);
+
+    // Clean up function: Automatically destroys loops when cameraMode becomes false
+    return () => {
+      console.log("⏹️ Collision loop destroyed (Cleanup executed).");
+      clearTimeout(timeoutId);
+      if (collisionLoopRef.current) {
+        clearInterval(collisionLoopRef.current);
+        collisionLoopRef.current = null;
+      }
+    };
+  }, [navigationSessionId, isOrienting, cameraMode, wsStatus]);
+
 
   React.useEffect(() => {
     if (!navigationSessionId || isOrienting) {
@@ -1057,12 +1082,36 @@ export default function NavigationSession() {
   return React.createElement(
     GestureHandlerRootView,
     { style: styles.root },
-
-    React.createElement(CameraView, {
-      ref: cameraRef,
-      style: styles.cameraBackground,
-      facing: "back",
-    }),
+    cameraMode
+      ? React.createElement(CameraView, {
+          ref: cameraRef,
+          style: styles.cameraBackground,
+          facing: "back",
+        })
+      : React.createElement(
+          View,
+          {
+            style: [
+              styles.cameraBackground,
+              {
+                backgroundColor: "#000000",
+                justifyContent: "center",
+                alignItems: "center",
+                gap: spacing.md,
+              },
+            ],
+          },
+          React.createElement(Feather, {
+            name: "camera-off",
+            size: 48,
+            color: colors.textSecondary,
+          }),
+          React.createElement(
+            Text,
+            { style: { ...typography.h3, color: colors.textSecondary } },
+            "Camera Mode Disabled"
+          )
+        ),
 
     React.createElement(
       SafeAreaView,
