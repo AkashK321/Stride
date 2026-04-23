@@ -13,6 +13,7 @@ import * as React from "react";
 import { Tabs } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AuthGuard } from "../../components/AuthGuard";
+import { SettingsProvider } from "@/contexts/SettingsContext";
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
@@ -21,27 +22,31 @@ export default function TabsLayout() {
     AuthGuard,
     null,
     React.createElement(
-      Tabs,
-      {
-        screenOptions: {
-          headerShown: false,
-          tabBarStyle: {
-            margin: 0,
-            padding: 0,
-            paddingBottom: insets.bottom,
-            paddingTop: 0,
-            height: 60 + insets.bottom,
+      SettingsProvider,
+      null,
+      React.createElement(
+        Tabs,
+        {
+          screenOptions: {
+            headerShown: false,
+            tabBarStyle: {
+              margin: 0,
+              padding: 0,
+              paddingBottom: insets.bottom,
+              paddingTop: 0,
+              height: 60 + insets.bottom,
+            },
           },
         },
-      },
-    // Home feed / dashboard tab - main content feed
-    React.createElement(Tabs.Screen, { name: "home" }),
-    // App settings and preferences tab - app configuration and preferences
-    React.createElement(Tabs.Screen, { name: "profile" }),
-    // Navigation tab - camera frame capture and transmission
-    React.createElement(Tabs.Screen, { name: "nav-dev" }),
-    // Sensor dev tab - hidden from tab bar (dev only, accessible via direct navigation)
-    React.createElement(Tabs.Screen, { name: "sensor-dev" }),
+        // Home feed / dashboard tab - main content feed
+        React.createElement(Tabs.Screen, { name: "home" }),
+        // App settings and preferences tab - app configuration and preferences
+        React.createElement(Tabs.Screen, { name: "profile" }),
+        // Navigation tab - camera frame capture and transmission
+        React.createElement(Tabs.Screen, { name: "nav-dev" }),
+        // Sensor dev tab - hidden from tab bar (dev only, accessible via direct navigation)
+        React.createElement(Tabs.Screen, { name: "sensor-dev" }),
+      ),
     ),
   );
 }
