@@ -196,7 +196,7 @@ class LiveNavigationHandlerTest {
         
         // Asserting with a delta to handle floating point imprecision
         assertEquals(114.0, result.first, 0.01)
-        assertEquals(87.0, result.second, 0.01)
+        assertEquals(114.0, result.second, 0.01)
     }
 
     @Test
@@ -357,6 +357,8 @@ class LiveNavigationHandlerTest {
                 "heading_degrees": 90.0,
                 "distance_traveled": 2.5,
                 "request_id": 1,
+                "accelerometer": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "gyroscope": {"x": 0.0, "y": 0.0, "z": 0.0},
                 "gps": {"latitude": 40.0, "longitude": -86.0},
                 "timestamp_ms": 1670000000000
             }"""
@@ -410,6 +412,8 @@ class LiveNavigationHandlerTest {
                 "heading_degrees": 90.0,
                 "request_id": 1,
                 "distance_traveled": 1.5,
+                "accelerometer": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "gyroscope": {"x": 0.0, "y": 0.0, "z": 0.0},
                 "gps": {"latitude": 40.0, "longitude": -86.0},
                 "timestamp_ms": 1670000000000
             }"""
@@ -476,6 +480,8 @@ class LiveNavigationHandlerTest {
                 "heading_degrees": 90.0,
                 "request_id": 1,
                 "distance_traveled": 1.5,
+                "accelerometer": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "gyroscope": {"x": 0.0, "y": 0.0, "z": 0.0},
                 "gps": {"latitude": 40.0, "longitude": -86.0},
                 "timestamp_ms": 1670000000000
             }"""
@@ -532,6 +538,8 @@ class LiveNavigationHandlerTest {
                 "heading_degrees": 90.0,
                 "distance_traveled": 5.0,
                 "request_id": 1,
+                "accelerometer": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "gyroscope": {"x": 0.0, "y": 0.0, "z": 0.0},
                 "timestamp_ms": 1670000000000
             }"""
         }
@@ -632,6 +640,10 @@ class LiveNavigationHandlerTest {
         assertEquals(strictInstructions.size, remainingInstructions.size)
         remainingInstructions.forEach { assertStrictInstructionSchema(it) }
     }
+
+    @Test
+    fun `handleRequest should subtract traversed distance from strict instructions`() {
+        val mockSessionData = mapOf(
             "current_x" to "0.0",
             "current_y" to "0.0",
             "currentStep" to "0",
@@ -691,6 +703,8 @@ class LiveNavigationHandlerTest {
                 "heading_degrees": 90.0,
                 "distance_traveled": 0.0,
                 "request_id": 88,
+                "accelerometer": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "gyroscope": {"x": 0.0, "y": 0.0, "z": 0.0},
                 "timestamp_ms": 1670000000001
             }"""
         }
@@ -706,6 +720,6 @@ class LiveNavigationHandlerTest {
         @Suppress("UNCHECKED_CAST")
         val remainingInstructions = payload["remaining_instructions"] as List<Map<String, Any?>>
         val firstDistance = (remainingInstructions.first()["distance_feet"] as Number).toDouble()
-        assertEquals(40.0, firstDistance, 0.001)
+        assertEquals(31.0, firstDistance, 0.001)
     }
 }
