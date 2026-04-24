@@ -11,6 +11,11 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import uk.org.webcompere.systemstubs.jupiter.SystemStubsExtension
 import uk.org.webcompere.systemstubs.environment.EnvironmentVariables
+import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient
+import software.amazon.awssdk.services.cognitoidentityprovider.model.AuthenticationResultType
+import software.amazon.awssdk.services.cognitoidentityprovider.model.InitiateAuthRequest
+import software.amazon.awssdk.services.cognitoidentityprovider.model.InitiateAuthResponse
+import software.amazon.awssdk.services.cognitoidentityprovider.model.NotAuthorizedException
 
 @ExtendWith(SystemStubsExtension::class)
 class AuthHandlerTest {
@@ -44,6 +49,64 @@ class AuthHandlerTest {
         assertNotNull(responseBody)
         assertTrue(responseBody!!.contains("error"))
         assertTrue(responseBody.contains("Server configuration error"))
+    }
+
+    @Test
+    @DisplayName("Refresh returns 200 with refreshed tokens")
+    fun `refresh valid token returns 200`(envVars: EnvironmentVariables) {
+        envVars.set("USER_POOL_CLIENT_ID", "test-client-id")
+        val mockCognito = mockk<CognitoIdentityProviderClient>()
+        val refreshToken = "refresh-token-123"
+        val authResult = AuthenticationResultType.builder()
+            .accessToken("new-access-token")
+            .idToken("new-id-token")
+            .expiresIn(3600)
+            .tokenType("Bearer")
+            .build()
+        every { mockCognito.initiateAuth(any<InitiateAuthRequest>()) } returns InitiateAuthResponse.builder()
+            .authenticationResult(authResult)
+            .build()
+        val testHandler = AuthHandler(mockCognito)
+
+        val response = testHandler.handleRequest(createRefreshEvent("""{"refreshToken":"$refreshToken"}"""), mockContext)
+
+        assertEquals(200, response.statusCode)
+        assertNotNull(response.body)
+        assertTrue(response.body!!.contains("new-access-token"))
+        // Cognito may omit refresh token for refresh auth; handler should preserve original.
+        assertTrue(response.body!!.contains(refreshToken))
+    }
+
+    @Test
+    @DisplayName("Refresh returns 401 for invalid refresh token")
+    fun `refresh invalid token returns 401`(envVars: EnvironmentVariables) {
+        envVars.set("USER_POOL_CLIENT_ID", "test-client-id")
+        val mockCognito = mockk<CognitoIdentityProviderClient>()
+        every { mockCognito.initiateAuth(any<InitiateAuthRequest>()) } throws NotAuthorizedException.builder()
+            .message("Invalid Refresh Token")
+            .build()
+        val testHandler = AuthHandler(mockCognito)
+
+        val response = testHandler.handleRequest(createRefreshEvent("""{"refreshToken":"bad-token"}"""), mockContext)
+
+        assertEquals(401, response.statusCode)
+        assertNotNull(response.body)
+        assertTrue(response.body!!.contains("Invalid or expired refresh token"))
+    }
+
+    @Test
+    @DisplayName("Refresh with malformed payload returns 400")
+    fun `refresh malformed payload returns 400`(envVars: EnvironmentVariables) {
+        envVars.set("USER_POOL_CLIENT_ID", "test-client-id")
+        val mockCognito = mockk<CognitoIdentityProviderClient>(relaxed = true)
+        val testHandler = AuthHandler(mockCognito)
+
+        val response = testHandler.handleRequest(createRefreshEvent("not-json"), mockContext)
+
+        assertEquals(400, response.statusCode)
+        assertNotNull(response.body)
+        assertTrue(response.body!!.contains("Invalid request format"))
+        verify(exactly = 0) { mockCognito.initiateAuth(any<InitiateAuthRequest>()) }
     }
 
     @Test
@@ -267,6 +330,14 @@ class AuthHandlerTest {
             httpMethod = "POST"
             path = "/register"
             body = """{"username":"$username","password":"$password","passwordConfirm":"$passwordConfirm","email":"$email","firstName":"$firstName","lastName":"$lastName"}"""
+        }
+    }
+
+    private fun createRefreshEvent(body: String?): APIGatewayProxyRequestEvent {
+        return APIGatewayProxyRequestEvent().apply {
+            httpMethod = "POST"
+            path = "/refresh"
+            this.body = body
         }
     }
 

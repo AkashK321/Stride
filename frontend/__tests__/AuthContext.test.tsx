@@ -30,6 +30,7 @@ const mockStoreTokens = jest.fn();
 const mockClearTokens = jest.fn();
 const mockGetTokens = jest.fn();
 const mockGetBiometricLoginEnabled = jest.fn();
+const mockIsTokenExpiringSoon = jest.fn();
 
 jest.mock("../services/tokenStorage", () => ({
   isAuthenticated: (...args: any[]) => mockIsAuthenticated(...args),
@@ -37,6 +38,7 @@ jest.mock("../services/tokenStorage", () => ({
   clearTokens: (...args: any[]) => mockClearTokens(...args),
   getTokens: (...args: any[]) => mockGetTokens(...args),
   getBiometricLoginEnabled: (...args: any[]) => mockGetBiometricLoginEnabled(...args),
+  isTokenExpiringSoon: (...args: any[]) => mockIsTokenExpiringSoon(...args),
 }));
 
 const mockCanUseBiometrics = jest.fn();
@@ -76,6 +78,7 @@ describe("AuthContext", () => {
     mockClearTokens.mockResolvedValue(undefined);
     mockGetTokens.mockResolvedValue(null);
     mockGetBiometricLoginEnabled.mockResolvedValue(false);
+    mockIsTokenExpiringSoon.mockResolvedValue(false);
     mockCanUseBiometrics.mockResolvedValue({
       status: "available",
       available: true,
@@ -136,6 +139,7 @@ describe("AuthContext", () => {
         refreshToken: "stored-refresh",
       });
       mockGetBiometricLoginEnabled.mockResolvedValue(false);
+      mockIsTokenExpiringSoon.mockResolvedValue(false);
 
       render(
         <AuthProvider>
@@ -589,6 +593,7 @@ describe("AuthContext", () => {
     it("prompts biometrics and refreshes tokens when biometric login is enabled", async () => {
       mockGetTokens.mockResolvedValue(storedTokens);
       mockGetBiometricLoginEnabled.mockResolvedValue(true);
+      mockIsTokenExpiringSoon.mockResolvedValue(true);
 
       render(
         <AuthProvider>
@@ -618,6 +623,7 @@ describe("AuthContext", () => {
     it("falls back to unauthenticated state when biometric prompt is cancelled", async () => {
       mockGetTokens.mockResolvedValue(storedTokens);
       mockGetBiometricLoginEnabled.mockResolvedValue(true);
+      mockIsTokenExpiringSoon.mockResolvedValue(true);
       mockPromptBiometricUnlock.mockResolvedValue({ status: "cancelled", success: false });
 
       render(
@@ -641,6 +647,7 @@ describe("AuthContext", () => {
     it("falls back to unauthenticated state when biometric hardware is unavailable", async () => {
       mockGetTokens.mockResolvedValue(storedTokens);
       mockGetBiometricLoginEnabled.mockResolvedValue(true);
+      mockIsTokenExpiringSoon.mockResolvedValue(true);
       mockCanUseBiometrics.mockResolvedValue({
         status: "not-supported",
         available: false,
@@ -669,6 +676,7 @@ describe("AuthContext", () => {
     it("falls back to unauthenticated state when refresh fails after successful biometric unlock", async () => {
       mockGetTokens.mockResolvedValue(storedTokens);
       mockGetBiometricLoginEnabled.mockResolvedValue(true);
+      mockIsTokenExpiringSoon.mockResolvedValue(true);
       mockRefreshTokenApi.mockRejectedValueOnce(new Error("refresh failed"));
 
       render(
@@ -688,6 +696,30 @@ describe("AuthContext", () => {
       expect(mockPromptBiometricUnlock).toHaveBeenCalledTimes(1);
       expect(mockRefreshTokenApi).toHaveBeenCalledWith("stored-refresh");
       expect(capturedCtx?.isAuthenticated).toBe(false);
+    });
+
+    it("bypasses biometrics when stored access token is still fresh", async () => {
+      mockGetTokens.mockResolvedValue(storedTokens);
+      mockGetBiometricLoginEnabled.mockResolvedValue(true);
+      mockIsTokenExpiringSoon.mockResolvedValue(false);
+
+      render(
+        <AuthProvider>
+          <AuthTestConsumer
+            onRender={(ctx) => {
+              capturedCtx = ctx;
+            }}
+          />
+        </AuthProvider>
+      );
+
+      await waitFor(() => {
+        expect(capturedCtx?.isLoading).toBe(false);
+      });
+
+      expect(mockPromptBiometricUnlock).not.toHaveBeenCalled();
+      expect(mockRefreshTokenApi).not.toHaveBeenCalled();
+      expect(capturedCtx?.isAuthenticated).toBe(true);
     });
   });
 });

@@ -206,6 +206,9 @@ class CdkStack(Stack):
         login = api.root.add_resource("login")
         login.add_method("POST", integration=apigw.LambdaIntegration(auth_handler))
 
+        refresh = api.root.add_resource("refresh")
+        refresh.add_method("POST", integration=apigw.LambdaIntegration(auth_handler))
+
         register = api.root.add_resource("register")
         register.add_method("POST", integration=apigw.LambdaIntegration(auth_handler))
         check_username = register.add_resource("check-username")

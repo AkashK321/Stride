@@ -166,7 +166,7 @@ export async function isAuthenticated(): Promise<boolean> {
 /**
  * JWT tokens are base64 encoded. This function decodes and gets expiration time.
  */
-function getTokenExpiration(token: string): number | null {
+export function getTokenExpiration(token: string): number | null {
   try {
     const parts = token.split(".");
     if (parts.length !== 3) return null;
@@ -195,6 +195,28 @@ export async function isTokenExpiringSoon(bufferMinutes: number = 5): Promise<bo
     const bufferMs = bufferMinutes * 60 * 1000;
     
     return expiration - now < bufferMs;
+  } catch (error) {
+    console.error("Error checking token expiration:", error);
+    return true;
+  }
+}
+
+/**
+ * Test-friendly variant of expiration check where caller provides current time.
+ */
+export async function isTokenExpiringSoonAtTime(
+  nowMs: number,
+  bufferMinutes: number = 5
+): Promise<boolean> {
+  try {
+    const tokens = await getTokens();
+    if (!tokens) return true;
+
+    const expiration = getTokenExpiration(tokens.accessToken);
+    if (!expiration) return true;
+
+    const bufferMs = bufferMinutes * 60 * 1000;
+    return expiration - nowMs < bufferMs;
   } catch (error) {
     console.error("Error checking token expiration:", error);
     return true;
