@@ -392,7 +392,9 @@ export default function NavigationSession() {
       
       console.log("Received collision update with distances (meters):", response.estimatedDistances);
       // The backend returns distances in meters, convert to feet and find the closest object
-      const distancesInMeters = response.estimatedDistances.map((entry) => parseFloat(entry.distance));
+      const distancesInMeters = response.estimatedDistances.map((entry: { distance: string }) =>
+        parseFloat(entry.distance),
+      );
       const minDistanceMeters = Math.min(...distancesInMeters);
 
       const minDistanceFeet = minDistanceMeters * 3.28084;

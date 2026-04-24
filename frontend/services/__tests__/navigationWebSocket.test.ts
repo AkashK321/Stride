@@ -6,8 +6,8 @@ import {
   NavigationWebSocket,
   NavigationFrameMessage,
   NavigationResponse,
+  CollisionDetectionResponse,
   getWebSocketUrl,
-  ConnectionStatus,
 } from "../navigationWebSocket";
 
 // Mock WebSocket
@@ -234,7 +234,7 @@ describe("NavigationWebSocket", () => {
       const handler = jest.fn();
       ws.setMessageHandler(handler);
 
-      const response: NavigationResponse = {
+      const response: CollisionDetectionResponse = {
         request_id: 1,
         status: "success",
       };
@@ -277,7 +277,7 @@ describe("NavigationWebSocket", () => {
       jest.advanceTimersByTime(100);
 
       // Simulate response
-      const response: NavigationResponse = {
+      const response: CollisionDetectionResponse = {
         request_id: requestId,
         status: "success",
       };
@@ -294,7 +294,7 @@ describe("NavigationWebSocket", () => {
       const handler = jest.fn();
       ws.setMessageHandler(handler);
 
-      const response: NavigationResponse = {
+      const response: CollisionDetectionResponse = {
         request_id: 99999, // Unknown ID
         status: "success",
       };
