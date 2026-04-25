@@ -9,6 +9,7 @@
 | NAV-03 | Integration | FR-3 | pytest | Yes | Yes |
 | CD-03 | Unit | FR-1/FR-2 | mockk | Yes | Yes |
 | CD-04 | Integration | FR-1/FR-2 | pytest | Yes | Yes |
+| CD-05 | System | FR-1/FR-2 | manual | No | No |
 | AUTH-04 | Integration/Unit | FR-5 | Pytest, mock | Yes | Yes |
 | AUTH-05 | Integration/Unit | FR-6 | Pytest, mock | Yes | Yes |
 | UI-06 | Integration | FR-7 | React Native Testing Library | Yes | Planned |
