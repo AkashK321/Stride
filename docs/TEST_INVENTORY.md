@@ -2,8 +2,8 @@
 
 | Test Case ID | Level (Unit/Int/System) | Requirement ID | Tool | Automated | CI Integrated | Description | Link |
 |--------------|-------------------------|----------------|------|------------|----------------|-------------|------|
-| CD-01 | Integration | FR-1 | postman | Yes | Planned | Validates core collision detection API flow | [link](./Stride_API.postman_collection.json) |
-| CD-02 | Integration | FR-2 | postman | Yes | Planned | Verifies collision response schema and statuses | [link](./Stride_API.postman_collection.json) |
+| CD-01 | Integration | FR-1 | postman | No | No | Validates core collision detection API flow | [link](./Stride_API.postman_collection.json) |
+| CD-02 | Integration | FR-2 | postman | No | No | Verifies collision response schema and statuses | [link](./Stride_API.postman_collection.json) |
 | NAV-01 | System | FR-3/FR-4 | Full System | No | Planned | End-to-end navigation behavior in real environment | [link](./manual_test_reports/report_001_feature12.md) |
 | NAV-02 | Unit | FR-3 | mockk | Yes | Yes | Validates static navigation instruction generation logic | [link](../aws_resources/backend/src/test/kotlin/com/handlers/StaticNavigationHandlerTest.kt) |
 | NAV-03 | Integration | FR-3 | pytest | Yes | Yes | Verifies static navigation API request handling | [link](../aws_resources/backend/tests/integration/test_static_navigation_api.py) |
