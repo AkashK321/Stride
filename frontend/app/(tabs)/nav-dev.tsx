@@ -622,255 +622,255 @@ export default function Navigation() {
 
       // Settings panel (collapsible)
       showSettings &&
+      React.createElement(
+        View,
+        { style: styles.settingsPanel },
+        React.createElement(
+          Text,
+          { style: styles.settingsHeader },
+          "Capture Settings",
+        ),
+
+        // Image Width
         React.createElement(
           View,
-          { style: styles.settingsPanel },
+          { style: styles.settingsRow },
           React.createElement(
             Text,
-            { style: styles.settingsHeader },
-            "Capture Settings",
+            { style: styles.settingsLabel },
+            "Image Width:",
           ),
-
-          // Image Width
           React.createElement(
             View,
-            { style: styles.settingsRow },
-            React.createElement(
-              Text,
-              { style: styles.settingsLabel },
-              "Image Width:",
-            ),
-            React.createElement(
-              View,
-              { style: styles.settingsOptions },
-              [240, 360, 480, 640].map((width) =>
+            { style: styles.settingsOptions },
+            [240, 360, 480, 640].map((width) =>
+              React.createElement(
+                Pressable,
+                {
+                  key: width,
+                  onPress: () => setFrameWidth(width),
+                  disabled: isNavActive,
+                  style: [
+                    styles.optionButton,
+                    frameWidth === width && styles.optionButtonActive,
+                    isNavActive && styles.optionButtonDisabled,
+                  ],
+                },
                 React.createElement(
-                  Pressable,
+                  Text,
                   {
-                    key: width,
-                    onPress: () => setFrameWidth(width),
-                    disabled: isNavActive,
                     style: [
-                      styles.optionButton,
-                      frameWidth === width && styles.optionButtonActive,
-                      isNavActive && styles.optionButtonDisabled,
+                      styles.optionButtonText,
+                      frameWidth === width && styles.optionButtonTextActive,
                     ],
                   },
-                  React.createElement(
-                    Text,
-                    {
-                      style: [
-                        styles.optionButtonText,
-                        frameWidth === width && styles.optionButtonTextActive,
-                      ],
-                    },
-                    `${width}px`,
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          // JPEG Quality
-          React.createElement(
-            View,
-            { style: styles.settingsRow },
-            React.createElement(
-              Text,
-              { style: styles.settingsLabel },
-              `JPEG Quality: ${(jpegQuality * 100).toFixed(0)}%`,
-            ),
-            React.createElement(
-              View,
-              { style: styles.settingsOptions },
-              [0.3, 0.5, 0.7, 0.9].map((quality) =>
-                React.createElement(
-                  Pressable,
-                  {
-                    key: quality,
-                    onPress: () => setJpegQuality(quality),
-                    disabled: isNavActive,
-                    style: [
-                      styles.optionButton,
-                      Math.abs(jpegQuality - quality) < 0.05 && styles.optionButtonActive,
-                      isNavActive && styles.optionButtonDisabled,
-                    ],
-                  },
-                  React.createElement(
-                    Text,
-                    {
-                      style: [
-                        styles.optionButtonText,
-                        Math.abs(jpegQuality - quality) < 0.05 && styles.optionButtonTextActive,
-                      ],
-                    },
-                    `${(quality * 100).toFixed(0)}%`,
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          // Send Frequency
-          React.createElement(
-            View,
-            { style: styles.settingsRow },
-            React.createElement(
-              Text,
-              { style: styles.settingsLabel },
-              "Send Frequency:",
-            ),
-            React.createElement(
-              View,
-              { style: styles.settingsOptions },
-              [
-                { label: "0.5s", value: 500 },
-                { label: "1s", value: 1000 },
-                { label: "2s", value: 2000 },
-                { label: "5s", value: 5000 },
-              ].map(({ label, value }) =>
-                React.createElement(
-                  Pressable,
-                  {
-                    key: value,
-                    onPress: () => setSendIntervalMs(value),
-                    disabled: isNavActive,
-                    style: [
-                      styles.optionButton,
-                      sendIntervalMs === value && styles.optionButtonActive,
-                      isNavActive && styles.optionButtonDisabled,
-                    ],
-                  },
-                  React.createElement(
-                    Text,
-                    {
-                      style: [
-                        styles.optionButtonText,
-                        sendIntervalMs === value && styles.optionButtonTextActive,
-                      ],
-                    },
-                    label,
-                  ),
+                  `${width}px`,
                 ),
               ),
             ),
           ),
         ),
+
+        // JPEG Quality
+        React.createElement(
+          View,
+          { style: styles.settingsRow },
+          React.createElement(
+            Text,
+            { style: styles.settingsLabel },
+            `JPEG Quality: ${(jpegQuality * 100).toFixed(0)}%`,
+          ),
+          React.createElement(
+            View,
+            { style: styles.settingsOptions },
+            [0.3, 0.5, 0.7, 0.9].map((quality) =>
+              React.createElement(
+                Pressable,
+                {
+                  key: quality,
+                  onPress: () => setJpegQuality(quality),
+                  disabled: isNavActive,
+                  style: [
+                    styles.optionButton,
+                    Math.abs(jpegQuality - quality) < 0.05 && styles.optionButtonActive,
+                    isNavActive && styles.optionButtonDisabled,
+                  ],
+                },
+                React.createElement(
+                  Text,
+                  {
+                    style: [
+                      styles.optionButtonText,
+                      Math.abs(jpegQuality - quality) < 0.05 && styles.optionButtonTextActive,
+                    ],
+                  },
+                  `${(quality * 100).toFixed(0)}%`,
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        // Send Frequency
+        React.createElement(
+          View,
+          { style: styles.settingsRow },
+          React.createElement(
+            Text,
+            { style: styles.settingsLabel },
+            "Send Frequency:",
+          ),
+          React.createElement(
+            View,
+            { style: styles.settingsOptions },
+            [
+              { label: "0.5s", value: 500 },
+              { label: "1s", value: 1000 },
+              { label: "2s", value: 2000 },
+              { label: "5s", value: 5000 },
+            ].map(({ label, value }) =>
+              React.createElement(
+                Pressable,
+                {
+                  key: value,
+                  onPress: () => setSendIntervalMs(value),
+                  disabled: isNavActive,
+                  style: [
+                    styles.optionButton,
+                    sendIntervalMs === value && styles.optionButtonActive,
+                    isNavActive && styles.optionButtonDisabled,
+                  ],
+                },
+                React.createElement(
+                  Text,
+                  {
+                    style: [
+                      styles.optionButtonText,
+                      sendIntervalMs === value && styles.optionButtonTextActive,
+                    ],
+                  },
+                  label,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
 
       // Error display
       lastError &&
+      React.createElement(
+        View,
+        { style: styles.errorBox },
         React.createElement(
-          View,
-          { style: styles.errorBox },
-          React.createElement(
-            Text,
-            { style: styles.errorText },
-            `Error: ${lastError}`,
-          ),
+          Text,
+          { style: styles.errorText },
+          `Error: ${lastError}`,
         ),
+      ),
 
       // Tab toggle row
       (lastSentData || lastResponse) &&
+      React.createElement(
+        View,
+        { style: styles.tabRow },
         React.createElement(
-          View,
-          { style: styles.tabRow },
+          Pressable,
+          {
+            style: [styles.tab, activeTab === "sent" && styles.tabActive],
+            onPress: () => setActiveTab("sent"),
+            accessibilityRole: "tab",
+            accessibilityState: { selected: activeTab === "sent" },
+          },
           React.createElement(
-            Pressable,
-            {
-              style: [styles.tab, activeTab === "sent" && styles.tabActive],
-              onPress: () => setActiveTab("sent"),
-              accessibilityRole: "tab",
-              accessibilityState: { selected: activeTab === "sent" },
-            },
-            React.createElement(
-              Text,
-              { style: [styles.tabText, activeTab === "sent" && styles.tabTextActive] },
-              "Sent Data",
-            ),
-          ),
-          React.createElement(
-            Pressable,
-            {
-              style: [styles.tab, activeTab === "response" && styles.tabActive],
-              onPress: () => setActiveTab("response"),
-              accessibilityRole: "tab",
-              accessibilityState: { selected: activeTab === "response" },
-            },
-            React.createElement(
-              Text,
-              { style: [styles.tabText, activeTab === "response" && styles.tabTextActive] },
-              "Response",
-            ),
+            Text,
+            { style: [styles.tabText, activeTab === "sent" && styles.tabTextActive] },
+            "Sent Data",
           ),
         ),
+        React.createElement(
+          Pressable,
+          {
+            style: [styles.tab, activeTab === "response" && styles.tabActive],
+            onPress: () => setActiveTab("response"),
+            accessibilityRole: "tab",
+            accessibilityState: { selected: activeTab === "response" },
+          },
+          React.createElement(
+            Text,
+            { style: [styles.tabText, activeTab === "response" && styles.tabTextActive] },
+            "Response",
+          ),
+        ),
+      ),
 
       // ── Sent Data tab ──
       activeTab === "sent" &&
-        lastSentData &&
+      lastSentData &&
+      React.createElement(
+        View,
+        { style: styles.responseBox },
+        // JSON data display
         React.createElement(
           View,
-          { style: styles.responseBox },
-          // JSON data display
-          React.createElement(
-            View,
-            { style: styles.jsonContainer },
-            formatJsonForDisplay(lastSentData),
-          ),
-          // Compressed frame preview — shows exactly what the backend receives (moved below)
-          lastFrameUri &&
-            React.createElement(Image, {
-              source: { uri: lastFrameUri },
-              style: styles.framePreview,
-              resizeMode: "contain",
-            }),
+          { style: styles.jsonContainer },
+          formatJsonForDisplay(lastSentData),
         ),
+        // Compressed frame preview — shows exactly what the backend receives (moved below)
+        lastFrameUri &&
+        React.createElement(Image, {
+          source: { uri: lastFrameUri },
+          style: styles.framePreview,
+          resizeMode: "contain",
+        }),
+      ),
 
       // ── Response tab ──
       activeTab === "response" &&
-        lastResponse &&
+      lastResponse &&
+      React.createElement(
+        View,
+        { style: styles.responseBox },
+        // JSON data display
         React.createElement(
           View,
-          { style: styles.responseBox },
-          // JSON data display
-          React.createElement(
-            View,
-            { style: styles.jsonContainer },
-            formatJsonForDisplay(lastResponse),
-          ),
+          { style: styles.jsonContainer },
+          formatJsonForDisplay(lastResponse),
         ),
+      ),
 
       // No data yet placeholder
       activeTab === "sent" &&
-        !lastSentData &&
+      !lastSentData &&
+      React.createElement(
+        View,
+        { style: styles.responseBox },
         React.createElement(
           View,
-          { style: styles.responseBox },
+          { style: styles.placeholderContainer },
           React.createElement(
-            View,
-            { style: styles.placeholderContainer },
-            React.createElement(
-              Text,
-              { style: styles.responseField },
-              "No data sent yet. Send a frame to see sensor data here.",
-            ),
+            Text,
+            { style: styles.responseField },
+            "No data sent yet. Send a frame to see sensor data here.",
           ),
         ),
+      ),
 
       activeTab === "response" &&
-        !lastResponse &&
+      !lastResponse &&
+      React.createElement(
+        View,
+        { style: styles.responseBox },
         React.createElement(
           View,
-          { style: styles.responseBox },
+          { style: styles.placeholderContainer },
           React.createElement(
-            View,
-            { style: styles.placeholderContainer },
-            React.createElement(
-              Text,
-              { style: styles.responseField },
-              "No response received yet. Send a frame to see the response here.",
-            ),
+            Text,
+            { style: styles.responseField },
+            "No response received yet. Send a frame to see the response here.",
           ),
         ),
+      ),
     ),
   );
 }

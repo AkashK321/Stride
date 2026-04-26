@@ -189,7 +189,7 @@ describe("NavigationWebSocket", () => {
       await new Promise<void>((resolve) => setImmediate(() => resolve()));
       const mockWs = (ws as any).ws as MockWebSocket;
       mockWs.readyState = MockWebSocket.CLOSING;
-      
+
       const connectPromise2 = ws.connect();
       await new Promise<void>((resolve) => setImmediate(() => resolve()));
       await connectPromise2;
@@ -200,13 +200,13 @@ describe("NavigationWebSocket", () => {
       // Create a new instance to test error handling
       const errorWs = new NavigationWebSocket("wss://error.test.com");
       const connectPromise = errorWs.connect();
-      
+
       // Get the mock WebSocket and simulate error immediately
       const mockWs = (errorWs as any).ws as MockWebSocket;
       // Cancel auto-open by simulating error first
       mockWs.readyState = MockWebSocket.CONNECTING;
       mockWs.simulateError();
-      
+
       await expect(connectPromise).rejects.toThrow("WebSocket connection error");
       await new Promise<void>((resolve) => setImmediate(() => resolve()));
       // After error, onclose is also called, which sets status to disconnected
@@ -440,12 +440,12 @@ describe("NavigationWebSocket", () => {
       // successful reconnections resetting the counter, so we just verify
       // that the reconnect mechanism is working.
       const mockWs = (ws as any).ws as MockWebSocket;
-      
+
       // Simulate a disconnect that should trigger reconnect
       mockWs.simulateClose(1006, "Abnormal closure", false);
       await new Promise((resolve) => setTimeout(resolve, 2200));
       await new Promise<void>((resolve) => setImmediate(() => resolve()));
-      
+
       // Should have attempted to reconnect
       expect(ws.status).toBe("connected");
     });
@@ -515,7 +515,7 @@ describe("NavigationWebSocket", () => {
       ws.autoReconnect = true;
       const mockWs = (ws as any).ws as MockWebSocket;
       mockWs.simulateClose(1006, "Abnormal closure", false);
-      
+
       ws.disconnect();
       const reconnectTimer = (ws as any)._reconnectTimer;
       expect(reconnectTimer).toBeNull();
