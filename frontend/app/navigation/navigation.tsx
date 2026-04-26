@@ -181,7 +181,7 @@ export default function NavigationSession() {
   const lastIntervalRef = React.useRef(0); // 0 = Safe, 1 = Low, 2 = Med, 3 = High
   const collisionFrameInFlightRef = React.useRef(false);
   const requestCounterRef = React.useRef(0);
-  const [speakerMode, setSpeakerMode] = React.useState(false);
+  const [speakerMode, setSpeakerMode] = React.useState(true);
   const [showDebugBackground, setShowDebugBackground] = React.useState(false);
   const [navigationMode, setNavigationMode] = React.useState<"orienting" | "navigating">(
     "navigating",

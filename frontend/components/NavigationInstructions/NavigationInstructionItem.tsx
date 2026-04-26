@@ -28,8 +28,24 @@ function headingToCompassLabel(headingDegrees: number): string {
 function getDoorSideFromDirection(direction: string | null): DoorSide | null {
   if (!direction) return null;
   const lowered = direction.toLowerCase();
-  if (lowered.includes("on your left")) return "left";
-  if (lowered.includes("on your right")) return "right";
+  if (
+    lowered.includes("on your left") ||
+    lowered.includes("to your left") ||
+    lowered.includes("left side") ||
+    lowered === "left" ||
+    lowered.endsWith(" left")
+  ) {
+    return "left";
+  }
+  if (
+    lowered.includes("on your right") ||
+    lowered.includes("to your right") ||
+    lowered.includes("right side") ||
+    lowered === "right" ||
+    lowered.endsWith(" right")
+  ) {
+    return "right";
+  }
   return null;
 }
 
@@ -39,8 +55,25 @@ export function formatHeadingBadge(headingDegrees: number | null): string | null
   return `${normalized}° ${headingToCompassLabel(normalized)}`;
 }
 
-export function formatDoorSideCue(direction: string | null): string | null {
-  const doorSide = getDoorSideFromDirection(direction);
+function getDoorSide(
+  direction: string | null,
+  turnIntent: NavigationInstruction["turn_intent"] | null,
+): DoorSide | null {
+  const sideFromDirection = getDoorSideFromDirection(direction);
+  if (sideFromDirection) {
+    return sideFromDirection;
+  }
+  if (turnIntent === "left" || turnIntent === "right") {
+    return turnIntent;
+  }
+  return null;
+}
+
+export function formatDoorSideCue(
+  direction: string | null,
+  turnIntent: NavigationInstruction["turn_intent"] | null = null,
+): string | null {
+  const doorSide = getDoorSide(direction, turnIntent);
   if (doorSide === "left") return "Destination on your left";
   if (doorSide === "right") return "Destination on your right";
   return null;
@@ -52,7 +85,7 @@ export function formatInstruction(
   const { distance_feet, step_type, turn_intent } = current;
   const roundedDistance = Math.round(distance_feet / 5) * 5;
   const distanceText = `${roundedDistance} ft`;
-  const doorCue = formatDoorSideCue(current.direction);
+  const doorCue = formatDoorSideCue(current.direction, current.turn_intent);
 
   // Arrival handling
   if (step_type === "arrival") {
@@ -81,9 +114,9 @@ export default function NavigationInstructionItem({
     instruction;
   const roundedDistance = Math.round(distance_feet / 5) * 5;
   const distanceText = `${roundedDistance} ft`;
-  const doorCue = formatDoorSideCue(direction);
+  const doorCue = formatDoorSideCue(direction, turn_intent);
   const headingBadge = formatHeadingBadge(heading_degrees);
-  const doorSide = getDoorSideFromDirection(direction);
+  const doorSide = getDoorSide(direction, turn_intent);
 
   let iconName: React.ComponentProps<typeof Ionicons>["name"] = "arrow-up";
   let turnLabel = "Continue";
