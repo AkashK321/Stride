@@ -334,7 +334,7 @@ NODES = [
     HallwayPointNode(
         id="hall_056b",
         x_feet= 87,
-        y_feet= 103,
+        y_feet= 100,
         doors=[
             DoorRef(
                 id="room_056b",
