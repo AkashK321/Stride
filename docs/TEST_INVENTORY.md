@@ -9,7 +9,7 @@
 | NAV-03 | Integration | FR-3 | pytest | Yes | Yes | Verifies static navigation API request handling | [link](../aws_resources/backend/tests/integration/test_static_navigation_api.py) |
 | CD-03 | Unit | FR-1/FR-2 | mockk | Yes | Yes | Checks object detection handler decision branches | [link](../aws_resources/backend/src/test/kotlin/com/handlers/ObjectDetectionHandlerTest.kt) |
 | CD-04 | Integration | FR-1/FR-2 | pytest | Yes | Yes | Validates streaming inference integration behavior | [link](../aws_resources/backend/tests/integration/test_stream_api.py) |
-| CD-05 | System | FR-1/FR-2 | manual | No | No | Manual collision workflow verification scenario | [link](./manual_test_reports/report_001_feature12.md) |
+| CD-05 | System | FR-1/FR-2 | manual | No | No |  |  |
 | AUTH-04 | Integration/Unit | FR-5 | Pytest, mock | Yes | Yes | Tests auth validation and token issuance | [link](../aws_resources/backend/src/test/kotlin/com/handlers/AuthHandlerTest.kt) |
 | AUTH-05 | Integration/Unit | FR-6 | Pytest, mock | Yes | Yes | Verifies login endpoint integration and errors | [link](../aws_resources/backend/tests/integration/test_login_api.py) |
 | UI-06 | Integration | FR-7 | React Native Testing Library | Yes | Planned | Checks registration UI flow interactions work | [link](../frontend/__tests__/register.test.tsx) |
