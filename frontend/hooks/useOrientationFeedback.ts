@@ -16,8 +16,9 @@ type FeedbackState = {
 };
 
 function getCueIntervalMs(absErrorDeg: number): number {
-  if (absErrorDeg <= 60) return 160;
-  if (absErrorDeg <= 120) return 240;
+  if (absErrorDeg <= 30) return 160;
+  if (absErrorDeg <= 60) return 240;
+  if (absErrorDeg <= 90) return 320;
   return 400;
 }
 
