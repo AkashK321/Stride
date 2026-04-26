@@ -245,8 +245,6 @@ jobs:
           BRANCH_STACK="${{ steps.get-stack-name.outputs.stack_name }}"
           if cdk deploy StrideSharedStack "$BRANCH_STACK" --require-approval never --outputs-file cdk-outputs.json; then
             echo "✅ Deployment successful!"
-            echo "Debug: cdk-outputs.json keys after deploy:"
-            jq -r 'keys[]' cdk-outputs.json || echo "Debug: could not read keys from cdk-outputs.json"
             echo "deployment_status=success" >> $GITHUB_OUTPUT
           else
             echo "❌ Deployment failed!"
@@ -267,13 +265,6 @@ jobs:
           SHARED_STACK_KEY="StrideSharedStack"
           BRANCH_STACK_KEY="${{ steps.get-stack-name.outputs.stack_name }}"
 
-          echo "Debug: expected branch stack key: $BRANCH_STACK_KEY"
-          echo "Debug: expected shared stack key: $SHARED_STACK_KEY"
-          echo "Debug: keys currently in cdk-outputs.json:"
-          jq -r 'keys[]' cdk-outputs.json
-          echo "Debug: full cdk-outputs.json contents:"
-          jq '.' cdk-outputs.json
-
           if ! jq -e ".\"$BRANCH_STACK_KEY\"" cdk-outputs.json >/dev/null 2>&1; then
             echo "Error: Branch stack outputs missing for key \"$BRANCH_STACK_KEY\""
             echo "Keys in cdk-outputs.json:"
@@ -281,12 +272,6 @@ jobs:
             exit 1
           fi
 
-          if ! jq -e ".\"$SHARED_STACK_KEY\"" cdk-outputs.json >/dev/null 2>&1; then
-            echo "Warning: Shared stack outputs missing for key \"$SHARED_STACK_KEY\" in cdk-outputs.json"
-            echo "Debug: cdk-outputs.json keys:"
-            jq -r 'keys[]' cdk-outputs.json
-            echo "Debug: will fall back to CloudFormation for RdsSecretArn"
-          fi
           # Branch stack: API, WebSocket, DynamoDB (per-environment)
           STACK_NAME=$(jq -r ".\"$BRANCH_STACK_KEY\".StackName // empty" cdk-outputs.json 2>/dev/null || echo "")
           if [ -z "$STACK_NAME" ] || [ "$STACK_NAME" == "null" ]; then
@@ -313,15 +298,17 @@ jobs:
           # cdk-outputs.json may only include stacks that emitted fresh outputs in this deploy run.
           STRIDE_DB_ARN=$(jq -r ".\"$SHARED_STACK_KEY\".RdsSecretArn // empty" cdk-outputs.json 2>/dev/null || echo "")
           if [ -z "$STRIDE_DB_ARN" ] || [ "$STRIDE_DB_ARN" == "null" ]; then
-            echo "Warning: Could not extract RdsSecretArn from cdk-outputs.json for $SHARED_STACK_KEY"
-            echo "Debug: attempting CloudFormation lookup for shared RDS secret ARN"
+            echo "Shared stack key \"$SHARED_STACK_KEY\" missing in cdk-outputs.json or lacks RdsSecretArn. Falling back to CloudFormation stack outputs..."
             STRIDE_DB_ARN=$(aws cloudformation describe-stacks \
               --stack-name "$SHARED_STACK_KEY" \
-              --query "Stacks[0].Outputs[?OutputKey=='RdsSecretArn'].OutputValue | [0]" \
+              --region us-east-1 \
+              --query "Stacks[0].Outputs[?OutputKey=='RdsSecretArn'].OutputValue" \
               --output text 2>/dev/null || echo "")
           fi
-          if [ -z "$STRIDE_DB_ARN" ] || [ "$STRIDE_DB_ARN" == "null" ] || [ "$STRIDE_DB_ARN" == "None" ]; then
-            echo "Error: Could not extract RdsSecretArn from cdk-outputs.json or CloudFormation"
+          if [ -z "$STRIDE_DB_ARN" ] || [ "$STRIDE_DB_ARN" == "null" ]; then
+            echo "Error: Could not extract RdsSecretArn from $SHARED_STACK_KEY outputs"
+            echo "Keys in cdk-outputs.json:"
+            jq -r 'keys[]' cdk-outputs.json
             exit 1
           fi
 

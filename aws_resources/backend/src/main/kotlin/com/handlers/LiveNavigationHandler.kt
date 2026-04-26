@@ -16,9 +16,11 @@ import software.amazon.awssdk.services.apigatewaymanagementapi.model.PostToConne
 import com.services.DynamoDbTableClient
 import com.services.RdsMapClient
 import com.models.NavigationInstruction
-import com.models.LiveNavigationRequest
-import com.models.SessionData
+import com.models.NavigationCoordinates
+import com.models.NavigationUpdatePosition
+import com.models.NavigationUpdateResponse
 import com.models.MapNode
+import com.models.NavigationStepType
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest
@@ -37,6 +39,7 @@ import kotlin.math.sqrt
 
 private val METERS_TO_FEET = 3.28084
 private val FEET_TO_PIXELS = 10.0
+private val PIXEL_TO_FEET = 1.0 / FEET_TO_PIXELS
 private val MAX_DISTANCE_FEET = 15.0
 
 class LiveNavigationHandler(
@@ -44,8 +47,6 @@ class LiveNavigationHandler(
 ) : RequestHandler<APIGatewayV2WebSocketEvent, APIGatewayV2WebSocketResponse> {
 
     private val mapper = jacksonObjectMapper()
-
-    private val pixel_to_feet_ratio = 0.1 // 1 foot in real world corresponds to 10 pixels in our coordinate system (based on populate_floor_data.py)
 
     private val apiGatewayFactory: (String) -> ApiGatewayManagementApiClient = { endpointUrl ->
         ApiGatewayManagementApiClient.builder()
@@ -63,27 +64,69 @@ class LiveNavigationHandler(
 
     private val rdsMapClient = RdsMapClient()
 
-    private fun estimateUserLocation(heading: Double, distanceTraveled: Double, prevX: Double, prevY: Double, logger: LambdaLogger): Pair<Double, Double> {
+    private fun logNavTrace(
+        logger: LambdaLogger,
+        event: String,
+        fields: Map<String, Any?>,
+    ) {
+        try {
+            val tracePayload = linkedMapOf<String, Any?>(
+                "event" to event,
+                "source" to "LiveNavigationHandler",
+                "ts_ms" to System.currentTimeMillis(),
+            )
+            tracePayload.putAll(fields)
+            logger.log("[nav-trace] ${mapper.writeValueAsString(tracePayload)}")
+        } catch (e: Exception) {
+            logger.log("[nav-trace] failed_to_serialize event=$event error=${e.message}")
+        }
+    }
+
+    private fun estimateUserLocation(payload: Map<String, Any?>, prevX: Double, prevY: Double, prevTimeMs: Long, logger: LambdaLogger): Pair<Double, Double> {
+        val heading = (payload["heading_degrees"] as Number).toDouble()
+        val accel = payload["accelerometer"] as Map<*, *>
+        val currentTimestampMs = (payload["timestamp_ms"] as Number).toLong()
+        
         var currentX = prevX 
         var currentY = prevY
 
-        if (distanceTraveled > 0) {
-            // Snap to nearest 90-degree increment + offset to handle sensor drift
-            val estimatedHeading = rdsMapClient.snapBearingToMap(heading, 51.0)
-            val headingRad = Math.toRadians(estimatedHeading)
+        // 1. Calculate time elapsed since last frame (Delta t)
+        var deltaTimeSec = 0.0
+        if (prevTimeMs > 0L && currentTimestampMs > prevTimeMs) {
+            deltaTimeSec = (currentTimestampMs - prevTimeMs) / 1000.0
+        }
+
+        // Cap delta time at 5.0 seconds to prevent massive teleportation if the app is paused/backgrounded
+        if (deltaTimeSec > 5.0) {
+            deltaTimeSec = 5.0
+        }
+
+        // Compute 3D Acceleration Magnitude (Orientation-agnostic)
+        val xAccel = (accel["x"] as? Number)?.toDouble() ?: 0.0
+        val yAccel = (accel["y"] as? Number)?.toDouble() ?: 0.0
+        val zAccel = (accel["z"] as? Number)?.toDouble() ?: 0.0
+        
+        val magnitude = Math.sqrt((xAccel * xAccel) + (yAccel * yAccel) + (zAccel * zAccel))
+
+        // Movement Heuristic (Gravity is ~1.0g. Bounces > 1.2g indicate walking)
+        val isMoving = magnitude > 1.2 
+        logger.log("PDR Estimation | Accel Mag: %.2f g | Moving: %b | DeltaTime: %.2f sec".format(magnitude, isMoving, deltaTimeSec))
+
+        if (isMoving && deltaTimeSec > 0) {
+            // Average human walking speed is ~3.5 feet per second
+            val speedFeetPerSec = 3.5
+            val distanceFeet = speedFeetPerSec * deltaTimeSec
             
-            // Convert distance traveled from feet back to map pixels
-            val distancePixels = distanceTraveled * FEET_TO_PIXELS
-            val deltaX = distancePixels * sin(headingRad)
-            val deltaY = distancePixels * cos(headingRad)
+            // Convert to pixels (1 foot = 10 pixels per populate_floor_data.py)
+            val distancePixels = distanceFeet * 10
+            
+            val headingRad = Math.toRadians(heading)
+            
+            // Apply heading to position (note: Y increases downwards in screen coordinates)
+            currentX += distancePixels * Math.sin(headingRad)
+            currentY -= distancePixels * Math.cos(headingRad)
 
-            currentX += deltaX
-            currentY += deltaY
-
-            logger.log(String.format("PDR Update | Heading: %.1f°, Snapped: %.1f°, Distance: %.2f ft | ΔX: %.2f, ΔY: %.2f | New PDR Location: (%.2f, %.2f)", 
-                heading, estimatedHeading, distanceTraveled, deltaX, deltaY, currentX, currentY))
-        } else {
-            logger.log("No movement detected from PDR data. Retaining previous location ($currentX, $currentY).")
+            logger.log("Moving detected. DeltaTime: $deltaTimeSec sec, Distance: $distancePixels pixels, Heading: $heading, X: $currentX, Y: $currentY")
         }
         
         return Pair(currentX, currentY)
@@ -93,7 +136,47 @@ class LiveNavigationHandler(
         if (nextNode == null) return 0.0
         val dx = currX - nextNode.coordX
         val dy = currY - nextNode.coordY
-        return sqrt(dx * dx + dy * dy) * pixel_to_feet_ratio
+        return sqrt(dx * dx + dy * dy) * PIXEL_TO_FEET
+    }
+
+    /**
+     * Applies live progress to the active instruction by subtracting traveled distance on the
+     * current edge from the first aggregated instruction's remaining distance.
+     */
+    private fun applyProgressToCurrentInstruction(
+        conn: Connection,
+        instructions: List<NavigationInstruction>,
+        remainingPath: List<String>,
+        distToNextNodeFeet: Double,
+        logger: LambdaLogger,
+    ): List<NavigationInstruction> {
+        if (instructions.isEmpty()) return instructions
+        val firstInstruction = instructions.first()
+        if (firstInstruction.step_type != NavigationStepType.segment) return instructions
+        if (remainingPath.size < 2) return instructions
+        if (!distToNextNodeFeet.isFinite()) return instructions
+
+        val currentNodeId = remainingPath[0]
+        val nextNodeId = remainingPath[1]
+        val currentEdgeFeet = rdsMapClient.getEdgeDistanceFeet(conn, currentNodeId, nextNodeId)
+            ?: return instructions
+
+        val clampedDistanceToNext = distToNextNodeFeet.coerceIn(0.0, currentEdgeFeet)
+        val traveledOnCurrentEdge = (currentEdgeFeet - clampedDistanceToNext).coerceAtLeast(0.0)
+        val adjustedDistanceFeet = (firstInstruction.distance_feet - traveledOnCurrentEdge).coerceAtLeast(0.0)
+        logger.log(
+            String.format(
+                "Instruction progress | edge %s->%s: edge=%.2f ft, to_next=%.2f ft, first_step %.2f -> %.2f ft",
+                currentNodeId,
+                nextNodeId,
+                currentEdgeFeet,
+                clampedDistanceToNext,
+                firstInstruction.distance_feet,
+                adjustedDistanceFeet
+            )
+        )
+
+        return listOf(firstInstruction.copy(distance_feet = adjustedDistanceFeet)) + instructions.drop(1)
     }
 
     private fun fuseLocationWithLandmarks(
@@ -120,15 +203,12 @@ class LiveNavigationHandler(
             return Pair(pdrX, pdrY)
         }
 
-        // Use OCR text (room number) as the landmark name when available; fall back to class name
-        val ocrText = primaryLandmark.obj.text
-        val landmarkName = if (!ocrText.isNullOrBlank()) ocrText else primaryLandmark.obj.className
-
+        // Get Landmark Object from RDS
         val dbLandmark = rdsMapClient.getDbConnection().use { conn -> 
-                rdsMapClient.getLandmarkByName(landmarkName, conn)
+                rdsMapClient.getLandmarkByName(primaryLandmark.obj.className, conn)
             }
         if (dbLandmark == null) {
-            logger.log("Detected landmark '$landmarkName' not found in RDS database.")
+            logger.log("Detected landmark '${primaryLandmark.obj.className}' not found in RDS database.")
             return Pair(pdrX, pdrY)
         }
 
@@ -154,130 +234,12 @@ class LiveNavigationHandler(
 
         logger.log(
             String.format(
-                "Fusion Applied | Landmark: %s (class=%s) | Dist: %.2f ft | Alpha: %.2f | PDR: (%.1f, %.1f) | CV: (%.1f, %.1f) | Fused: (%.1f, %.1f)",
-                landmarkName, primaryLandmark.obj.className, distanceFeet, alpha, pdrX, pdrY, cvEstimatedX, cvEstimatedY, fusedX, fusedY
+                "Fusion Applied | Landmark: %s | Dist: %.2f ft | Alpha: %.2f | PDR: (%.1f, %.1f) | CV: (%.1f, %.1f) | Fused: (%.1f, %.1f)",
+                primaryLandmark.obj.className, distanceFeet, alpha, pdrX, pdrY, cvEstimatedX, cvEstimatedY, fusedX, fusedY
             )
         )
 
         return Pair(fusedX, fusedY)
-    }
-
-    private fun parseNavigationFramePayload(payload: Map<String, Any?>): LiveNavigationRequest {
-        val sessionId = payload["session_id"] as String
-        val requestId = (payload["request_id"] as Number).toInt()
-        val timestampMs = (payload["timestamp_ms"] as Number).toLong()
-        val imageBase64 = payload["image_base64"] as String
-        val focalLengthPixels = (payload["focal_length_pixels"] as Number).toDouble()
-        val headingDegrees = (payload["heading_degrees"] as Number).toDouble()
-        val distanceTraveled = (payload["distance_traveled"] as? Number)?.toDouble() ?: 0.0
-        val gps = payload["gps"] as? Map<String, Double> ?: emptyMap()
-
-        return LiveNavigationRequest(
-            session_id = sessionId,
-            request_id = requestId.toString(),
-            timestamp_ms = timestampMs,
-            image_base64 = imageBase64,
-            focal_length_pixels = focalLengthPixels,
-            heading_degrees = headingDegrees,
-            distance_traveled = distanceTraveled,
-            gps = gps
-        )
-    }
-
-    private fun getSessionData(tableClient: DynamoDbTableClient, sessionId: String, logger: LambdaLogger): SessionData {
-        val item = tableClient.getItemDetails(sessionId) ?: return SessionData(Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, 0L, "unknown", 0, emptyList())
-        try {
-            val sessionData = SessionData(
-                previousX = item.get("current_x")!!.toDouble(),
-                previousY = item.get("current_y")!!.toDouble(),
-                previousTime = item.get("last_updated_ms")?.toLongOrNull() ?: 0L,
-                destLandmarkId = item.get("destLandmarkId")!!.toString(),
-                currentStep = item.get("currentStep")?.toIntOrNull() ?: 0,
-                pathNodes = item.get("path")?.split(",") ?: emptyList()
-            )
-            return sessionData
-        } catch (e: Exception) {
-            logger.log("Error occurred while parsing session data for ID: $sessionId")
-            return SessionData(0.0, 0.0, 0L, "unknown", 0, emptyList())
-        }
-    }
-
-    private fun validateNavigationFramePayload(payload: Map<String, Any?>): String? {
-        val sessionId = payload["session_id"] as? String
-        if (sessionId.isNullOrBlank()) return "Missing or invalid field: session_id"
-
-        val imageBase64 = payload["image_base64"] as? String
-        if (imageBase64.isNullOrBlank()) return "Missing or invalid field: image_base64"
-        try {
-            Base64.getDecoder().decode(imageBase64)
-        } catch (_: IllegalArgumentException) {
-            return "Invalid field: image_base64 must be valid Base64"
-        }
-
-        val focalLength = (payload["focal_length_pixels"] as? Number)?.toDouble()
-            ?: return "Missing or invalid field: focal_length_pixels"
-        if (focalLength <= 0.0) return "Invalid field: focal_length_pixels must be > 0"
-
-        val headingDegrees = (payload["heading_degrees"] as? Number)?.toDouble()
-            ?: return "Missing or invalid field: heading_degrees"
-        if (headingDegrees < 0.0 || headingDegrees > 360.0) {
-            return "Invalid field: heading_degrees must be in range [0, 360]"
-        }
-
-        val requestId = payload["request_id"] as? Number
-            ?: return "Missing or invalid field: request_id"
-        if (!isWholeNumber(requestId)) {
-            return "Invalid field: request_id must be an integer"
-        }
-
-        val distanceTraveled = payload["distance_traveled"]
-        if (distanceTraveled != null && distanceTraveled !is Number) {
-            return "Invalid field: distance_traveled must be a number"
-        }
-
-        val gps = payload["gps"]
-        if (gps != null && gps !is Map<*, *>) {
-            return "Invalid field: gps must be an object"
-        }
-        if (gps is Map<*, *>) {
-            if (gps["latitude"] !is Number || gps["longitude"] !is Number) {
-                return "Invalid field: gps.latitude and gps.longitude are required numbers"
-            }
-        }
-
-        val timestamp = payload["timestamp_ms"]
-        if (timestamp != null && timestamp !is Number) {
-            return "Invalid field: timestamp_ms must be a number"
-        }
-
-        return null
-    }
-
-    private fun isWholeNumber(number: Number): Boolean {
-        return when (number) {
-            is Byte, is Short, is Int, is Long -> true
-            is Float -> number % 1 == 0f
-            is Double -> number % 1 == 0.0
-            else -> false
-        }
-    }
-
-    private fun postJsonToConnection(
-        apiClient: ApiGatewayManagementApiClient,
-        connectionId: String,
-        payload: Map<String, Any>,
-        logger: com.amazonaws.services.lambda.runtime.LambdaLogger
-    ) {
-        try {
-            val message = mapper.writeValueAsString(payload)
-            val postRequest = PostToConnectionRequest.builder()
-                .connectionId(connectionId)
-                .data(SdkBytes.fromByteArray(message.toByteArray()))
-                .build()
-            apiClient.postToConnection(postRequest)
-        } catch (e: Exception) {
-            logger.log("Failed to post WebSocket message: ${e.message}")
-        }
     }
 
     override fun handleRequest(
@@ -374,44 +336,52 @@ class LiveNavigationHandler(
             return APIGatewayV2WebSocketResponse().apply { statusCode = 400 }
         }
 
-        val navRequest = parseNavigationFramePayload(payload)
+        val sessionId = payload["session_id"] as String
+        val requestId = (payload["request_id"] as Number).toInt()
+        val currentTimestampMs = (payload["timestamp_ms"] as Number?)?.toLong() ?: System.currentTimeMillis()
+        val imageBase64 = payload["image_base64"] as String
+        val focalLength = (payload["focal_length_pixels"] as Number).toDouble()
 
-        val sessionData = getSessionData(sessionTableClient, navRequest.session_id, logger)
-
-        if (sessionData.previousX != Double.POSITIVE_INFINITY || sessionData.previousY != Double.POSITIVE_INFINITY) {
-            logger.log("Restored session state for ${navRequest.session_id}: prevX=${sessionData.previousX}, prevY=${sessionData.previousY}")
-        } else {
-            val sessionId = (payload["session_id"] as? String) ?: "unknown"
-            val requestId = (payload["request_id"] as? Number)?.toInt()
-            val errorPayload = mutableMapOf<String, Any>(
-                "type" to "navigation_error",
+        logNavTrace(
+            logger = logger,
+            event = "navigation_request_received",
+            fields = mapOf(
                 "session_id" to sessionId,
-                "error" to "Session data not found or invalid. Ensure a navigation session is properly initialized before sending live navigation frames."
-            )
-            if (requestId != null) {
-                errorPayload["request_id"] = requestId
-            }
+                "request_id" to requestId,
+                "route_key" to routeKey,
+                "distance_traveled_input_ft" to (payload["distance_traveled"] as? Number)?.toDouble(),
+                "heading_degrees" to (payload["heading_degrees"] as? Number)?.toDouble(),
+                "timestamp_ms" to currentTimestampMs,
+            ),
+        )
 
-            postJsonToConnection(
-                apiClient = apiClient,
-                connectionId = connectionId,
-                payload = errorPayload,
-                logger = logger
-            )
-            return APIGatewayV2WebSocketResponse().apply { statusCode = 400 }
+        val sessionData = sessionTableClient.getItemDetails(sessionId)
+        val previousX = sessionData?.get("current_x")?.toDoubleOrNull() ?: 0.0
+        val previousY = sessionData?.get("current_y")?.toDoubleOrNull() ?: 0.0
+        val previousTime = sessionData?.get("last_updated_ms")?.toLongOrNull() ?: 0L
+        val destLandmarkId = sessionData?.get("destLandmarkId")?.toString() ?: "unknown"
+        val pathNodesRaw = sessionData?.get("path") ?: ""
+        var currentStep = sessionData?.get("currentStep")?.toIntOrNull() ?: 0
+        val pathNodes = pathNodesRaw.split(",")
+
+        if (sessionData != null) {
+            logger.log("Restored session state for $sessionId: prevX=$previousX, prevY=$previousY")
+        } else {
+            logger.log("New session $sessionId started. Defaulting to (0.0, 0.0).")
         }
 
         // Execute Location Estimation based purely on PDR
-        val (pdrX, pdrY) = estimateUserLocation(navRequest.heading_degrees, navRequest.distance_traveled, sessionData.previousX, sessionData.previousY, logger)
+        val (pdrX, pdrY) = estimateUserLocation(payload, previousX, previousY, previousTime, logger)
 
         val detectedObjects: List<DetectedObject> =
             objectDetectionHandler.detectObjectsFromImage(
-                imageBase64 = navRequest.image_base64,
+                imageBase64 = imageBase64,
                 logger = logger,
-                focalLength = navRequest.focal_length_pixels,
+                focalLength = focalLength,
             )
 
-        val (estimatedX, estimatedY) = fuseLocationWithLandmarks(pdrX, pdrY, navRequest.heading_degrees, detectedObjects, logger)
+        val headingDegrees = (payload["heading_degrees"] as Number).toDouble()
+        val (estimatedX, estimatedY) = fuseLocationWithLandmarks(pdrX, pdrY, headingDegrees, detectedObjects, logger)
         
         // Execute Closest Node Search
         var closestNodeId: String = "unknown"
@@ -429,69 +399,75 @@ class LiveNavigationHandler(
             logger.log("Database error resolving closest map node: ${e.message}")
         }
 
-        var instructions: List<NavigationInstruction>
-        var pathNodesNew = sessionData.pathNodes
+        var instructions: List<NavigationInstruction> = emptyList()
+        var pathNodesNew: List<String> = emptyList()
         var pathRecalculated = false
-        var progress = 0.0
         try {
-            rdsMapClient.getDbConnection().use { conn ->
-                val isOffPath = closestNodeId != "unknown" && !sessionData.pathNodes.contains(closestNodeId)
-                
-                val nextNodeIndex = sessionData.currentStep + 1
-                val nextNodeId = if (nextNodeIndex < sessionData.pathNodes.size) sessionData.pathNodes[nextNodeIndex] else null
-                
-                var distToNextNode = Double.MAX_VALUE
-                if (nextNodeId != null) {
-                    val nextNode = rdsMapClient.getNode(nextNodeId, conn)
-                    distToNextNode = getNavigationProgress(nextNode, estimatedX, estimatedY)
-                }
+            // Recalculate path if the closes node is not on the origina path
+            if (closestNodeId == "unknown" || !pathNodes.contains(closestNodeId)) {
+                logger.log("Estimated closest node $closestNodeId is not on the original path. Recalculating path")
+                pathRecalculated = true
+                currentStep = 0 // Reset step to 0 since we are generating a new path from the current location
+                rdsMapClient.getDbConnection().use { conn ->
+                    // 1. Resolve Landmark to Nearest Node
+                    val landmark = rdsMapClient.getLandmark(destLandmarkId.toInt(), conn)
+                        ?: throw IllegalArgumentException("Landmark not found or has no associated node.")
 
-                // Threshold of 2.0 feet to advance to the next step
-                val reachedNextNode = distToNextNode <= 2.0
+                    val destNodeId = landmark.nearestNodeId
 
-                if (isOffPath) {
-                    logger.log("Node $closestNodeId is off path. Recalculating.")
-                    pathRecalculated = true
-                    sessionData.currentStep = 0
-                    
-                    val landmark = rdsMapClient.getLandmark(sessionData.destLandmarkId.toInt(), conn)
-                        ?: throw IllegalArgumentException("Landmark not found.")
+                    // 2. Identify Building Context (to limit the graph size)
                     if (buildingId == "unknown") {
-                        buildingId = rdsMapClient.getBuildingIdForNode(closestNodeId, conn) ?: throw IllegalArgumentException("Building unknown.")
+                        buildingId = rdsMapClient.getBuildingIdForNode(closestNodeId, conn)
+                            ?: throw IllegalArgumentException("Closest node does not belong to a recognized building.")
                     }
-                    
-                    pathNodesNew = rdsMapClient.calculateShortestPath(buildingId, closestNodeId, landmark.nearestNodeId, conn).first
-                    instructions = rdsMapClient.buildInstructions(conn, pathNodesNew, landmark)
-                    
+                    // 3. Find Shortest Path
+                    pathNodesNew = rdsMapClient.calculateShortestPath(buildingId, closestNodeId, destNodeId, conn).first
+                    if (pathNodesNew.isEmpty()) {
+                        throw RuntimeException("No continuous path exists between these locations.")
+                    }
+                    logger.log("Calculated path: ${pathNodesNew.joinToString(" -> ")}")
+
+                    // 4. Transform Path into Instructions
+                    var builtInstructions = rdsMapClient.buildInstructions(conn, pathNodesNew, landmark)
+                    var progressFeet = 0.0
                     if (pathNodesNew.size > 1) {
                         val newNextNode = rdsMapClient.getNode(pathNodesNew[1], conn)
-                        progress = getNavigationProgress(newNextNode, estimatedX, estimatedY)
+                        progressFeet = getNavigationProgress(newNextNode, estimatedX, estimatedY)
                     }
-
-                } else if (reachedNextNode) {
-                    logger.log("Reached next node $nextNodeId. Advancing step.")
-                    sessionData.currentStep += 1
-                    val landmark = rdsMapClient.getLandmark(sessionData.destLandmarkId.toInt(), conn)
-                        ?: throw IllegalArgumentException("Landmark not found.")
-                    
-                    val remainingPath = sessionData.pathNodes.drop(sessionData.currentStep)
-                    instructions = rdsMapClient.buildInstructions(conn, remainingPath, landmark)
-
-                    val newNextNodeIndex = sessionData.currentStep + 1
-                    if (newNextNodeIndex < sessionData.pathNodes.size) {
-                        val newNextNode = rdsMapClient.getNode(sessionData.pathNodes[newNextNodeIndex], conn)
-                        progress = getNavigationProgress(newNextNode, estimatedX, estimatedY)
-                    } else {
-                        progress = 0.0 // Reached final destination node
+                    instructions = applyProgressToCurrentInstruction(
+                        conn = conn,
+                        instructions = builtInstructions,
+                        remainingPath = pathNodesNew,
+                        distToNextNodeFeet = progressFeet,
+                        logger = logger,
+                    )
+                    logger.log("Translated instructions")
+                    instructions.forEach { inst ->
+                        logger.log("Instruction: $inst")
                     }
-                } else {
-                    logger.log("Staying on path. Progress to $nextNodeId: $distToNextNode ft")
-                    progress = distToNextNode
-                    val landmark = rdsMapClient.getLandmark(sessionData.destLandmarkId.toInt(), conn)
-                        ?: throw IllegalArgumentException("Landmark not found.")
-                    
-                    val remainingPath = sessionData.pathNodes.drop(sessionData.currentStep)
-                    instructions = rdsMapClient.buildInstructions(conn, remainingPath, landmark)
+                }
+            } else {
+                logger.log("Closest node $closestNodeId is on the original path. No need to recalculate.")
+                pathNodesNew = pathNodes.dropWhile({ it != closestNodeId }) // Get remaining path starting from closest node
+                if (pathNodesNew.size < pathNodes.size) {
+                    currentStep += 1 // Increment step to reflect progress along the path
+                }
+                instructions = rdsMapClient.getDbConnection().use { conn ->
+                    val landmark = rdsMapClient.getLandmark(destLandmarkId.toInt(), conn)
+                        ?: throw IllegalArgumentException("Landmark not found or has no associated node.")
+                    var builtInstructions = rdsMapClient.buildInstructions(conn, pathNodesNew, landmark)
+                    var progressFeet = 0.0
+                    if (pathNodesNew.size > 1) {
+                        val nextNode = rdsMapClient.getNode(pathNodesNew[1], conn)
+                        progressFeet = getNavigationProgress(nextNode, estimatedX, estimatedY)
+                    }
+                    applyProgressToCurrentInstruction(
+                        conn = conn,
+                        instructions = builtInstructions,
+                        remainingPath = pathNodesNew,
+                        distToNextNodeFeet = progressFeet,
+                        logger = logger,
+                    )
                 }
             }
         } catch (e: Exception) {
@@ -501,7 +477,7 @@ class LiveNavigationHandler(
                 connectionId = connectionId,
                 payload = mapOf(
                     "type" to "navigation_error",
-                    "session_id" to navRequest.session_id,
+                    "session_id" to sessionId,
                     "error" to "Failed to calculate navigation instructions: ${e.message}"
                 ),
                 logger = logger
@@ -509,49 +485,163 @@ class LiveNavigationHandler(
             return APIGatewayV2WebSocketResponse().apply { statusCode = 500 }
         }
 
-        val logicalCurrentNodeId = if (pathNodesNew.isNotEmpty() && sessionData.currentStep < pathNodesNew.size) {
-            pathNodesNew[sessionData.currentStep]
-        } else {
-            closestNodeId // Fallback if out of bounds
-        }
+        val activePath = pathNodesNew.takeIf { it.isNotEmpty() } ?: pathNodes
+        val logicalCurrentNodeId =
+            if (activePath.isNotEmpty() && currentStep < activePath.size) activePath[currentStep] else closestNodeId
+        val firstInstruction = instructions.firstOrNull()
+        logNavTrace(
+            logger = logger,
+            event = "navigation_update_computed",
+            fields = mapOf(
+                "session_id" to sessionId,
+                "request_id" to requestId,
+                "current_step" to currentStep,
+                "path_len" to activePath.size,
+                "closest_node_id" to closestNodeId,
+                "logical_current_node_id" to logicalCurrentNodeId,
+                "path_recalculated" to pathRecalculated,
+                "instructions_count" to instructions.size,
+                "first_instruction_step" to firstInstruction?.step,
+                "first_instruction_distance_feet" to firstInstruction?.distance_feet,
+                "first_instruction_turn_intent" to firstInstruction?.turn_intent,
+                "distance_traveled_input_ft" to (payload["distance_traveled"] as? Number)?.toDouble(),
+                "estimated_x" to estimatedX,
+                "estimated_y" to estimatedY,
+            ),
+        )
 
-        // Record tracking data dynamically with a standard TTL cleanup strategy
-        val ttlSeconds = (System.currentTimeMillis() / 1000) + 7200
+        // Update state in DynamoDB with new estimated location and timestamp. Set TTL for 2 hours to allow stale session cleanup.
+        val ttlSeconds = (System.currentTimeMillis() / 1000) + 7200 // 2 hour expiration
         sessionTableClient.putItem(mapOf(
-            "session_id" to navRequest.session_id,
+            "session_id" to sessionId,
             "current_x" to estimatedX,
             "current_y" to estimatedY,
-            "currentStep" to sessionData.currentStep,
-            "currentNodeId" to logicalCurrentNodeId,
-            "destLandmarkId" to sessionData.destLandmarkId,
-            "path" to pathNodesNew.joinToString(","),
+            "currentStep" to currentStep,
+            "currentNodeId" to closestNodeId,
+            "destLandmarkId" to destLandmarkId,
+            "path" to (pathNodesNew.takeIf { 
+                            it.isNotEmpty() 
+                        }?.joinToString(",") ?: pathNodes.joinToString(",")),
             "pathRecalculated" to pathRecalculated,
-            "last_updated_ms" to navRequest.timestamp_ms,
+            "last_updated_ms" to currentTimestampMs,
             "ttl" to ttlSeconds
         ))
 
-        // Return actual location based on user movement, not closest map node
-        val responsePayload = mapOf(
-            "type" to "navigation_update",
-            "session_id" to navRequest.session_id,
-            "current_step" to sessionData.currentStep,
-            "remaining_instructions" to instructions,
-            "progress" to progress, // NEW PROGRESS FIELD ADDED HERE
-            "request_id" to navRequest.request_id,
-            "message" to "Localization: PDR + landmark fusion executed.",
-            "estimated_position" to mapOf(
-                "node_id" to closestNodeId,
-                "coordinates" to mapOf(
-                    "x_feet" to estimatedX * pixel_to_feet_ratio,
-                    "y_feet" to estimatedY * pixel_to_feet_ratio
+        val responsePayload = NavigationUpdateResponse(
+            type = "navigation_update",
+            session_id = sessionId,
+            current_step = currentStep,
+            remaining_instructions = instructions,
+            request_id = requestId,
+            message = "Localization: PDR + landmark fusion; closest map node returned in estimated_position.",
+            estimated_position = NavigationUpdatePosition(
+                node_id = closestNodeId,
+                coordinates = NavigationCoordinates(
+                    x = estimatedX,
+                    y = estimatedY
                 )
             )
         )
 
-        postJsonToConnection(apiClient, connectionId, responsePayload, logger)
-        return APIGatewayV2WebSocketResponse().apply { 
+        postJsonToConnection(
+            apiClient = apiClient,
+            connectionId = connectionId,
+            payload = responsePayload,
+            logger = logger
+        )
+
+        return APIGatewayV2WebSocketResponse().apply {
             statusCode = 200
-            body = "OK" 
+            body = "OK"
+        }
+    }
+
+    private fun validateNavigationFramePayload(payload: Map<String, Any?>): String? {
+        val sessionId = payload["session_id"] as? String
+        if (sessionId.isNullOrBlank()) return "Missing or invalid field: session_id"
+
+        val imageBase64 = payload["image_base64"] as? String
+        if (imageBase64.isNullOrBlank()) return "Missing or invalid field: image_base64"
+        try {
+            Base64.getDecoder().decode(imageBase64)
+        } catch (_: IllegalArgumentException) {
+            return "Invalid field: image_base64 must be valid Base64"
+        }
+
+        val focalLength = (payload["focal_length_pixels"] as? Number)?.toDouble()
+            ?: return "Missing or invalid field: focal_length_pixels"
+        if (focalLength <= 0.0) return "Invalid field: focal_length_pixels must be > 0"
+
+        val headingDegrees = (payload["heading_degrees"] as? Number)?.toDouble()
+            ?: return "Missing or invalid field: heading_degrees"
+        if (headingDegrees < 0.0 || headingDegrees > 360.0) {
+            return "Invalid field: heading_degrees must be in range [0, 360]"
+        }
+
+        val requestId = payload["request_id"] as? Number
+            ?: return "Missing or invalid field: request_id"
+        if (!isWholeNumber(requestId)) {
+            return "Invalid field: request_id must be an integer"
+        }
+
+        if (!validateVector3(payload["accelerometer"])) {
+            return "Missing or invalid field: accelerometer (x, y, z required)"
+        }
+
+        if (!validateVector3(payload["gyroscope"])) {
+            return "Missing or invalid field: gyroscope (x, y, z required)"
+        }
+
+        val gps = payload["gps"]
+        if (gps != null && gps !is Map<*, *>) {
+            return "Invalid field: gps must be an object"
+        }
+        if (gps is Map<*, *>) {
+            if (gps["latitude"] !is Number || gps["longitude"] !is Number) {
+                return "Invalid field: gps.latitude and gps.longitude are required numbers"
+            }
+        }
+
+        val timestamp = payload["timestamp_ms"]
+        if (timestamp != null && timestamp !is Number) {
+            return "Invalid field: timestamp_ms must be a number"
+        }
+
+        return null
+    }
+
+    private fun validateVector3(value: Any?): Boolean {
+        if (value !is Map<*, *>) return false
+        value.forEach { (_, v) ->
+            if (v !is Number) return false
+        }
+        return true
+    }
+
+    private fun isWholeNumber(number: Number): Boolean {
+        return when (number) {
+            is Byte, is Short, is Int, is Long -> true
+            is Float -> number % 1 == 0f
+            is Double -> number % 1 == 0.0
+            else -> false
+        }
+    }
+
+    private fun postJsonToConnection(
+        apiClient: ApiGatewayManagementApiClient,
+        connectionId: String,
+        payload: Any,
+        logger: com.amazonaws.services.lambda.runtime.LambdaLogger
+    ) {
+        try {
+            val message = mapper.writeValueAsString(payload)
+            val postRequest = PostToConnectionRequest.builder()
+                .connectionId(connectionId)
+                .data(SdkBytes.fromByteArray(message.toByteArray()))
+                .build()
+            apiClient.postToConnection(postRequest)
+        } catch (e: Exception) {
+            logger.log("Failed to post WebSocket message: ${e.message}")
         }
     }
 }

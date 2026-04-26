@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 def main(
-    coordinate_angle_offset_deg: float = 51.0,
+    coordinate_angle_offset_deg: float = 141.0,
     side_by_bearing_offset_deg: float = 0.0,
 ) -> int:
     """Main entry point for database population."""

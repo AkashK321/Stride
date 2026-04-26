@@ -15,16 +15,20 @@ EDGES = [
     # ==================================================================
     
     # West end: hall_018_020 -> hall_022 (going East, 90°)
-    edge(start="hall_018_020", end="hall_022", bearing_deg=90, bidirectional=True),
-    
+    # edge(start="hall_018_020", end="hall_022", bearing_deg=90, bidirectional=True),
+    edge(start="corner_southwest_f0", end="hall_022", bearing_deg=90, bidirectional=True),
+    edge(start="hall_018_020", end="corner_southwest_f0", bearing_deg=90, bidirectional=True),
     # hall_022 -> hall_023 (East, 90°)
     edge(start="hall_022", end="hall_023", bearing_deg=90, bidirectional=True),
     
     # hall_023 -> hall_024 (East, 90°)
     edge(start="hall_023", end="hall_024", bearing_deg=90, bidirectional=True),
     
-    # hall_024 -> hall_026 (East, 90°)
-    edge(start="hall_024", end="hall_026", bearing_deg=90, bidirectional=True),
+    # hall_024 -> corner_mid3_f0 (East, 90°)
+    edge(start="hall_024", end="corner_mid3_f0", bearing_deg=90, bidirectional=True),
+
+    # corner_mid3_f0 -> hall_026 (East, 90°)
+    edge(start="corner_mid3_f0", end="hall_026", bearing_deg=90, bidirectional=True),
     
     # hall_026 -> hall_029 (East, 90°)
     edge(start="hall_026", end="hall_029", bearing_deg=90, bidirectional=True),
@@ -48,14 +52,17 @@ EDGES = [
     edge(start="hall_039", end="hall_038", bearing_deg=90, bidirectional=True),
     
     # hall_038 -> hall_040_042 (East, 90°)
-    edge(start="hall_038", end="hall_040_042", bearing_deg=90, bidirectional=True),
+    edge(start="hall_038", end="corner_southeast_f0", bearing_deg=90, bidirectional=True),
+    
+    # corner_southeast_f0 -> hall_040_042 (East, 90°)
+    edge(start="corner_southeast_f0", end="hall_040_042", bearing_deg=90, bidirectional=True),
     
     
     # ==================================================================
     # WEST VERTICAL HALLWAY (x=-83, South to North)
     # ==================================================================
     
-    edge(start="hall_018_020", end="hall_016", bearing_deg=0, bidirectional=True),
+    # edge(start="hall_018_020", end="hall_016", bearing_deg=0, bidirectional=True),
 
     # hall_016 -> hall_013 (going North, 0°)
     edge(start="hall_016", end="hall_013", bearing_deg=0, bidirectional=True),
@@ -64,14 +71,13 @@ EDGES = [
     edge(start="hall_013", end="hall_011", bearing_deg=0, bidirectional=True),
     
     # hall_011 -> hall_005 (North, 0°)
-    edge(start="hall_011", end="corner_rm005", bearing_deg=0, bidirectional=True),
+    edge(start="hall_011", end="corner_rm005_f0", bearing_deg=0, bidirectional=True),
     
-    edge(start="corner_rm005", end="hall_007", bearing_deg=0, bidirectional=True),
-    edge(start="corner_rm005", end="hall_005", bearing_deg=90, bidirectional=True),
+    edge(start="corner_rm005_f0", end="hall_007", bearing_deg=0, bidirectional=True),
     edge(start="hall_069", end="hall_065", bearing_deg=90, bidirectional=True),
     
-    edge(start="corner_lobby_mid", end="hall_007", bearing_deg=90, bidirectional=True),
-    edge(start="hall_007", end="corner_mid2", bearing_deg=90, bidirectional=True),
+    edge(start="corner_lobby_mid_f0", end="hall_007", bearing_deg=90, bidirectional=True),
+    edge(start="hall_007", end="corner_mid2_f0", bearing_deg=90, bidirectional=True),
 
     
     
@@ -80,7 +86,7 @@ EDGES = [
     # ==================================================================
     
     # hall_040_042 -> hall_044 (going North, 0°)
-    edge(start="hall_040_042", end="hall_044", bearing_deg=0, bidirectional=True),
+    # edge(start="hall_040_042", end="hall_044", bearing_deg=0, bidirectional=True),
     
     # hall_044 -> hall_043_046 (North, 0°)
     edge(start="hall_044", end="hall_043_046", bearing_deg=0, bidirectional=True),
@@ -139,17 +145,17 @@ EDGES = [
     # ==================================================================
     # EXTRAS
     # ==================================================================
-    edge(start="hall_069", end="corner_mid", bearing_deg=0, bidirectional=True),
-    edge(start="corner_mid", end="corner_mid2", bearing_deg=0, bidirectional=True),
-    edge(start="corner_mid2", end="hall_129", bearing_deg=90, bidirectional=True),
-    edge(start="corner_lobby_mid", end="corner_lobby_south", bearing_deg=0, bidirectional=True),
-    edge(start="corner_lobby_south", end="corner_lobby_west", bearing_deg=90, bidirectional=True),
-    edge(start="corner_lobby_north", end="corner_lobby_mid", bearing_deg=0, bidirectional=True),
-    edge(start="hall_129", end="corner_mid3", bearing_deg=0, bidirectional=True),
+    edge(start="hall_069", end="corner_mid_f0", bearing_deg=180, bidirectional=True),
+    edge(start="corner_mid_f0", end="corner_mid2_f0", bearing_deg=180, bidirectional=True),
+    edge(start="corner_mid2_f0", end="hall_129", bearing_deg=90, bidirectional=True),
+    edge(start="corner_lobby_mid_f0", end="corner_lobby_south_f0", bearing_deg=180, bidirectional=True),
+    edge(start="corner_lobby_south_f0", end="corner_lobby_west_f0", bearing_deg=270, bidirectional=True),
+    edge(start="corner_lobby_north_f0", end="corner_lobby_mid_f0", bearing_deg=180, bidirectional=True),
+    edge(start="hall_129", end="corner_mid3_f0", bearing_deg=180, bidirectional=True),
     
-    edge(start="corner_rm005", end="hall_005", bearing_deg=0, bidirectional=True),
-    edge(start="hall_016", end="corner_southwest", bearing_deg=0, bidirectional=True),
-    edge(start="hall_044", end="corner_southeast", bearing_deg=0, bidirectional=True),
+    edge(start="corner_rm005_f0", end="hall_005", bearing_deg=90, bidirectional=True),
+    edge(start="corner_southwest_f0", end="hall_016", bearing_deg=0, bidirectional=True),
+    edge(start="corner_southeast_f0", end="hall_044", bearing_deg=0, bidirectional=True),
 
 
 

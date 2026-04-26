@@ -140,13 +140,13 @@ def test_hallwaypoint_doors_have_side_by_bearing():
 
 
 def test_landmark_door_id_exists_on_nearest_node():
-    """If landmark declares door_id, it must exist on nearest node doors."""
+    """Every landmark door_id must exist on nearest node doors."""
     for floor in FLOOR2_DATA['floors']:
         nodes_by_id = {n['id']: n for n in floor['nodes']}
         for landmark in floor['landmarks']:
             door_id = landmark.get('door_id')
-            if door_id is None:
-                continue
+            assert door_id is not None, \
+                f"Landmark '{landmark['name']}' must define door_id"
             nearest = nodes_by_id.get(landmark['nearest_node'])
             assert nearest is not None
             door_ids = {door.get('id') for door in nearest.get('doors', [])}

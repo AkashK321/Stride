@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Alert } from "react-native";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
-import ChangePasswordScreen from "../app/(tabs)/settings/change-password";
+import ChangePasswordScreen from "../app/(tabs)/profile/change-password";
 
 const mockBack = jest.fn();
 const mockChangePassword = jest.fn();

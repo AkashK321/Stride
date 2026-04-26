@@ -28,6 +28,14 @@ Set required env before DB operations:
 - `AWS_REGION` (usually `us-east-1`)
 - AWS credentials in your shell/profile (`~/.aws/credentials` or role)
 
+If `DB_SECRET_ARN` is not available or access is denied, map population can fall back to:
+
+- `DB_HOST`
+- `DB_PORT`
+- `DB_NAME`
+- `DB_USER`
+- `DB_PASSWORD`
+
 ## Iteration loop (authoring map data)
 
 1. Edit floor definitions under `floor_data/` (for example `floor_data/floor2_v2` and `floor_data/registry.py`).
@@ -52,8 +60,30 @@ Set required env before DB operations:
 5. Seed map data into RDS:
 
    ```bash
-   python cli.py populate --coordinate-angle-offset 51
+   python cli.py populate --coordinate-angle-offset 141 --side-by-bearing-offset 51
    ```
+
+   Notes on `DoorID` migration:
+   - `populate` ensures `Landmarks.DoorID` exists (non-destructive `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`).
+   - Landmark `door_id` values are authored manually in `floor_data/*/landmarks.py`.
+   - Population fails if any authored landmark is missing `door_id`.
+
+### Upload offsets
+
+`python cli.py populate` has two independent rotation offsets:
+
+- `--coordinate-angle-offset` (default: `141`)
+  - Rotates node/landmark coordinates into DB storage frame.
+  - Change this when plotted/stored node geometry is globally rotated relative to authored map coordinates.
+- `--side-by-bearing-offset` (default: `51`)
+  - Rotates per-door `side_by_bearing` headings in node metadata.
+  - Change this when door side labels/headings are systematically rotated even though node geometry looks correct.
+
+Important:
+
+- The defaults (`141` coords / `51` side-by-bearing) are calibrated for current `floor0` authoring data.
+- Other floors or future re-authoring may require different values.
+- Keep values explicit in deployment commands for repeatable behavior across environments.
 
 6. Plot deployed DB map to verify what is actually stored:
 
