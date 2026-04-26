@@ -39,6 +39,9 @@ export interface NavigationResponse {
   type?: string;
   request_id?: number;
   latency_ms?: number; // Calculated on frontend, not from backend
+  status?: string;
+  error?: string;
+  message?: string;
 }
 
 export interface NavigationUpdateResponse extends NavigationResponse {
@@ -228,7 +231,7 @@ export class NavigationWebSocket {
         this.ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data) as NavigationSocketResponse;
-            
+
             // Calculate latency if request_id is present
             if (data.request_id !== undefined) {
               const pendingId = Number(data.request_id);
@@ -250,7 +253,7 @@ export class NavigationWebSocket {
                 // Dev logger is optional in local debugging.
               });
             }
-            
+
             this.onMessage?.(data);
           } catch (e) {
             console.error("Failed to parse WebSocket message:", e);
@@ -330,7 +333,7 @@ export class NavigationWebSocket {
 
     try {
       const payload = JSON.stringify(message);
-      
+
       // Calculate payload size in bytes
       // For UTF-8 strings, we can approximate: base64 strings are ASCII (1 byte/char)
       // JSON metadata is also ASCII, so string length approximates byte size
@@ -342,19 +345,19 @@ export class NavigationWebSocket {
         // Fallback: for base64 + JSON (both ASCII), length ≈ bytes
         payloadSizeBytes = payload.length;
       }
-      
+
       // Calculate image size for logging
       const imageBase64Length = message.image_base64.length;
       const imageSizeBytes = Math.round((imageBase64Length * 3) / 4);
       const metadataSizeBytes = payloadSizeBytes - imageBase64Length;
-      
+
       // API Gateway WebSocket default limit is 32 KB (32 * 1024 bytes)
       // Using 25 KB as a conservative threshold to account for:
       // - Base64 encoding overhead (already included in image_base64)
       // - JSON metadata (session_id, sensors, etc.)
       // - Any WebSocket frame overhead
       const MAX_PAYLOAD_SIZE_BYTES = 30 * 1024;
-      
+
       if (payloadSizeBytes > MAX_PAYLOAD_SIZE_BYTES) {
         console.warn(
           `[WebSocket] ❌ Frame payload too large (${Math.round(payloadSizeBytes / 1024)} KB), skipping send to prevent disconnection. ` +
@@ -369,7 +372,7 @@ export class NavigationWebSocket {
       // Track request for latency measurement
       const sentTime = Date.now();
       this._pendingRequests.set(message.request_id, sentTime);
-      
+
       // Track session_id for dev logging
       if (message.session_id) {
         this._currentSessionId = message.session_id;
@@ -391,14 +394,14 @@ export class NavigationWebSocket {
    */
   private async logResponseToDevServer(response: NavigationSocketResponse): Promise<void> {
     if (!__DEV__) return;
-    
+
     try {
       // Try to connect to local dev logger server
       // Use the machine's IP address that Expo is running on
       // For Expo Go, we can use localhost or the Metro bundler's IP
       // Default to localhost, but could be configured via env var
       const loggerUrl = process.env.EXPO_PUBLIC_DEV_LOGGER_URL || "http://localhost:3001/log";
-      
+
       await fetch(loggerUrl, {
         method: "POST",
         headers: {
