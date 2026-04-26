@@ -69,7 +69,7 @@ export default function NavigationSession() {
   const navFrameInFlightRef = React.useRef(false);
   const collisionFrameInFlightRef = React.useRef(false);
   const requestCounterRef = React.useRef(0);
-  const [speakerMode, setSpeakerMode] = React.useState(false);
+  const [speakerMode, setSpeakerMode] = React.useState(true);
   const [currentStepIndex, setCurrentStepIndex] = React.useState(0);
   const focalLengthPixels = React.useMemo(() => getFocalLengthPixels(LIVE_NAV_FRAME_WIDTH), []);
   const { getSnapshot, start: startSensors, stop: stopSensors } = useSensorData();

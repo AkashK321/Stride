@@ -31,7 +31,7 @@ export default function Home() {
     null,
   );
   const [navigationLoading, setNavigationLoading] = React.useState(false);
-  const [speakerMode, setSpeakerMode] = React.useState(false);
+  const [speakerMode, setSpeakerMode] = React.useState(true);
 
   const toggleSpeakerMode = React.useCallback(() => {
     setSpeakerMode((prev) => !prev);
