@@ -391,7 +391,7 @@ export default function NavigationSession() {
       Array.isArray(response.estimatedDistances) &&
       response.estimatedDistances.length > 0
     ) {
-      
+
       console.log("Received collision update with distances (meters):", response.estimatedDistances);
       // The backend returns distances in meters, convert to feet and find the closest object
       const distancesInMeters = response.estimatedDistances.map((entry) => parseFloat(entry.distance));
@@ -399,7 +399,7 @@ export default function NavigationSession() {
 
       const minDistanceFeet = minDistanceMeters * 3.28084;
 
-      let currentInterval = 0; 
+      let currentInterval = 0;
       if (minDistanceFeet < 5) currentInterval = 3;
       else if (minDistanceFeet < 10) currentInterval = 2;
       else if (minDistanceFeet <= 20) currentInterval = 1;
@@ -410,14 +410,14 @@ export default function NavigationSession() {
 
       const now = Date.now();
       const timeSinceLast = now - lastVibrationTimeRef.current;
-      
+
       console.log(`Closest object at ${minDistanceFeet.toFixed(1)} ft, interval ${currentInterval}, time since last vibration ${timeSinceLast} ms`);
       if (currentInterval > 0) {
         // TRIGGER RULE:
         // 1. If danger escalated (e.g. Low -> High), vibrate immediately to warn the user.
         // 2. If danger is the same/lower, wait for the previous pattern to fully finish (500ms frame cycle).
         if (currentInterval > lastIntervalRef.current || timeSinceLast >= 500) {
-          
+
           if (currentInterval === 3) {
             // [0-5) ft: High danger - 3 rapid buzzes
             // Duration: 100+40+100+40+100 = 380ms (Leaves 120ms of silence before next frame)
@@ -922,7 +922,7 @@ export default function NavigationSession() {
       collisionLoopRef.current = setInterval(() => {
         void sendCollisionFrameRef.current();
       }, COLLISION_SCHEDULER_TICK_MS);
-      
+
       // Fire the first frame immediately
       void sendCollisionFrameRef.current();
     }, COLLISION_START_STAGGER_MS);
@@ -1039,10 +1039,10 @@ export default function NavigationSession() {
     collisionRiskLevel === "high"
       ? colors.danger
       : collisionRiskLevel === "medium"
-      ? "#F97316"
-      : collisionRiskLevel === "low"
-      ? "#EAB308"
-      : colors.primary;
+        ? "#F97316"
+        : collisionRiskLevel === "low"
+          ? "#EAB308"
+          : colors.primary;
 
   if (!cameraPermission) {
     return React.createElement(
@@ -1084,34 +1084,34 @@ export default function NavigationSession() {
     { style: styles.root },
     cameraMode
       ? React.createElement(CameraView, {
-          ref: cameraRef,
-          style: styles.cameraBackground,
-          facing: "back",
-        })
+        ref: cameraRef,
+        style: styles.cameraBackground,
+        facing: "back",
+      })
       : React.createElement(
-          View,
-          {
-            style: [
-              styles.cameraBackground,
-              {
-                backgroundColor: "#000000",
-                justifyContent: "center",
-                alignItems: "center",
-                gap: spacing.md,
-              },
-            ],
-          },
-          React.createElement(Feather, {
-            name: "camera-off",
-            size: 48,
-            color: colors.textSecondary,
-          }),
-          React.createElement(
-            Text,
-            { style: { ...typography.h3, color: colors.textSecondary } },
-            "Camera Mode Disabled"
-          )
-        ),
+        View,
+        {
+          style: [
+            styles.cameraBackground,
+            {
+              backgroundColor: "#000000",
+              justifyContent: "center",
+              alignItems: "center",
+              gap: spacing.md,
+            },
+          ],
+        },
+        React.createElement(Feather, {
+          name: "camera-off",
+          size: 48,
+          color: colors.textSecondary,
+        }),
+        React.createElement(
+          Text,
+          { style: { ...typography.h3, color: colors.textSecondary } },
+          "Camera Mode Disabled"
+        )
+      ),
 
     React.createElement(
       SafeAreaView,
@@ -1132,265 +1132,265 @@ export default function NavigationSession() {
             : {}),
         },
         navigationLoading &&
+        React.createElement(
+          View,
+          { style: styles.loadingBanner },
+          React.createElement(ActivityIndicator, {
+            size: "small",
+            color: colors.buttonPrimaryText,
+          }),
           React.createElement(
-            View,
-            { style: styles.loadingBanner },
-            React.createElement(ActivityIndicator, {
-              size: "small",
-              color: colors.buttonPrimaryText,
-            }),
-            React.createElement(
-              Text,
-              { style: styles.loadingText },
-              "Calculating route…",
-            ),
+            Text,
+            { style: styles.loadingText },
+            "Calculating route…",
           ),
+        ),
 
         navigationError &&
+        React.createElement(
+          View,
+          { style: styles.errorBanner },
           React.createElement(
-            View,
-            { style: styles.errorBanner },
-            React.createElement(
-              Text,
-              { style: styles.errorText },
-              navigationError,
-            ),
+            Text,
+            { style: styles.errorText },
+            navigationError,
           ),
+        ),
 
         navigationInstructions &&
-          !isOrienting &&
-          React.createElement(NavigationInstructionsDropdown, {
-            instructions: navigationInstructions,
-            onExit: handleExitNavigation,
-            selectedIndex: currentStepIndex,
-            onSelectedIndexChange: handleSelectedIndexChange,
-          }),
+        !isOrienting &&
+        React.createElement(NavigationInstructionsDropdown, {
+          instructions: navigationInstructions,
+          onExit: handleExitNavigation,
+          selectedIndex: currentStepIndex,
+          onSelectedIndexChange: handleSelectedIndexChange,
+        }),
         showDebugBackground &&
+        React.createElement(
+          View,
+          { style: styles.debugPanel },
           React.createElement(
-            View,
-            { style: styles.debugPanel },
-            React.createElement(
-              Text,
-              { style: styles.debugTitle },
-              "Navigation Debug",
-            ),
-            React.createElement(
-              Text,
-              { style: styles.debugLine },
-              `WS: ${wsStatus} | collision sent: ${collisionFramesSent} | dropped: ${collisionFramesDropped}`,
-            ),
-            React.createElement(
-              Text,
-              { style: styles.debugLine },
-              `Heading: ${headingLabel} | alignment: ${alignment}`,
-            ),
-            React.createElement(
-              Text,
-              { style: styles.debugLine },
-              `Step ${navigationInstructions ? currentStepIndex + 1 : "n/a"}/${navigationInstructions?.length ?? "n/a"} | remaining: ${roundedRemainingFeet ?? "n/a"} ft`,
-            ),
-            activeInstruction &&
-              React.createElement(
-                Text,
-                { style: styles.debugLine },
-                `Instruction: ${formatInstruction(activeInstruction)}`,
-              ),
-            React.createElement(
-              Text,
-              { style: styles.debugLine },
-              `Progress consumed: ${roundedConsumedFeet} ft | latest tick: +${roundedLatestDeltaFeet} ft (${progressTickLabel})`,
-            ),
-            React.createElement(
-              Text,
-              { style: styles.debugLine },
-              `Pedometer steps: ${lastSensorSnapshot?.lastPedometerSteps ?? "n/a"} | speed: ${speedLabel}`,
-            ),
-            React.createElement(
-              Text,
-              { style: styles.debugLine },
-              `Raw pedometer: events=${lastSensorSnapshot?.pedometerEventCount ?? "n/a"} | last delta=${lastSensorSnapshot?.lastPedometerDeltaSteps ?? "n/a"} steps | callback dt=${lastSensorSnapshot?.lastPedometerDeltaTimeMs ?? "n/a"} ms | last event ${lastSensorSnapshot?.lastPedometerEventAtMs ? `${Math.round((Date.now() - lastSensorSnapshot.lastPedometerEventAtMs) / 100) / 10}s ago` : "n/a"}`,
-            ),
-            React.createElement(
-              Text,
-              { style: styles.debugLine },
-              `Interpolation: ${lastSensorSnapshot?.interpolationApplied ? "on" : "off"} | age: ${lastSensorSnapshot?.timeSincePedoMs ?? "n/a"} ms | last collision send: ${lastCollisionSendAtMs ? `${Math.round((Date.now() - lastCollisionSendAtMs) / 100) / 10}s ago` : "n/a"}`,
-            ),
+            Text,
+            { style: styles.debugTitle },
+            "Navigation Debug",
           ),
+          React.createElement(
+            Text,
+            { style: styles.debugLine },
+            `WS: ${wsStatus} | collision sent: ${collisionFramesSent} | dropped: ${collisionFramesDropped}`,
+          ),
+          React.createElement(
+            Text,
+            { style: styles.debugLine },
+            `Heading: ${headingLabel} | alignment: ${alignment}`,
+          ),
+          React.createElement(
+            Text,
+            { style: styles.debugLine },
+            `Step ${navigationInstructions ? currentStepIndex + 1 : "n/a"}/${navigationInstructions?.length ?? "n/a"} | remaining: ${roundedRemainingFeet ?? "n/a"} ft`,
+          ),
+          activeInstruction &&
+          React.createElement(
+            Text,
+            { style: styles.debugLine },
+            `Instruction: ${formatInstruction(activeInstruction)}`,
+          ),
+          React.createElement(
+            Text,
+            { style: styles.debugLine },
+            `Progress consumed: ${roundedConsumedFeet} ft | latest tick: +${roundedLatestDeltaFeet} ft (${progressTickLabel})`,
+          ),
+          React.createElement(
+            Text,
+            { style: styles.debugLine },
+            `Pedometer steps: ${lastSensorSnapshot?.lastPedometerSteps ?? "n/a"} | speed: ${speedLabel}`,
+          ),
+          React.createElement(
+            Text,
+            { style: styles.debugLine },
+            `Raw pedometer: events=${lastSensorSnapshot?.pedometerEventCount ?? "n/a"} | last delta=${lastSensorSnapshot?.lastPedometerDeltaSteps ?? "n/a"} steps | callback dt=${lastSensorSnapshot?.lastPedometerDeltaTimeMs ?? "n/a"} ms | last event ${lastSensorSnapshot?.lastPedometerEventAtMs ? `${Math.round((Date.now() - lastSensorSnapshot.lastPedometerEventAtMs) / 100) / 10}s ago` : "n/a"}`,
+          ),
+          React.createElement(
+            Text,
+            { style: styles.debugLine },
+            `Interpolation: ${lastSensorSnapshot?.interpolationApplied ? "on" : "off"} | age: ${lastSensorSnapshot?.timeSincePedoMs ?? "n/a"} ms | last collision send: ${lastCollisionSendAtMs ? `${Math.round((Date.now() - lastCollisionSendAtMs) / 100) / 10}s ago` : "n/a"}`,
+          ),
+        ),
       ),
       isOrienting &&
-        React.createElement(View, { style: styles.orientationDimmer }),
+      React.createElement(View, { style: styles.orientationDimmer }),
       isOrienting &&
-        React.createElement(
-          View,
-          { style: styles.orientationCardContainer, pointerEvents: "none" },
-          React.createElement(
-            View,
-            { style: styles.orientationCard },
-            React.createElement(
-              Text,
-              { style: styles.orientationInstructionText },
-              orientationInstructionText,
-            ),
-            React.createElement(
-              View,
-              { style: styles.orientationCompassWrapper },
-              React.createElement(
-                View,
-                { style: styles.orientationRing },
-                Array.from({ length: ORIENTATION_RING_SEGMENTS }).map((_, index) =>
-                  React.createElement(View, {
-                    key: `orientation-ring-segment-${index}`,
-                    style: [
-                      styles.orientationRingSegment,
-                      {
-                        transform: [
-                          {
-                            rotate: `${(index / ORIENTATION_RING_SEGMENTS) * 360}deg`,
-                          },
-                          { translateY: -126 },
-                        ],
-                        backgroundColor:
-                          index < orientationProgressSegmentsLit
-                            ? colors.primary
-                            : "#CBD5E1",
-                      },
-                    ],
-                  }),
-                ),
-              ),
-              React.createElement(
-                View,
-                { style: styles.orientationCompassCenter },
-                React.createElement(
-                  Text,
-                  { style: styles.orientationCurrentHeadingText },
-                  orientationCurrentHeading == null ? "--°" : `${orientationCurrentHeading}°`,
-                ),
-                React.createElement(
-                  Text,
-                  { style: styles.orientationTargetHeadingText },
-                  `Target ${orientationTargetHeadingRounded == null ? "--°" : `${orientationTargetHeadingRounded}°`}`,
-                ),
-              ),
-            ),
-          ),
-        ),
-    ),
-
-    params.name &&
-      navigationInstructions &&
-      !isOrienting &&
       React.createElement(
         View,
-        { style: styles.bottomNavContainer },
+        { style: styles.orientationCardContainer, pointerEvents: "none" },
         React.createElement(
           View,
-          { style: styles.speakerButtonRow },
+          { style: styles.orientationCard },
           React.createElement(
-            Pressable,
-            {
-              style: [
-                styles.debugToggleButton,
-                showDebugBackground ? styles.debugToggleButtonActive : null,
-              ],
-              onPress: toggleDebugBackground,
-              accessibilityRole: "button",
-              accessibilityLabel: showDebugBackground
-                ? "Hide debug background"
-                : "Show debug background",
-            },
-            React.createElement(Ionicons, {
-              name: "bug-outline",
-              size: 22,
-              color: showDebugBackground ? colors.primary : colors.textSecondary,
-            }),
+            Text,
+            { style: styles.orientationInstructionText },
+            orientationInstructionText,
           ),
-          React.createElement(
-            Pressable,
-            {
-              style: styles.speakerButton,
-              onPress: toggleSpeakerMode,
-              accessibilityRole: "button",
-              accessibilityLabel: speakerMode ? "Speaker on, tap to turn off" : "Speaker off, tap to turn on",
-            },
-            React.createElement(Ionicons, {
-              name: speakerMode ? "volume-high" : "volume-mute-outline",
-              size: 28,
-              color: speakerMode ? colors.primary : colors.textSecondary,
-            }),
-          ),
-        ),
-        React.createElement(View, {
-          style: [styles.collisionRiskBar, { backgroundColor: collisionRiskColor }],
-        }),
-        React.createElement(
-          View,
-          {
-            style: [
-              styles.bottomNavBar,
-              { paddingBottom: insets.bottom || spacing.sm },
-            ],
-          },
           React.createElement(
             View,
-            { style: styles.bottomNavTextContainer },
-            React.createElement(
-              Text,
-              { style: styles.bottomNavDestination, numberOfLines: 1 },
-              params.name,
-            ),
+            { style: styles.orientationCompassWrapper },
             React.createElement(
               View,
-              { style: styles.bottomNavMetaRow },
-              totalDistanceFeet !== null &&
-                React.createElement(
-                  Text,
-                  { style: styles.bottomNavDistance },
-                  `${totalDistanceFeet} ft`,
-                ),
-              React.createElement(
-                View,
-                { style: styles.alignmentBadge },
-                React.createElement(Ionicons, {
-                  name: "compass-outline",
-                  size: 16,
-                  color: colors.textSecondary,
-                  style: styles.alignmentBadgeIcon,
-                }),
-                React.createElement(
-                  Text,
-                  { style: styles.alignmentText },
-                  roundedHeading == null ? "--°" : `${roundedHeading}°`,
-                ),
+              { style: styles.orientationRing },
+              Array.from({ length: ORIENTATION_RING_SEGMENTS }).map((_, index) =>
                 React.createElement(View, {
+                  key: `orientation-ring-segment-${index}`,
                   style: [
-                    styles.alignmentIndicator,
+                    styles.orientationRingSegment,
                     {
-                      backgroundColor: isAlignedWithInstructionHeading
-                        ? colors.primary
-                        : colors.secondary,
+                      transform: [
+                        {
+                          rotate: `${(index / ORIENTATION_RING_SEGMENTS) * 360}deg`,
+                        },
+                        { translateY: -126 },
+                      ],
+                      backgroundColor:
+                        index < orientationProgressSegmentsLit
+                          ? colors.primary
+                          : "#CBD5E1",
                     },
                   ],
                 }),
               ),
             ),
-          ),
-          React.createElement(
-            Pressable,
-            {
-              style: styles.bottomNavEndButton,
-              onPress: handleExitNavigation,
-              accessibilityRole: "button",
-              accessibilityLabel: "End navigation",
-            },
             React.createElement(
-              Text,
-              { style: styles.bottomNavEndButtonText },
-              "End navigation",
+              View,
+              { style: styles.orientationCompassCenter },
+              React.createElement(
+                Text,
+                { style: styles.orientationCurrentHeadingText },
+                orientationCurrentHeading == null ? "--°" : `${orientationCurrentHeading}°`,
+              ),
+              React.createElement(
+                Text,
+                { style: styles.orientationTargetHeadingText },
+                `Target ${orientationTargetHeadingRounded == null ? "--°" : `${orientationTargetHeadingRounded}°`}`,
+              ),
             ),
           ),
         ),
       ),
+    ),
+
+    params.name &&
+    navigationInstructions &&
+    !isOrienting &&
+    React.createElement(
+      View,
+      { style: styles.bottomNavContainer },
+      React.createElement(
+        View,
+        { style: styles.speakerButtonRow },
+        React.createElement(
+          Pressable,
+          {
+            style: [
+              styles.debugToggleButton,
+              showDebugBackground ? styles.debugToggleButtonActive : null,
+            ],
+            onPress: toggleDebugBackground,
+            accessibilityRole: "button",
+            accessibilityLabel: showDebugBackground
+              ? "Hide debug background"
+              : "Show debug background",
+          },
+          React.createElement(Ionicons, {
+            name: "bug-outline",
+            size: 22,
+            color: showDebugBackground ? colors.primary : colors.textSecondary,
+          }),
+        ),
+        React.createElement(
+          Pressable,
+          {
+            style: styles.speakerButton,
+            onPress: toggleSpeakerMode,
+            accessibilityRole: "button",
+            accessibilityLabel: speakerMode ? "Speaker on, tap to turn off" : "Speaker off, tap to turn on",
+          },
+          React.createElement(Ionicons, {
+            name: speakerMode ? "volume-high" : "volume-mute-outline",
+            size: 28,
+            color: speakerMode ? colors.primary : colors.textSecondary,
+          }),
+        ),
+      ),
+      React.createElement(View, {
+        style: [styles.collisionRiskBar, { backgroundColor: collisionRiskColor }],
+      }),
+      React.createElement(
+        View,
+        {
+          style: [
+            styles.bottomNavBar,
+            { paddingBottom: insets.bottom || spacing.sm },
+          ],
+        },
+        React.createElement(
+          View,
+          { style: styles.bottomNavTextContainer },
+          React.createElement(
+            Text,
+            { style: styles.bottomNavDestination, numberOfLines: 1 },
+            params.name,
+          ),
+          React.createElement(
+            View,
+            { style: styles.bottomNavMetaRow },
+            totalDistanceFeet !== null &&
+            React.createElement(
+              Text,
+              { style: styles.bottomNavDistance },
+              `${totalDistanceFeet} ft`,
+            ),
+            React.createElement(
+              View,
+              { style: styles.alignmentBadge },
+              React.createElement(Ionicons, {
+                name: "compass-outline",
+                size: 16,
+                color: colors.textSecondary,
+                style: styles.alignmentBadgeIcon,
+              }),
+              React.createElement(
+                Text,
+                { style: styles.alignmentText },
+                roundedHeading == null ? "--°" : `${roundedHeading}°`,
+              ),
+              React.createElement(View, {
+                style: [
+                  styles.alignmentIndicator,
+                  {
+                    backgroundColor: isAlignedWithInstructionHeading
+                      ? colors.primary
+                      : colors.secondary,
+                  },
+                ],
+              }),
+            ),
+          ),
+        ),
+        React.createElement(
+          Pressable,
+          {
+            style: styles.bottomNavEndButton,
+            onPress: handleExitNavigation,
+            accessibilityRole: "button",
+            accessibilityLabel: "End navigation",
+          },
+          React.createElement(
+            Text,
+            { style: styles.bottomNavEndButtonText },
+            "End navigation",
+          ),
+        ),
+      ),
+    ),
   );
 }
 
