@@ -38,7 +38,6 @@ NODES = [
                 label="Room 020",
                 side_by_bearing=[
                     DoorSideByBearing(bearing_deg=270, side="right"), # 321 degrees
-                    DoorSideByBearing(bearing_deg=90, side="left"), # 141 degrees 
                 ],
             ),
             DoorRef(
@@ -49,8 +48,7 @@ NODES = [
                 # 042 is straight from this node, no turn is needed.
 
                 side_by_bearing=[
-                    DoorSideByBearing(bearing_deg=0, side="right"), # 51 degrees
-                    DoorSideByBearing(bearing_deg=180, side="left"), 
+                    DoorSideByBearing(bearing_deg=270, side="left"),
                 ],
             ),
         ],
@@ -185,8 +183,7 @@ NODES = [
                 id="room_040",
                 label="Room 040",
                 side_by_bearing=[
-                    DoorSideByBearing(bearing_deg=270, side="right"), # 321 degrees
-                    DoorSideByBearing(bearing_deg=90, side="left"), # 141 degrees 
+                    DoorSideByBearing(bearing_deg=90, side="right"),
                 ],
             ),
             DoorRef(
@@ -197,8 +194,7 @@ NODES = [
                 # 042 is straight from this node, no turn is needed.
 
                 side_by_bearing=[
-                    DoorSideByBearing(bearing_deg=0, side="right"), 
-                    DoorSideByBearing(bearing_deg=180, side="left"), 
+                    DoorSideByBearing(bearing_deg=90, side="left"),
                 ],
             ),
         ],
@@ -325,7 +321,6 @@ NODES = [
                 id="room_056",
                 label="Room 056",
                 side_by_bearing=[
-                    DoorSideByBearing(bearing_deg=180, side="right"), 
                     DoorSideByBearing(bearing_deg=0, side="left"), 
                 ],
             ),
@@ -449,7 +444,7 @@ NODES = [
                 label="Room 069",
                 side_by_bearing=[
                     DoorSideByBearing(bearing_deg=270, side="left"), # 321 degrees
-                    DoorSideByBearing(bearing_deg=90, side="right"), # 141 degrees 
+                    DoorSideByBearing(bearing_deg=0, side="right"),
                 ],
             ),
         ],
@@ -480,16 +475,14 @@ NODES = [
                 id="room_005b",
                 label="Room 005B",
                 side_by_bearing=[
-                    DoorSideByBearing(bearing_deg=0, side="left"), 
-                    DoorSideByBearing(bearing_deg=180, side="right"), 
+                    DoorSideByBearing(bearing_deg=90, side="left"),
                 ],
             ),
             DoorRef(
                 id="room_005",
                 label="Room 005",
                 side_by_bearing=[
-                    DoorSideByBearing(bearing_deg=0, side="left"), 
-                    DoorSideByBearing(bearing_deg=180, side="right"), 
+                    DoorSideByBearing(bearing_deg=90, side="right"),
                 ],
             ),
         ],
@@ -596,7 +589,7 @@ NODES = [
                 label="Room 129",
                 side_by_bearing=[
                     DoorSideByBearing(bearing_deg=0, side="left"), 
-                    DoorSideByBearing(bearing_deg=180, side="right"), 
+                    DoorSideByBearing(bearing_deg=90, side="right"),
                 ],
             ),
         ],
