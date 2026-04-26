@@ -106,11 +106,15 @@ export interface NavigationStartRequest {
 
 export interface NavigationInstruction {
   step: number;
+  step_type: "segment" | "arrival";
   distance_feet: number;
   direction: string | null;
-  turn_at_end?: "left" | "right" | "around" | "straight" | null;
+  start_node_id: string;
+  end_node_id: string;
   node_id: string;
-  coordinates: { x?: number; y?: number; x_feet?: number; y_feet?: number }; 
+  coordinates: { x: number; y: number };
+  heading_degrees: number | null;
+  turn_intent: "left" | "right" | "around" | "straight" | null;
 }
 
 export interface NavigationStartResponse {
@@ -189,7 +193,7 @@ export async function register(userData: RegisterRequest): Promise<RegisterRespo
     lastName: userData.lastName,
     email: trimmedEmail,
   };
-  
+
   try {
     const response = await fetch(url, {
       method: "POST",
