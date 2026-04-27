@@ -69,7 +69,7 @@ export default function NavigationSession() {
   const navFrameInFlightRef = React.useRef(false);
   const collisionFrameInFlightRef = React.useRef(false);
   const requestCounterRef = React.useRef(0);
-  const [speakerMode, setSpeakerMode] = React.useState(false);
+  const [speakerMode, setSpeakerMode] = React.useState(true);
   const [currentStepIndex, setCurrentStepIndex] = React.useState(0);
   const focalLengthPixels = React.useMemo(() => getFocalLengthPixels(LIVE_NAV_FRAME_WIDTH), []);
   const { getSnapshot, start: startSensors, stop: stopSensors } = useSensorData();
@@ -125,7 +125,7 @@ export default function NavigationSession() {
       // By supplying only width, Expo automatically scales the height to preserve the full frame's aspect ratio.
       const resized = await manipulateAsync(
         photo.uri,
-        [{ resize: { width: LIVE_NAV_FRAME_WIDTH } }], 
+        [{ resize: { width: LIVE_NAV_FRAME_WIDTH } }],
         encodeOptions,
       );
       return resized.base64 ?? null;
@@ -224,7 +224,7 @@ export default function NavigationSession() {
     }
 
     if (Array.isArray(response.estimatedDistances) && response.estimatedDistances.length > 0) {
-      
+
       console.log("Received collision update with distances (meters):", response.estimatedDistances);
       // The backend returns distances in meters, convert to feet and find the closest object
       const distancesInMeters = response.estimatedDistances.map((entry) => parseFloat(entry.distance));
@@ -232,21 +232,21 @@ export default function NavigationSession() {
 
       const minDistanceFeet = minDistanceMeters * 3.28084;
 
-      let currentInterval = 0; 
+      let currentInterval = 0;
       if (minDistanceFeet < 5) currentInterval = 3;
       else if (minDistanceFeet < 10) currentInterval = 2;
       else if (minDistanceFeet <= 20) currentInterval = 1;
 
       const now = Date.now();
       const timeSinceLast = now - lastVibrationTimeRef.current;
-      
+
       console.log(`Closest object at ${minDistanceFeet.toFixed(1)} ft, interval ${currentInterval}, time since last vibration ${timeSinceLast} ms`);
       if (currentInterval > 0) {
         // TRIGGER RULE:
         // 1. If danger escalated (e.g. Low -> High), vibrate immediately to warn the user.
         // 2. If danger is the same/lower, wait for the previous pattern to fully finish (500ms frame cycle).
         if (currentInterval > lastIntervalRef.current || timeSinceLast >= 500) {
-          
+
           if (currentInterval === 3) {
             // [0-5) ft: High danger - 3 rapid buzzes
             // Duration: 100+40+100+40+100 = 380ms (Leaves 120ms of silence before next frame)
@@ -522,129 +522,129 @@ export default function NavigationSession() {
             : {}),
         },
         navigationLoading &&
+        React.createElement(
+          View,
+          { style: styles.loadingBanner },
+          React.createElement(ActivityIndicator, {
+            size: "small",
+            color: colors.buttonPrimaryText,
+          }),
           React.createElement(
-            View,
-            { style: styles.loadingBanner },
-            React.createElement(ActivityIndicator, {
-              size: "small",
-              color: colors.buttonPrimaryText,
-            }),
-            React.createElement(
-              Text,
-              { style: styles.loadingText },
-              "Calculating route…",
-            ),
+            Text,
+            { style: styles.loadingText },
+            "Calculating route…",
           ),
+        ),
 
         navigationError &&
+        React.createElement(
+          View,
+          { style: styles.errorBanner },
           React.createElement(
-            View,
-            { style: styles.errorBanner },
-            React.createElement(
-              Text,
-              { style: styles.errorText },
-              navigationError,
-            ),
+            Text,
+            { style: styles.errorText },
+            navigationError,
           ),
+        ),
 
         navigationInstructions &&
-          React.createElement(NavigationInstructionsDropdown, {
-            instructions: navigationInstructions,
-            onExit: handleExitNavigation,
-            selectedIndex: currentStepIndex,
-            onSelectedIndexChange: handleSelectedIndexChange,
-          }),
+        React.createElement(NavigationInstructionsDropdown, {
+          instructions: navigationInstructions,
+          onExit: handleExitNavigation,
+          selectedIndex: currentStepIndex,
+          onSelectedIndexChange: handleSelectedIndexChange,
+        }),
       ),
     ),
 
     params.name &&
-      navigationInstructions &&
+    navigationInstructions &&
+    React.createElement(
+      View,
+      { style: styles.bottomNavContainer },
       React.createElement(
         View,
-        { style: styles.bottomNavContainer },
+        { style: styles.speakerButtonRow },
+        React.createElement(
+          Pressable,
+          {
+            style: styles.speakerButton,
+            onPress: toggleSpeakerMode,
+            accessibilityRole: "button",
+            accessibilityLabel: speakerMode ? "Speaker on, tap to turn off" : "Speaker off, tap to turn on",
+          },
+          React.createElement(Ionicons, {
+            name: speakerMode ? "volume-high" : "volume-mute-outline",
+            size: 28,
+            color: speakerMode ? colors.primary : colors.textSecondary,
+          }),
+        ),
+      ),
+      React.createElement(
+        View,
+        {
+          style: [
+            styles.bottomNavBar,
+            { paddingBottom: insets.bottom || spacing.sm },
+          ],
+        },
         React.createElement(
           View,
-          { style: styles.speakerButtonRow },
+          { style: styles.bottomNavTextContainer },
           React.createElement(
-            Pressable,
-            {
-              style: styles.speakerButton,
-              onPress: toggleSpeakerMode,
-              accessibilityRole: "button",
-              accessibilityLabel: speakerMode ? "Speaker on, tap to turn off" : "Speaker off, tap to turn on",
-            },
+            Text,
+            { style: styles.bottomNavDestination, numberOfLines: 1 },
+            params.name,
+          ),
+          totalDistanceFeet !== null &&
+          React.createElement(
+            Text,
+            { style: styles.bottomNavDistance },
+            `${totalDistanceFeet} ft`,
+          ),
+          // Alignment indicator — shows when heading_degrees is available on the active instruction.
+          // Hidden on the final "arrive" step (heading_degrees is null) and before instructions load.
+          alignment !== "unknown" &&
+          React.createElement(
+            View,
+            { style: styles.alignmentRow },
             React.createElement(Ionicons, {
-              name: speakerMode ? "volume-high" : "volume-mute-outline",
-              size: 28,
-              color: speakerMode ? colors.primary : colors.textSecondary,
+              name:
+                alignment === "aligned"
+                  ? "checkmark-circle"
+                  : alignment === "turn_left"
+                    ? "arrow-back-circle"
+                    : "arrow-forward-circle",
+              size: 20,
+              color: alignment === "aligned" ? colors.primary : colors.textSecondary,
             }),
+            React.createElement(
+              Text,
+              { style: styles.alignmentText },
+              alignment === "aligned"
+                ? "Facing the right way"
+                : alignment === "turn_left"
+                  ? "Turn left"
+                  : "Turn right",
+            ),
           ),
         ),
         React.createElement(
-          View,
+          Pressable,
           {
-            style: [
-              styles.bottomNavBar,
-              { paddingBottom: insets.bottom || spacing.sm },
-            ],
+            style: styles.bottomNavEndButton,
+            onPress: handleExitNavigation,
+            accessibilityRole: "button",
+            accessibilityLabel: "End navigation",
           },
           React.createElement(
-            View,
-            { style: styles.bottomNavTextContainer },
-            React.createElement(
-              Text,
-              { style: styles.bottomNavDestination, numberOfLines: 1 },
-              params.name,
-            ),
-            totalDistanceFeet !== null &&
-              React.createElement(
-                Text,
-                { style: styles.bottomNavDistance },
-                `${totalDistanceFeet} ft`,
-              ),
-            // Alignment indicator — shows when heading_degrees is available on the active instruction.
-            // Hidden on the final "arrive" step (heading_degrees is null) and before instructions load.
-            alignment !== "unknown" &&
-              React.createElement(
-                View,
-                { style: styles.alignmentRow },
-                React.createElement(Ionicons, {
-                  name:
-                    alignment === "aligned"
-                      ? "checkmark-circle"
-                      : alignment === "turn_left"
-                      ? "arrow-back-circle"
-                      : "arrow-forward-circle",
-                  size: 20,
-                  color: alignment === "aligned" ? colors.primary : colors.textSecondary,
-                }),
-                React.createElement(
-                  Text,
-                  { style: styles.alignmentText },
-                  alignment === "aligned"
-                    ? "Facing the right way"
-                    : alignment === "turn_left"
-                    ? "Turn left"
-                    : "Turn right",
-                ),
-              ),
-          ),
-          React.createElement(
-            Pressable,
-            {
-              style: styles.bottomNavEndButton,
-              onPress: handleExitNavigation,
-              accessibilityRole: "button",
-              accessibilityLabel: "End navigation",
-            },
-            React.createElement(
-              Text,
-              { style: styles.bottomNavEndButtonText },
-              "End navigation",
-            ),
+            Text,
+            { style: styles.bottomNavEndButtonText },
+            "End navigation",
           ),
         ),
       ),
+    ),
   );
 }
 
