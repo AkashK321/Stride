@@ -222,17 +222,11 @@ def predict_image_bytes(model: YOLO, image_bytes: bytes, content_type: str | Non
                 }
 
                 if class_name == SIGN_CLASS_NAME:
-                    crop_w = int(x2) - int(x1)
-                    crop_h = int(y2) - int(y1)
-                    if crop_w < OCR_MIN_CROP_PX or crop_h < OCR_MIN_CROP_PX:
-                        pred["text"] = ""
-                    else:
-                        try:
-                            text = _extract_sign_text(image, int(x1), int(y1), int(x2), int(y2))
-                            pred["text"] = text
-                        except Exception as ocr_err:
-                            print(f"OCR failed for sign crop: {ocr_err}")
-                            pred["text"] = ""
+                    # Never attempt OCR on the low-res detection frame (typically 360px).
+                    # Sign crops are too small (often <40px) for reliable OCR.
+                    # The backend will request a high-res crop from the phone via
+                    # the Detect-then-Zoom pipeline, which hits POST /ocr instead.
+                    pred["text"] = ""
 
                 predictions.append(pred)
 

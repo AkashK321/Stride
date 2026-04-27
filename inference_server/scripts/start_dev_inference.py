@@ -198,6 +198,7 @@ def main() -> None:
 
     region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or "us-east-1"
     lambda_name = os.environ.get("OBJECT_DETECTION_LAMBDA_NAME", "").strip()
+    nav_lambda_name = os.environ.get("LIVE_NAVIGATION_LAMBDA_NAME", "").strip()
     port = int(os.environ.get("INFERENCE_PORT", "8080"))
     ngrok_bin = os.environ.get("NGROK_CMD", "ngrok").strip() or "ngrok"
     use_tunnel = not _bool_env("SKIP_TUNNEL") and not args.public_url
@@ -211,6 +212,9 @@ def main() -> None:
         lam = boto3.client("lambda", region_name=region)
         _lambda_exists(lam, lambda_name)
         _teardown_lambda(lam, lambda_name, yes=args.yes)
+        if nav_lambda_name:
+            _lambda_exists(lam, nav_lambda_name)
+            _teardown_lambda(lam, nav_lambda_name, yes=args.yes)
         return
 
     if not lambda_name:
@@ -220,6 +224,8 @@ def main() -> None:
     _preflight_aws(region)
     lam = boto3.client("lambda", region_name=region)
     _lambda_exists(lam, lambda_name)
+    if nav_lambda_name:
+        _lambda_exists(lam, nav_lambda_name)
 
     tunnel_proc: subprocess.Popen | None = None
     public_url: str | None = None
@@ -307,6 +313,16 @@ def main() -> None:
             clear_secret=not require_session,
         )
         print(f"Lambda {lambda_name!r}: INFERENCE_HTTP_URL={public_url!r}")
+
+        if nav_lambda_name:
+            _merge_lambda_env(
+                lam,
+                nav_lambda_name,
+                inference_url=public_url,
+                inference_secret=session_secret,
+                clear_secret=not require_session,
+            )
+            print(f"Lambda {nav_lambda_name!r}: INFERENCE_HTTP_URL={public_url!r}")
 
         print(f"Uvicorn on http://127.0.0.1:{port}/ (Ctrl+C stops server and tunnel).")
         code = uvicorn_proc.wait()

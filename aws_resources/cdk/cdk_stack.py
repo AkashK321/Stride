@@ -185,9 +185,14 @@ class CdkStack(Stack):
 
         # Optional: HTTP POST /invocations (Ultralytics-compatible JSON).
         # Set in cdk.context.json, e.g. "inferenceHttpUrl": "http://internal-host:8080" (VPC/LB/tunnel).
+        # Both Lambdas need the URL: ObjectDetection for /invocations, LiveNavigation for /invocations + /ocr.
         inference_http_url = self.node.try_get_context("inferenceHttpUrl")
         if inference_http_url:
             object_detection_handler.add_environment(
+                "INFERENCE_HTTP_URL",
+                str(inference_http_url),
+            )
+            live_navigation_handler.add_environment(
                 "INFERENCE_HTTP_URL",
                 str(inference_http_url),
             )
@@ -285,6 +290,9 @@ class CdkStack(Stack):
 
         coco_config_table.grant_read_data(object_detection_handler)
         object_detection_handler.add_environment("HEIGHT_MAP_TABLE_NAME", coco_config_table.table_name)
+
+        coco_config_table.grant_read_data(live_navigation_handler)
+        live_navigation_handler.add_environment("HEIGHT_MAP_TABLE_NAME", coco_config_table.table_name)
 
         CfnOutput(
             self, "CocoConfigTableName",
