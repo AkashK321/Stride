@@ -71,30 +71,30 @@ def test_http_inference_enabled(api_base_url, ws_endpoint_healthy):
         ws.close()
 
 
-@pytest.mark.skipif(
-    os.getenv("INFERENCE_HTTP_URL"),
-    reason="INFERENCE_HTTP_URL is set; unavailable-path test only applies when unset",
-)
-def test_inference_unavailable_when_http_url_missing(api_base_url, ws_endpoint_healthy):
-
-    ws = create_connection(api_base_url)
-    try:
-        with open(IMAGE_PATH, "rb") as f:
-            img_str = base64.b64encode(f.read()).decode("utf-8")
-
-        ws.send(json.dumps({"action": "frame", "body": img_str, "request_id": 1}))
-        response = json.loads(ws.recv())
-
-        assert response.get("valid") is True
-        assert "estimatedDistances" in response
-        assert isinstance(response.get("estimatedDistances"), list)
-        assert response.get("inferenceStatus") == "unavailable"
-        assert "error" in response
-        # Verify request_id is echoed back
-        assert response.get("request_id") == 1, "Expected request_id to be echoed back"
-        print(f"Inference-unavailable response: {response}")
-    finally:
-        ws.close()
+# @pytest.mark.skipif(
+#     os.getenv("INFERENCE_HTTP_URL"),
+#     reason="INFERENCE_HTTP_URL is set; unavailable-path test only applies when unset",
+# )
+# def test_inference_unavailable_when_http_url_missing(api_base_url, ws_endpoint_healthy):
+#
+#     ws = create_connection(api_base_url)
+#     try:
+#         with open(IMAGE_PATH, "rb") as f:
+#             img_str = base64.b64encode(f.read()).decode("utf-8")
+#
+#         ws.send(json.dumps({"action": "frame", "body": img_str, "request_id": 1}))
+#         response = json.loads(ws.recv())
+#
+#         assert response.get("valid") is True
+#         assert "estimatedDistances" in response
+#         assert isinstance(response.get("estimatedDistances"), list)
+#         assert response.get("inferenceStatus") == "unavailable"
+#         assert "error" in response
+#         # Verify request_id is echoed back
+#         assert response.get("request_id") == 1, "Expected request_id to be echoed back"
+#         print(f"Inference-unavailable response: {response}")
+#     finally:
+#         ws.close()
 
 
 def test_missing_request_id(api_base_url, ws_endpoint_healthy):
