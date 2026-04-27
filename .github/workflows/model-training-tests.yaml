@@ -1,0 +1,80 @@
+# ============================================================================
+# WORKFLOW: Model Training Tests
+# ============================================================================
+#
+# PURPOSE:
+#   Runs unit and integration tests for the model training pipeline
+#   (dataset splitting, face anonymization, OCR preprocessing).
+#
+# TRIGGERS:
+#   1. Push to any branch when model_training/** or this workflow changes
+#   2. Pull request when model_training/** changes
+#   3. Manual trigger (workflow_dispatch)
+#
+# ============================================================================
+
+name: Model Training Tests
+
+on:
+  push:
+    paths:
+      - 'model_training/**'
+      - '.github/workflows/model-training-tests.yaml'
+  pull_request:
+    paths:
+      - 'model_training/**'
+      - '.github/workflows/model-training-tests.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+concurrency:
+  group: model-training-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  model-training-tests:
+    name: Model Training Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: model_training/requirements.txt
+
+      - name: Install dependencies
+        working-directory: model_training
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run unit tests
+        working-directory: model_training
+        run: |
+          python -m pytest tests/unit/ -v --junitxml=test-results/unit-tests.xml
+
+      - name: Run integration tests
+        working-directory: model_training
+        run: |
+          python -m pytest tests/integration/ -v --junitxml=test-results/integration-tests.xml
+
+      - name: Publish test results
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Model Training Test Results
+          path: model_training/test-results/*.xml
+          reporter: java-junit
+          fail-on-error: false
+          list-suites: all
+          list-tests: all
