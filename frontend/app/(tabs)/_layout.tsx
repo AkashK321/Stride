@@ -34,12 +34,10 @@ export default function TabsLayout() {
           },
         },
       },
-    // User profile tab - user's personal profile and information
-    React.createElement(Tabs.Screen, { name: "profile" }),
     // Home feed / dashboard tab - main content feed
     React.createElement(Tabs.Screen, { name: "home" }),
     // App settings and preferences tab - app configuration and preferences
-    React.createElement(Tabs.Screen, { name: "settings" }),
+    React.createElement(Tabs.Screen, { name: "profile" }),
     // Navigation tab - camera frame capture and transmission
     React.createElement(Tabs.Screen, { name: "nav-dev" }),
     // Sensor dev tab - hidden from tab bar (dev only, accessible via direct navigation)

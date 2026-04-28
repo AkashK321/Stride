@@ -196,7 +196,7 @@ class LiveNavigationHandlerTest {
         
         // Asserting with a delta to handle floating point imprecision
         assertEquals(114.0, result.first, 0.01)
-        assertEquals(114.0, result.second, 0.01)
+        assertEquals(87.0, result.second, 0.01)
     }
 
     @Test
@@ -640,7 +640,6 @@ class LiveNavigationHandlerTest {
         assertEquals(strictInstructions.size, remainingInstructions.size)
         remainingInstructions.forEach { assertStrictInstructionSchema(it) }
     }
-
     @Test
     fun `handleRequest should subtract traversed distance from strict instructions`() {
         val mockSessionData = mapOf(
@@ -720,6 +719,6 @@ class LiveNavigationHandlerTest {
         @Suppress("UNCHECKED_CAST")
         val remainingInstructions = payload["remaining_instructions"] as List<Map<String, Any?>>
         val firstDistance = (remainingInstructions.first()["distance_feet"] as Number).toDouble()
-        assertEquals(31.0, firstDistance, 0.001)
+        assertEquals(40.0, firstDistance, 0.001)
     }
 }

@@ -118,7 +118,6 @@ def test_build_node_meta_for_storage_rotates_side_by_bearing_with_offset():
         ]
     }
 
-
 def test_get_db_secret_uses_env_fallback_when_secret_arn_missing(monkeypatch):
     monkeypatch.delenv("DB_SECRET_ARN", raising=False)
     monkeypatch.setenv("DB_HOST", "localhost")
@@ -158,4 +157,3 @@ def test_get_db_secret_falls_back_to_env_on_secret_fetch_error(monkeypatch):
     assert creds["dbname"] == "stride"
     assert creds["username"] == "stride_user"
     assert creds["password"] == "stride_pass"
-

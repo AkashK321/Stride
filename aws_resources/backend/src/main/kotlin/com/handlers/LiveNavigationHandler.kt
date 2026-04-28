@@ -38,7 +38,9 @@ import kotlin.math.log
 import kotlin.math.sqrt
 
 private val METERS_TO_FEET = 3.28084
-private val FEET_TO_PIXELS = 10.0
+// Stored map coordinates are in feet (post-upload rotation only), so movement/progress
+// conversions are identity in live navigation.
+private val FEET_TO_PIXELS = 1.0
 private val PIXEL_TO_FEET = 1.0 / FEET_TO_PIXELS
 private val MAX_DISTANCE_FEET = 15.0
 
@@ -81,7 +83,6 @@ class LiveNavigationHandler(
             logger.log("[nav-trace] failed_to_serialize event=$event error=${e.message}")
         }
     }
-
     private fun estimateUserLocation(payload: Map<String, Any?>, prevX: Double, prevY: Double, prevTimeMs: Long, logger: LambdaLogger): Pair<Double, Double> {
         val heading = (payload["heading_degrees"] as Number).toDouble()
         val accel = payload["accelerometer"] as Map<*, *>
@@ -178,7 +179,6 @@ class LiveNavigationHandler(
 
         return listOf(firstInstruction.copy(distance_feet = adjustedDistanceFeet)) + instructions.drop(1)
     }
-
     private fun fuseLocationWithLandmarks(
         pdrX: Double, 
         pdrY: Double, 
@@ -354,7 +354,6 @@ class LiveNavigationHandler(
                 "timestamp_ms" to currentTimestampMs,
             ),
         )
-
         val sessionData = sessionTableClient.getItemDetails(sessionId)
         val previousX = sessionData?.get("current_x")?.toDoubleOrNull() ?: 0.0
         val previousY = sessionData?.get("current_y")?.toDoubleOrNull() ?: 0.0
@@ -509,7 +508,6 @@ class LiveNavigationHandler(
                 "estimated_y" to estimatedY,
             ),
         )
-
         // Update state in DynamoDB with new estimated location and timestamp. Set TTL for 2 hours to allow stale session cleanup.
         val ttlSeconds = (System.currentTimeMillis() / 1000) + 7200 // 2 hour expiration
         sessionTableClient.putItem(mapOf(

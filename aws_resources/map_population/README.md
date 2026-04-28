@@ -67,7 +67,6 @@ If `DB_SECRET_ARN` is not available or access is denied, map population can fall
    - `populate` ensures `Landmarks.DoorID` exists (non-destructive `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`).
    - Landmark `door_id` values are authored manually in `floor_data/*/landmarks.py`.
    - Population fails if any authored landmark is missing `door_id`.
-
 ### Upload offsets
 
 `python cli.py populate` has two independent rotation offsets:
@@ -131,4 +130,3 @@ Default plot files are saved under `aws_resources/map_population/plots/`:
 - Edge bearings persisted to DB are always recomputed from stored node coordinates.
 - `python cli.py clear-db --yes` clears map data tables only (schema remains).
 - COCO object config seeding is separate (`aws_resources/object_config_seed`) and not part of map population.
-
