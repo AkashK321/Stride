@@ -71,16 +71,16 @@ EDGES = [
     # hall_234 -> hall_236_237 (East, 90°)
     edge(start="hall_234", end="hall_236_237", bearing_deg=90, bidirectional=True),
     
-    # hall_236_237 -> corner_southeast (East, 90°)
-    edge(start="hall_236_237", end="corner_southeast", bearing_deg=90, bidirectional=True),
+    # hall_236_237 -> corner_southeast_f2 (East, 90°)
+    edge(start="hall_236_237", end="corner_southeast_f2", bearing_deg=90, bidirectional=True),
     
     
     # ==================================================================
     # EAST VERTICAL HALLWAY (x=83, South to North)
     # ==================================================================
     
-    # corner_southeast -> hall_240_2e01 (going North, 0°)
-    edge(start="corner_southeast", end="hall_240_2e01", bearing_deg=0, bidirectional=True),
+    # corner_southeast_f2 -> hall_240_2e01 (going North, 0°)
+    edge(start="corner_southeast_f2", end="hall_240_2e01", bearing_deg=0, bidirectional=True),
     
     # hall_240_2e01 -> hall_240a_241 (North, 0°)
     edge(start="hall_240_2e01", end="hall_240a_241", bearing_deg=0, bidirectional=True),

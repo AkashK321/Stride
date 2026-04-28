@@ -268,8 +268,11 @@ export default function Navigation() {
           stopNavLoop();
         }
         // If error response, show it
-        if (response.type === "navigation_error" || response.error || response.status === "error") {
-          setLastError(response.error || response.message || "Unknown error from backend");
+        const hasErrorField = "error" in response && typeof response.error === "string";
+        const hasErrorStatus = "status" in response && response.status === "error";
+        if (response.type === "navigation_error" || hasErrorField || hasErrorStatus) {
+          const errorMessage = hasErrorField ? response.error : response.message;
+          setLastError(errorMessage || "Unknown error from backend");
         }
       });
       wsRef.current = ws;

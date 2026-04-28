@@ -20,7 +20,14 @@ const MID_HEIGHT_FRACTION = 0.5;
 const FULL_HEIGHT_FRACTION = 0.8;
 
 export interface SearchSheetProps {
-  onSelectDestination: (landmark: LandmarkResult) => void;
+  onSelectDestination?: (landmark: LandmarkResult) => void;
+  onSelectLandmark?: (
+    landmark: LandmarkResult,
+    context: "start" | "destination",
+  ) => void;
+  pickerContext?: "start" | "destination";
+  presetQuery?: string;
+  showRecentsWhenEmpty?: boolean;
 }
 
 export interface SearchSheetRef {
@@ -28,7 +35,16 @@ export interface SearchSheetRef {
 }
 
 const SearchSheet = React.forwardRef<SearchSheetRef, SearchSheetProps>(
-  ({ onSelectDestination }, ref) => {
+  (
+    {
+      onSelectDestination,
+      onSelectLandmark,
+      pickerContext = "destination",
+      presetQuery,
+      showRecentsWhenEmpty = true,
+    },
+    ref,
+  ) => {
     const insets = useSafeAreaInsets();
     const screenHeight = Dimensions.get("window").height;
     const snapHeights = React.useMemo(() => {
@@ -167,11 +183,33 @@ const SearchSheet = React.forwardRef<SearchSheetRef, SearchSheetProps>(
       expandToFull();
     }, [expandToFull]);
 
+    React.useEffect(() => {
+      if (typeof presetQuery !== "string") {
+        return;
+      }
+
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+
+      const nextQuery = presetQuery.trim();
+      setQuery(nextQuery);
+      setError(null);
+
+      if (nextQuery.length === 0) {
+        setResults([]);
+        setSearched(false);
+        return;
+      }
+
+      expandToFull();
+      void performSearch(nextQuery);
+    }, [expandToFull, performSearch, presetQuery]);
+
     const handleSelectResult = React.useCallback(
       (landmark: LandmarkResult) => {
         Keyboard.dismiss();
 
-        onSelectDestination(landmark);
+        onSelectLandmark?.(landmark, pickerContext);
+        onSelectDestination?.(landmark);
 
          // Move selected destination to the front of recent results
         setRecentResults((prev) => {
@@ -187,7 +225,7 @@ const SearchSheet = React.forwardRef<SearchSheetRef, SearchSheetProps>(
         setError(null);
         snapTo(snapHeights.rest);
       },
-      [onSelectDestination, snapHeights.rest, snapTo],
+      [onSelectDestination, onSelectLandmark, pickerContext, snapHeights.rest, snapTo],
     );
 
     const handleRetry = React.useCallback(() => {
@@ -251,11 +289,25 @@ const SearchSheet = React.forwardRef<SearchSheetRef, SearchSheetProps>(
         value: query,
         onChangeText: handleChangeText,
         onFocus: handleFocus,
+        placeholder:
+          pickerContext === "start"
+            ? "Search start locations..."
+            : "Search destinations...",
+        accessibilityLabel:
+          pickerContext === "start" ? "Search start locations" : "Search destinations",
+        accessibilityHint:
+          pickerContext === "start"
+            ? "Type to search for a start location"
+            : "Type to search for a destination",
       }),
       React.createElement(SearchResultsList, {
         results: query.trim().length === 0 ? [] : results,
         recentResults: query.trim().length === 0 ? recentResults.slice(0, 3) : [],
-        showRecents: query.trim().length === 0 && recentResults.length > 0,
+        showRecents:
+          showRecentsWhenEmpty &&
+          query.trim().length === 0 &&
+          recentResults.length > 0 &&
+          pickerContext === "destination",
         loading,
         error,
         searched,

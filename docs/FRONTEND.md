@@ -74,6 +74,11 @@ You can open the app in:
   - Example: `http://192.168.1.100:3001/log`
   - See [Development CSV Logger](#development-csv-logger) section for setup instructions
 
+- `EXPO_PUBLIC_ENABLE_DISTANCE_INTERPOLATION` - Enables distance interpolation between pedometer updates
+  - Defaults to disabled when unset
+  - Set to `"true"` to reduce zero-distance live nav frames
+  - Example: `EXPO_PUBLIC_ENABLE_DISTANCE_INTERPOLATION=true`
+
 ### Expo Environment Variables
 
 In Expo, environment variables prefixed with `EXPO_PUBLIC_` are exposed to client-side code. This is necessary for the API base URL since it's used in the React Native app.

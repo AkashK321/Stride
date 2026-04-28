@@ -22,16 +22,17 @@ class FloorRegistration:
 REGISTERED_FLOORS: tuple[FloorRegistration, ...] = (
     FloorRegistration(
         building_id="B01",
-        floor_number=0,
-        module_path="floor_data.floor0",
-        data_var="FLOOR0_DATA",
-    ),
-    FloorRegistration(
-        building_id="B01",
         floor_number=2,
         module_path="floor_data.floor2_v2",
         data_var="FLOOR2_DATA_V2",
         validator_path="floor_data.floor2_v2.validate:validate_floor2_v2",
+    ),
+    FloorRegistration(
+        building_id="B01",
+        floor_number=0,
+        module_path="floor_data.floor0",
+        data_var="FLOOR0_DATA",
+        validator_path="floor_data.floor0.validate:validate_floor0",
     ),
 )
 
@@ -120,6 +121,14 @@ def validate_registered_floors() -> None:
         if registration.validator_path:
             validator = _load_validator(registration.validator_path)
             validator()
+        else:
+            _, _, floor = _extract_registered_floor_data(registration)
+            # Runtime import avoids pyright path-resolution issues in CLI tooling context.
+            generic_validator = importlib.import_module("floor_data.validation").validate_floor_payload
+            generic_validator(
+                floor,
+                floor_label=f"{registration.building_id}-F{registration.floor_number}",
+            )
 
     # Also verify the registration/data contract itself.
     get_all_buildings_data()

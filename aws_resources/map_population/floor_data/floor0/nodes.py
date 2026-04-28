@@ -307,7 +307,7 @@ NODES = [
         y_feet= 78,
         doors=[
             DoorRef(
-                id="room_054",
+                id="room_054b",
                 label="Room 054B",
                 side_by_bearing=[
                     DoorSideByBearing(bearing_deg=180, side="right"), 
@@ -604,26 +604,26 @@ NODES = [
 
     # corner nodes
     HallwayPointNode(
-        id="corner_southwest",
+        id="corner_southwest_f0",
         x_feet=-83,
         y_feet=4.5,
         # No doors, just a corner
     ).asdict(),
     
     HallwayPointNode(
-        id="corner_southeast",
+        id="corner_southeast_f0",
         x_feet=82.5,
         y_feet=4.5,
     ).asdict(),
 
     HallwayPointNode(
-        id="corner_northeast",
+        id="corner_northeast_f0",
         x_feet=87,
         y_feet=103,
     ).asdict(),
 
     HallwayPointNode(
-        id="corner_rm005",
+        id="corner_rm005_f0",
         x_feet=-83,
         y_feet=65,
     ).asdict(),
@@ -635,43 +635,43 @@ NODES = [
     # ).asdict(),
 
     HallwayPointNode( #the turn from lab wing to the staircase area
-        id="corner_mid",
+        id="corner_mid_f0",
         x_feet=-46,
         y_feet=98,
     ).asdict(),
 
     HallwayPointNode(
-        id="corner_mid2",
+        id="corner_mid2_f0",
         x_feet=-46,
         y_feet=94,
     ).asdict(),
 
     HallwayPointNode(
-        id="corner_mid3",
+        id="corner_mid3_f0",
         x_feet=-41,
         y_feet=4.5,
     ).asdict(),
 
     HallwayPointNode(
-        id="corner_lobby_mid",
+        id="corner_lobby_mid_f0",
         x_feet=-111,
         y_feet=94,
     ).asdict(),
 
     HallwayPointNode(
-        id="corner_lobby_north",
+        id="corner_lobby_north_f0",
         x_feet=-111,
         y_feet=145,
     ).asdict(),
 
     HallwayPointNode(
-        id="corner_lobby_south",
+        id="corner_lobby_south_f0",
         x_feet=-111,
         y_feet=87,
     ).asdict(),
 
     HallwayPointNode(
-        id="corner_lobby_west",
+        id="corner_lobby_west_f0",
         x_feet=-121,
         y_feet=87,
     ).asdict(),

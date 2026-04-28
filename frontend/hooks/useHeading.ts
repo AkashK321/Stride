@@ -20,7 +20,7 @@ import { headingDegreesFromExpoHeading } from "../utils/locationHeading";
 
 // --- Tunable constants ---
 const ROLLING_WINDOW = 10; // number of samples to average over
-const ALIGNED_TOLERANCE_DEG = 20; // degrees within which user is considered "aligned"
+const ALIGNED_TOLERANCE_DEG = 30; // degrees within which user is considered "aligned"
 
 export type HeadingAlignment = "aligned" | "turn_left" | "turn_right" | "unknown";
 
@@ -36,6 +36,11 @@ export interface UseHeadingResult {
    * Pass null (e.g. on the final "arrive" step) to get "unknown".
    */
   getAlignment: (targetHeading: number | null) => HeadingAlignment;
+  /**
+   * Returns signed shortest angular difference to target heading:
+   * negative = turn left, positive = turn right.
+   */
+  getHeadingDelta: (targetHeading: number | null) => number | null;
 }
 
 export function useHeading(): UseHeadingResult {
@@ -101,16 +106,20 @@ export function useHeading(): UseHeadingResult {
 
   // Compare smoothed heading to a target bearing from the active instruction
   const getAlignment = (targetHeading: number | null): HeadingAlignment => {
-    if (targetHeading == null || smoothedHeading == null) return "unknown";
-
-    // Signed shortest angular difference — negative = turn left, positive = turn right
-    const diff = angularDiff(smoothedHeading, targetHeading);
+    const diff = getHeadingDelta(targetHeading);
+    if (diff == null) return "unknown";
 
     if (Math.abs(diff) <= ALIGNED_TOLERANCE_DEG) return "aligned";
     return diff < 0 ? "turn_left" : "turn_right";
   };
 
-  return { smoothedHeading, hasPermission, getAlignment };
+  const getHeadingDelta = (targetHeading: number | null): number | null => {
+    if (targetHeading == null || smoothedHeading == null) return null;
+    // Signed shortest angular difference — negative = turn left, positive = turn right
+    return angularDiff(smoothedHeading, targetHeading);
+  };
+
+  return { smoothedHeading, hasPermission, getAlignment, getHeadingDelta };
 }
 
 // Helpers 

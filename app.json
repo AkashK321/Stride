@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "cd8d8856-7fe1-43a3-9133-dcf572b7edcc"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "com.rtippery.stride",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    }
+  }
+}

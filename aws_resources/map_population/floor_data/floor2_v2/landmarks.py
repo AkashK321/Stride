@@ -40,7 +40,7 @@ LANDMARKS = [
     landmark("Room 234", 38, 0, nearest_node="hall_234", door_id="room_234"),
     landmark("Room 236", 64, 0, nearest_node="hall_236_237", door_id="room_236"),
     landmark("Room 237", 64, 9, nearest_node="hall_236_237", door_id="room_237"),
-    landmark("Room 238", 88, 4.5, nearest_node="corner_southeast", door_id="room_238"),
+    landmark("Room 238", 88, 4.5, nearest_node="corner_southeast_f2", door_id="room_238"),
     
     # East vertical hallway (x=83)
     landmark("Room 240", 88, 14, nearest_node="hall_240_2e01", door_id="room_240"),

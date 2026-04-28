@@ -41,11 +41,32 @@ export interface SensorSnapshot {
   accelerometer: AccelerometerData | null;
   gyroscope: GyroscopeData | null;
   distanceDeltaFeet: number;
+  timeSincePedoMs: number;
+  lastPedometerSteps: number;
+  effectiveSpeedStepsPerMs: number;
+  interpolationApplied: boolean;
+  /** Internal cursor for delta bookkeeping between snapshots. */
+  estimatedTotalSteps: number;
+  /** Raw pedometer callback diagnostics for live debugging. */
+  pedometerEventCount: number;
+  lastPedometerDeltaSteps: number;
+  lastPedometerDeltaTimeMs: number;
+  lastPedometerEventAtMs: number | null;
+}
+
+export interface GetSnapshotOptions {
+  /**
+   * When true (default), advances the internal distance baseline.
+   * Use false for peek-only reads (e.g. collision frames).
+   */
+  consumeDistance?: boolean;
 }
 
 export interface UseSensorDataReturn {
   /** Get a snapshot of the current sensor readings */
-  getSnapshot: () => SensorSnapshot;
+  getSnapshot: (options?: GetSnapshotOptions) => SensorSnapshot;
+  /** Get a snapshot that consumes distance for local progression ticks. */
+  getProgressSnapshot: () => SensorSnapshot;
   /** Whether location permission has been granted */
   hasLocationPermission: boolean;
   /** Whether pedometer permission has been granted */
@@ -58,8 +79,10 @@ export interface UseSensorDataReturn {
   isActive: boolean;
 }
 
-const STRIDE_LENGTH_FEET = 2.3; // Average stride length in feet
-const DISTANCE_INTERPOLATION_ENABLED = process.env.ENABLE_DISTANCE_INTERPOLATION === "true";
+const STRIDE_LENGTH_FEET = 2.5; // Average stride length in feet
+const MIN_SPEED_SAMPLE_INTERVAL_MS = 250;
+const MAX_STEPS_PER_MS = 0.004; // ~4 steps/sec upper bound for walking/running
+const SPEED_HOLD_WINDOW_MS = 2500; // Keep last known speed briefly across sparse pedometer callbacks
 
 export function useSensorData(): UseSensorDataReturn {
   const [hasLocationPermission, setHasLocationPermission] = React.useState(false);
@@ -77,7 +100,11 @@ export function useSensorData(): UseSensorDataReturn {
   const lastPedometerStepsRef = React.useRef(0);
   const lastPedometerTimeRef = React.useRef(0);
   const speedRef = React.useRef(0);
+  const lastSpeedUpdateTimeRef = React.useRef(0);
   const lastSnapshotStepsRef = React.useRef(0);
+  const pedometerEventCountRef = React.useRef(0);
+  const lastPedometerDeltaStepsRef = React.useRef(0);
+  const lastPedometerDeltaTimeMsRef = React.useRef(0);
 
   // Store subscription cleanup functions
   const subscriptionsRef = React.useRef<Array<{ remove: () => void }>>([]);
@@ -168,16 +195,30 @@ export function useSensorData(): UseSensorDataReturn {
         console.log("Pedometer permission granted, starting step count watch");
         const pedoSub = Pedometer.watchStepCount((result) => {
           const now = Date.now();
-          console.log(`Pedometer update: ${result.steps} steps at ${now}`);
+          pedometerEventCountRef.current += 1;
+          // console.log(`Pedometer update: ${result.steps} steps at ${now}`);
           if (lastPedometerTimeRef.current !== 0) {
             const deltaSteps = result.steps - lastPedometerStepsRef.current;
             const deltaTime = now - lastPedometerTimeRef.current;
-            if (deltaTime > 0) {
-              speedRef.current = deltaSteps / deltaTime; // update average speed
+            lastPedometerDeltaStepsRef.current = deltaSteps;
+            lastPedometerDeltaTimeMsRef.current = deltaTime;
+            if (deltaTime >= MIN_SPEED_SAMPLE_INTERVAL_MS) {
+              if (deltaSteps > 0) {
+                const rawSpeed = deltaSteps / deltaTime;
+                speedRef.current = Math.min(rawSpeed, MAX_STEPS_PER_MS);
+                lastSpeedUpdateTimeRef.current = now;
+              } else if (deltaSteps < 0) {
+                // Counter reset or anomaly: drop interpolation speed.
+                speedRef.current = 0;
+                lastSpeedUpdateTimeRef.current = now;
+              }
             }
           } else {
             speedRef.current = 0; // initial reading
+            lastSpeedUpdateTimeRef.current = now;
             lastSnapshotStepsRef.current = result.steps;
+            lastPedometerDeltaStepsRef.current = 0;
+            lastPedometerDeltaTimeMsRef.current = 0;
           }
           lastPedometerStepsRef.current = result.steps;
           lastPedometerTimeRef.current = now;
@@ -209,6 +250,10 @@ export function useSensorData(): UseSensorDataReturn {
     lastPedometerTimeRef.current = 0;
     lastSnapshotStepsRef.current = 0;
     speedRef.current = 0;
+    lastSpeedUpdateTimeRef.current = 0;
+    pedometerEventCountRef.current = 0;
+    lastPedometerDeltaStepsRef.current = 0;
+    lastPedometerDeltaTimeMsRef.current = 0;
 
     setIsActive(false);
   }, []);
@@ -220,38 +265,55 @@ export function useSensorData(): UseSensorDataReturn {
     };
   }, [stop]);
 
-  const getSnapshot = React.useCallback((): SensorSnapshot => {
+  const getSnapshot = React.useCallback((options?: GetSnapshotOptions): SensorSnapshot => {
     const now = Date.now();
-    let currentSpeed = speedRef.current;
+    const speedAgeMs = now - lastSpeedUpdateTimeRef.current;
+    const currentSpeed =
+      speedRef.current > 0 && speedAgeMs <= SPEED_HOLD_WINDOW_MS
+        ? speedRef.current
+        : 0;
+    const consumeDistance = options?.consumeDistance ?? true;
     const timeSincePedo = now - lastPedometerTimeRef.current;
-    console.log(`Time since last pedometer update: ${timeSincePedo}ms, current speed: ${currentSpeed} steps/ms`);
+    // console.log(`Time since last pedometer update: ${timeSincePedo}ms, current speed: ${currentSpeed} steps/ms`);
 
-    // Estimate current total steps based on last known steps + interpolated speed
-    var estimatedTotalSteps = lastPedometerStepsRef.current
-    if (DISTANCE_INTERPOLATION_ENABLED) {
-        estimatedTotalSteps += (currentSpeed * Math.min(timeSincePedo, 5000));
-    }
-    console.log(`Estimated total steps: ${estimatedTotalSteps}`);
-    console.log(`Last snapshot steps: ${lastSnapshotStepsRef.current}`);
+    // Use raw pedometer totals only (no interpolation) for stable progression.
+    const estimatedTotalSteps = lastPedometerStepsRef.current;
+    const interpolationApplied = false;
 
     let deltaSteps = estimatedTotalSteps - lastSnapshotStepsRef.current;
     if (deltaSteps < 0) deltaSteps = 0;
 
-    lastSnapshotStepsRef.current = estimatedTotalSteps;
+    if (consumeDistance) {
+      lastSnapshotStepsRef.current = estimatedTotalSteps;
+    }
 
     const distanceDeltaFeet = deltaSteps * STRIDE_LENGTH_FEET;
-    
+
     return {
       heading: headingRef.current,
       gps: gpsRef.current,
       accelerometer: accelerometerRef.current,
       gyroscope: gyroscopeRef.current,
-      distanceDeltaFeet: distanceDeltaFeet,
+      distanceDeltaFeet,
+      timeSincePedoMs: timeSincePedo,
+      lastPedometerSteps: lastPedometerStepsRef.current,
+      effectiveSpeedStepsPerMs: currentSpeed,
+      interpolationApplied,
+      estimatedTotalSteps,
+      pedometerEventCount: pedometerEventCountRef.current,
+      lastPedometerDeltaSteps: lastPedometerDeltaStepsRef.current,
+      lastPedometerDeltaTimeMs: lastPedometerDeltaTimeMsRef.current,
+      lastPedometerEventAtMs:
+        lastPedometerTimeRef.current > 0 ? lastPedometerTimeRef.current : null,
     };
   }, []);
+  const getProgressSnapshot = React.useCallback(() => {
+    return getSnapshot({ consumeDistance: true });
+  }, [getSnapshot]);
 
   return {
     getSnapshot,
+    getProgressSnapshot,
     hasLocationPermission,
     hasPedometerPermission,
     start,

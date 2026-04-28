@@ -204,6 +204,21 @@ def run_from_args(args: argparse.Namespace) -> int:
         x1, y1 = nodes[start_id]["x"], nodes[start_id]["y"]
         x2, y2 = nodes[end_id]["x"], nodes[end_id]["y"]
         ax.plot([x1, x2], [y1, y2], color="#2563eb", linewidth=1.8, alpha=0.8)
+        ax.annotate(
+            "",
+            xy=(x2, y2),
+            xytext=(x1, y1),
+            arrowprops={
+                "arrowstyle": "-|>",
+                "color": "#1d4ed8",
+                "lw": 1.1,
+                "alpha": 0.9,
+                "shrinkA": 8,
+                "shrinkB": 8,
+                "mutation_scale": 11,
+            },
+            zorder=2,
+        )
         edge_segments.append({"x1": x1, "y1": y1, "x2": x2, "y2": y2, "edge": edge})
 
         if args.show_edge_bearings and edge["bearing"] is not None:
