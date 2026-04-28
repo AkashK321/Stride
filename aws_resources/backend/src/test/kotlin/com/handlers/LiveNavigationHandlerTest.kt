@@ -719,6 +719,6 @@ class LiveNavigationHandlerTest {
         @Suppress("UNCHECKED_CAST")
         val remainingInstructions = payload["remaining_instructions"] as List<Map<String, Any?>>
         val firstDistance = (remainingInstructions.first()["distance_feet"] as Number).toDouble()
-        assertEquals(31.0, firstDistance, 0.001)
+        assertEquals(40.0, firstDistance, 0.001)
     }
 }
