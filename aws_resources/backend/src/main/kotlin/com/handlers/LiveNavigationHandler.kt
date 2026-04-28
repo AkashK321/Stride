@@ -35,6 +35,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.max
 import kotlin.math.log
+import kotlin.math.sqrt
 
 private val METERS_TO_FEET = 3.28084
 // Stored map coordinates are in feet (post-upload rotation only), so movement/progress
