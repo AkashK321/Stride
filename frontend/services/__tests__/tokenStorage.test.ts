@@ -10,8 +10,12 @@ import {
   getIdToken,
   getRefreshToken,
   clearTokens,
+  setBiometricLoginEnabled,
+  getBiometricLoginEnabled,
+  clearBiometricLoginPreference,
   isAuthenticated,
   isTokenExpiringSoon,
+  isTokenExpiringSoonAtTime,
   autoRefreshTokens,
   setupAutoRefresh,
   Tokens,
@@ -297,6 +301,28 @@ describe("tokenStorage", () => {
     });
   });
 
+  describe("biometric login preference", () => {
+    it("stores and retrieves enabled biometric login preference", async () => {
+      await setBiometricLoginEnabled(true);
+
+      expect(await getBiometricLoginEnabled()).toBe(true);
+      expect(SecureStore.setItemAsync).toHaveBeenCalledWith("biometricLoginEnabled", "true");
+    });
+
+    it("returns false when biometric login preference is missing", async () => {
+      expect(await getBiometricLoginEnabled()).toBe(false);
+    });
+
+    it("clears biometric login preference", async () => {
+      await setBiometricLoginEnabled(true);
+      expect(await getBiometricLoginEnabled()).toBe(true);
+
+      await clearBiometricLoginPreference();
+      expect(await getBiometricLoginEnabled()).toBe(false);
+      expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("biometricLoginEnabled");
+    });
+  });
+
   describe("isTokenExpiringSoon", () => {
     it("returns true when the access token's exp claim is within the buffer window", async () => {
       // Token that expires in 2 minutes (within default 5-minute buffer)
@@ -393,6 +419,38 @@ describe("tokenStorage", () => {
       jest.spyOn(SecureStore, "getItemAsync").mockRejectedValueOnce(new Error("Read error"));
 
       const result = await isTokenExpiringSoon(5);
+      expect(result).toBe(true);
+    });
+  });
+
+  describe("isTokenExpiringSoonAtTime", () => {
+    it("returns false at a simulated time before buffer window", async () => {
+      const token = createFakeJwt({
+        exp: 2_000, // seconds
+      });
+      await storeTokens({
+        accessToken: token,
+        idToken: "id-456",
+        refreshToken: "refresh-789",
+      });
+
+      // At t=1,000,000ms with 5-min buffer, token expires at 2,000,000ms (far enough out)
+      const result = await isTokenExpiringSoonAtTime(1_000_000, 5);
+      expect(result).toBe(false);
+    });
+
+    it("returns true at a simulated time inside buffer window", async () => {
+      const token = createFakeJwt({
+        exp: 2_000, // seconds
+      });
+      await storeTokens({
+        accessToken: token,
+        idToken: "id-456",
+        refreshToken: "refresh-789",
+      });
+
+      // At t=1,800,000ms token has <5m remaining.
+      const result = await isTokenExpiringSoonAtTime(1_800_000, 5);
       expect(result).toBe(true);
     });
   });

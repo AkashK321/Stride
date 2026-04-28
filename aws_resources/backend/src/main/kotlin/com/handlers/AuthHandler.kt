@@ -20,16 +20,14 @@ import software.amazon.awssdk.services.cognitoidentityprovider.model.MessageActi
 import software.amazon.awssdk.services.cognitoidentityprovider.model.ListUsersRequest
 import software.amazon.awssdk.services.cognitoidentityprovider.model.UserNotFoundException
 import software.amazon.awssdk.services.cognitoidentityprovider.model.AttributeType
+import software.amazon.awssdk.services.cognitoidentityprovider.model.NotAuthorizedException
 import software.amazon.awssdk.regions.Region
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 
-class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
-
-    private val cognitoClient = CognitoIdentityProviderClient.builder()
-        .region(Region.of(System.getenv("AWS_REGION") ?: "us-east-1"))
-        .httpClient(UrlConnectionHttpClient.builder().build())
-        .build()
+class AuthHandler(
+    private val cognitoClient: CognitoIdentityProviderClient = defaultCognitoClient()
+) : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
     private val mapper = jacksonObjectMapper()
 
     override fun handleRequest(
@@ -47,6 +45,7 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
 
         val response = when {
             path == "/login" && method == "POST" -> handleLogin(input, context)
+            path == "/refresh" && method == "POST" -> handleRefresh(input, context)
             path == "/register" && method == "POST" -> handleRegister(input, context)
             path == "/register/check-username" && method == "GET" -> handleCheckUsername(input, context)
             path == "/register/check-email" && method == "GET" -> handleCheckEmail(input, context)
@@ -194,6 +193,72 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
             return createErrorResponse(statusCode, userFriendlyMessage)
         } catch (e: Exception) {
             context.logger.log("ERROR: Unexpected error during login: ${e.message}")
+            e.printStackTrace()
+            return createErrorResponse(500, "Internal server error")
+        }
+    }
+
+    private fun handleRefresh(
+        input: APIGatewayProxyRequestEvent,
+        context: Context
+    ): APIGatewayProxyResponseEvent {
+        context.logger.log("Handling refresh request")
+        try {
+            val clientId = System.getenv("USER_POOL_CLIENT_ID")
+            if (clientId.isNullOrEmpty()) {
+                context.logger.log("ERROR: Missing USER_POOL_CLIENT_ID environment variable")
+                return createErrorResponse(500, "Server configuration error")
+            }
+
+            val body = input.body ?: return createErrorResponse(400, "Request body is required")
+            val refreshRequest = try {
+                mapper.readValue<RefreshTokenRequest>(body)
+            } catch (e: Exception) {
+                context.logger.log("ERROR: Failed to parse refresh body: ${e.message}")
+                return createErrorResponse(400, "Invalid request format. Expected JSON with refreshToken")
+            }
+
+            val refreshToken = refreshRequest.refreshToken?.trim()
+            if (refreshToken.isNullOrEmpty()) {
+                return createErrorResponse(400, "refreshToken is required")
+            }
+
+            val authRequest = InitiateAuthRequest.builder()
+                .clientId(clientId)
+                .authFlow(AuthFlowType.REFRESH_TOKEN_AUTH)
+                .authParameters(mapOf("REFRESH_TOKEN" to refreshToken))
+                .build()
+
+            val authResponse = cognitoClient.initiateAuth(authRequest)
+            val authResult = authResponse.authenticationResult()
+                ?: return createErrorResponse(401, "Unable to refresh session")
+
+            val responseBody = mapper.writeValueAsString(
+                mapOf(
+                    "accessToken" to authResult.accessToken(),
+                    "idToken" to authResult.idToken(),
+                    "refreshToken" to (authResult.refreshToken() ?: refreshToken),
+                    "expiresIn" to authResult.expiresIn(),
+                    "tokenType" to authResult.tokenType()
+                )
+            )
+            return APIGatewayProxyResponseEvent()
+                .withStatusCode(200)
+                .withBody(responseBody)
+                .withHeaders(mapOf("Content-Type" to "application/json"))
+        } catch (e: NotAuthorizedException) {
+            context.logger.log("ERROR: Refresh rejected by Cognito: ${e.message}")
+            return createErrorResponse(401, "Invalid or expired refresh token")
+        } catch (e: CognitoIdentityProviderException) {
+            context.logger.log("ERROR: Cognito refresh failed: ${e.message}")
+            val statusCode = when (e.awsErrorDetails()?.errorCode()) {
+                "InvalidParameterException" -> 400
+                "TooManyRequestsException", "LimitExceededException" -> 429
+                else -> 401
+            }
+            return createErrorResponse(statusCode, parseCognitoError(e))
+        } catch (e: Exception) {
+            context.logger.log("ERROR: Unexpected error during refresh: ${e.message}")
             e.printStackTrace()
             return createErrorResponse(500, "Internal server error")
         }
@@ -833,4 +898,17 @@ class AuthHandler : RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyR
         val newPassword: String?,
         val newPasswordConfirm: String?,
     )
+
+    private data class RefreshTokenRequest(
+        val refreshToken: String?
+    )
+
+    companion object {
+        private fun defaultCognitoClient(): CognitoIdentityProviderClient {
+            return CognitoIdentityProviderClient.builder()
+                .region(Region.of(System.getenv("AWS_REGION") ?: "us-east-1"))
+                .httpClient(UrlConnectionHttpClient.builder().build())
+                .build()
+        }
+    }
 }

@@ -8,8 +8,15 @@
 
 import * as React from "react";
 import { useRouter, useSegments } from "expo-router";
-import { isAuthenticated as checkAuth, getTokens, clearTokens, storeTokens } from "../services/tokenStorage";
+import {
+  getBiometricLoginEnabled,
+  getTokens,
+  clearTokens,
+  storeTokens,
+  isTokenExpiringSoon,
+} from "../services/tokenStorage";
 import { refreshToken as refreshTokenApi } from "../services/api";
+import { canUseBiometrics, promptBiometricUnlock } from "../services/biometricAuth";
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -75,25 +82,81 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const checkAuthStatus = async () => {
     try {
-      const authenticated = await checkAuth();
-      setIsAuthenticated(authenticated);
-      
-      // TODO: Re-enable token refresh once the /refresh endpoint is implemented.
-      // Currently the refresh endpoint does not exist, so calling it causes
-      // "Network request failed" errors on startup. Once the backend supports
-      // POST /refresh, uncomment the block below.
-      //
-      // if (authenticated) {
-      //   const refreshed = await refreshTokens();
-      //   if (!refreshed) {
-      //     console.log("Token refresh unavailable or failed, using existing tokens");
-      //   }
-      // }
+      const tokens = await getTokens();
+      if (!tokens) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      const tokenNeedsRefresh = await isTokenExpiringSoon();
+      if (!tokenNeedsRefresh) {
+        setIsAuthenticated(true);
+        return;
+      }
+
+      const biometricEnabled = await getBiometricLoginEnabled();
+      if (biometricEnabled) {
+        const biometricAvailability = await canUseBiometrics();
+        if (!biometricAvailability.available) {
+          setIsAuthenticated(false);
+          return;
+        }
+
+        const biometricResult = await promptBiometricUnlock("Unlock Stride");
+        if (!biometricResult.success) {
+          setIsAuthenticated(false);
+          return;
+        }
+      }
+
+      const refreshSucceeded = await tryRefresh(tokens.refreshToken, { clearOnFailure: true });
+      if (!refreshSucceeded) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      setIsAuthenticated(true);
     } catch (error) {
       console.error("Error checking auth status:", error);
       setIsAuthenticated(false);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const shouldTreatRefreshAsEndpointUnavailable = (errorMessage: string): boolean => {
+    return errorMessage.includes("not implemented") || 
+      errorMessage.includes("404") || 
+      errorMessage.includes("403") ||
+      errorMessage.includes("Network request failed") ||
+      errorMessage.includes("Missing Authentication Token");
+  };
+
+  const tryRefresh = async (
+    refreshToken: string,
+    options: { clearOnFailure: boolean }
+  ): Promise<boolean> => {
+    try {
+      const refreshedTokens = await refreshTokenApi(refreshToken);
+      await storeTokens({
+        accessToken: refreshedTokens.accessToken,
+        idToken: refreshedTokens.idToken,
+        refreshToken: refreshedTokens.refreshToken,
+      });
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
+      if (shouldTreatRefreshAsEndpointUnavailable(errorMessage)) {
+        console.warn("Refresh endpoint not available, using existing tokens");
+        return false;
+      }
+
+      if (options.clearOnFailure) {
+        await clearTokens();
+        setIsAuthenticated(false);
+      }
+      return false;
     }
   };
 
@@ -131,36 +194,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
 
-      // Attempt to refresh tokens
-      // If endpoint doesn't exist (404), we'll catch and return false
-      // without clearing tokens - user can continue using app until token expires
-      const newTokens = await refreshTokenApi(tokens.refreshToken);
-      
-      // Store new tokens
-      await storeTokens({
-        accessToken: newTokens.accessToken,
-        idToken: newTokens.idToken,
-        refreshToken: newTokens.refreshToken,
-      });
-
-      setIsAuthenticated(true);
-      return true;
-    
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      
-      // If endpoint doesn't exist or network is unavailable, don't clear tokens - allow user to continue
-      if (errorMessage.includes("not implemented") || 
-          errorMessage.includes("404") || 
-          errorMessage.includes("403") ||
-          errorMessage.includes("Network request failed") ||
-          errorMessage.includes("Missing Authentication Token")) {
-        console.warn("Refresh endpoint not available, using existing tokens");
-        return false; // Return false but keep auth state
+      const refreshed = await tryRefresh(tokens.refreshToken, { clearOnFailure: true });
+      if (refreshed) {
+        setIsAuthenticated(true);
+      } else {
+        setIsAuthenticated(false);
       }
-      
-      // For other errors (invalid token, expired, etc.), clear tokens
-      console.error("Error refreshing tokens:", errorMessage);
+      return refreshed;
+    } catch (error) {
+      console.error("Error refreshing tokens:", error);
       await clearTokens();
       setIsAuthenticated(false);
       return false;

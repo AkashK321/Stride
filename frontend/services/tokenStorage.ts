@@ -11,6 +11,7 @@ import * as SecureStore from "expo-secure-store";
 const ACCESS_TOKEN_KEY = "accessToken";
 const ID_TOKEN_KEY = "idToken";
 const REFRESH_TOKEN_KEY = "refreshToken";
+const BIOMETRIC_LOGIN_ENABLED_KEY = "biometricLoginEnabled";
 
 export interface Tokens {
   accessToken: string;
@@ -113,6 +114,43 @@ export async function clearTokens(): Promise<void> {
 }
 
 /**
+ * Stores biometric login preference.
+ */
+export async function setBiometricLoginEnabled(enabled: boolean): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(BIOMETRIC_LOGIN_ENABLED_KEY, String(enabled));
+  } catch (error) {
+    console.error("Error storing biometric login preference:", error);
+    throw new Error("Failed to store biometric login preference");
+  }
+}
+
+/**
+ * Retrieves biometric login preference.
+ */
+export async function getBiometricLoginEnabled(): Promise<boolean> {
+  try {
+    const value = await SecureStore.getItemAsync(BIOMETRIC_LOGIN_ENABLED_KEY);
+    return value === "true";
+  } catch (error) {
+    console.error("Error retrieving biometric login preference:", error);
+    return false;
+  }
+}
+
+/**
+ * Clears biometric login preference.
+ */
+export async function clearBiometricLoginPreference(): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(BIOMETRIC_LOGIN_ENABLED_KEY);
+  } catch (error) {
+    console.error("Error clearing biometric login preference:", error);
+    throw new Error("Failed to clear biometric login preference");
+  }
+}
+
+/**
  * Checks if the user has stored tokens (is authenticated).
  */
 export async function isAuthenticated(): Promise<boolean> {
@@ -128,7 +166,7 @@ export async function isAuthenticated(): Promise<boolean> {
 /**
  * JWT tokens are base64 encoded. This function decodes and gets expiration time.
  */
-function getTokenExpiration(token: string): number | null {
+export function getTokenExpiration(token: string): number | null {
   try {
     const parts = token.split(".");
     if (parts.length !== 3) return null;
@@ -157,6 +195,28 @@ export async function isTokenExpiringSoon(bufferMinutes: number = 5): Promise<bo
     const bufferMs = bufferMinutes * 60 * 1000;
     
     return expiration - now < bufferMs;
+  } catch (error) {
+    console.error("Error checking token expiration:", error);
+    return true;
+  }
+}
+
+/**
+ * Test-friendly variant of expiration check where caller provides current time.
+ */
+export async function isTokenExpiringSoonAtTime(
+  nowMs: number,
+  bufferMinutes: number = 5
+): Promise<boolean> {
+  try {
+    const tokens = await getTokens();
+    if (!tokens) return true;
+
+    const expiration = getTokenExpiration(tokens.accessToken);
+    if (!expiration) return true;
+
+    const bufferMs = bufferMinutes * 60 * 1000;
+    return expiration - nowMs < bufferMs;
   } catch (error) {
     console.error("Error checking token expiration:", error);
     return true;

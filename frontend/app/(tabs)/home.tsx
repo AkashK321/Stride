@@ -297,12 +297,6 @@ export default function Home() {
             accessibilityRole: "button",
             accessibilityLabel: "Select start location",
           },
-          React.createElement(Ionicons, {
-            name: "navigate-circle-outline",
-            size: 20,
-            color: colors.textSecondary,
-            style: styles.selectorIcon,
-          }),
           React.createElement(
             Text,
             {
@@ -324,12 +318,6 @@ export default function Home() {
             accessibilityRole: "button",
             accessibilityLabel: "Select destination",
           },
-          React.createElement(Ionicons, {
-            name: "location-outline",
-            size: 20,
-            color: colors.textSecondary,
-            style: styles.selectorIcon,
-          }),
           React.createElement(
             Text,
             {
